@@ -1602,122 +1602,21 @@ run_job_market_sim_two_strategies <- function(combined_df,
   )
 }
 
+
+# =============================================================================
+# =============================================================================
 # =============================================================================
 # SIMULATION RUNNER
 # =============================================================================
+# =============================================================================
+# =============================================================================
+
 
 
 # =============================================================================
-# SIMULATION RUNNER (Participation Rates)
-# =============================================================================
-
-# Run simulations for different participation rates
-participation_rates <- c(0.05, 0.20, 0.50, 0.90)
-all_sim_results <- list()
-
-for (rate in participation_rates) {
-  cat("\n========================================\n")
-  cat("Running simulation with", rate * 100, "% participation\n")
-  cat("========================================\n")
-  
-  all_sim_results[[as.character(rate)]] <- run_job_market_sim_two_strategies(
-    combined_df,
-    n_departments = 20,
-    n_candidates = 200,
-    sim_years = 10,
-    participation_rate = rate,
-    seed = 123,
-    n_numerical = 5,
-    n_categorical = 5,
-    alpha = 0.05,
-    L_repeats = 10,
-    noise_method = "bootstrap",
-    noise_scale = 0.15,
-    prestige_rescale = "minmax",
-    prestige_power = 1.0,
-    prestige_eps = 1e-3,
-    prestige_weight_on = "scaled",
-    cand_tier_cutpoints = c(0.10, 0.25, 0.50),
-    dept_tier_cutpoints = c(0.10, 0.25, 0.50)
-  )
-}
-
-# Save all results
-saveRDS(all_sim_results, "all_participation_results.rds")
-
-make_participation_comparison_plot <- function(all_sim_results, year_filter = c(5, 15)) {
-  
-  # Combine diagnostics from all participation rates
-  combined_diag <- map_dfr(names(all_sim_results), function(rate_str) {
-    rate <- as.numeric(rate_str)
-    all_sim_results[[rate_str]]$diagnostics$applicant_level %>%
-      filter(year >= year_filter[1], year <= year_filter[2],
-             !is.na(strategy), considered == 1, strategy == "pairwise") %>%
-      mutate(participation_rate = rate * 100)
-  })
-  
-  # Get candidate rosters
-  combined_roster <- map_dfr(names(all_sim_results), function(rate_str) {
-    rate <- as.numeric(rate_str)
-    all_sim_results[[rate_str]]$cand_roster %>%
-      filter(year >= year_filter[1], year <= year_filter[2]) %>%
-      mutate(participation_rate = rate * 100)
-  })
-  
-  # Join with roster to get participation status
-  combined_diag <- combined_diag %>%
-    left_join(combined_roster %>% dplyr::select(year, cand_id, quality_tier, participates, participation_rate),
-              by = c("year", "cand_id", "participation_rate"))
-  
-  # Calculate interview probabilities by participation status and rate
-  interview_stats <- combined_diag %>%
-    group_by(participation_rate, quality_tier, participates) %>%
-    summarise(
-      n_apps = n(),
-      p_interviewed = mean(interviewed == 1, na.rm = TRUE),
-      se = sqrt(p_interviewed * (1 - p_interviewed) / n_apps),
-      .groups = "drop"
-    ) %>%
-    filter(n_apps >= 10) %>%
-    mutate(
-      participant_label = ifelse(participates, "Participates", "Does not participate"),
-      quality_tier = factor(quality_tier, levels = c("Tier 1", "Tier 2", "Tier 3", "Tier 4"))
-    )
-  
-  # Plot
-  ggplot(interview_stats, aes(x = participation_rate, y = p_interviewed,
-                              color = participant_label, linetype = participant_label)) +
-    geom_line(linewidth = 1) +
-    geom_point(size = 2.5) +
-    geom_errorbar(aes(ymin = pmax(0, p_interviewed - 1.96*se),
-                      ymax = pmin(1, p_interviewed + 1.96*se)),
-                  width = 2) +
-    facet_wrap(~ quality_tier, nrow = 2) +
-    scale_color_manual(values = c("Participates" = "#0072B2", 
-                                  "Does not participate" = "#D55E00")) +
-    scale_linetype_manual(values = c("Participates" = "solid",
-                                     "Does not participate" = "dashed")) +
-    scale_x_continuous(breaks = c(5, 20, 50, 90),
-                       labels = c("5%", "20%", "50%", "90%")) +
-    scale_y_continuous(labels = percent_format(), limits = c(0, NA)) +
-    labs(x = "Market Participation Rate",
-         y = "P(interviewed | considered)",
-         title = "Interview Probability by Market Participation Rate",
-         subtitle = "Stratified by candidate quality tier and individual participation status",
-         color = "Candidate Status",
-         linetype = "Candidate Status") +
-    theme_jasa() +
-    theme(legend.position = "bottom")
-}
-
-# Generate the plot
-p_participation <- make_participation_comparison_plot(all_sim_results, year_filter = c(5, 15))
-ggsave("fig_participation_comparison.pdf", p_participation, width = 10, height = 8)
-print(p_participation)
-
-
 # =============================================================================
 # SIMULATION RUNNER (Full)
+# =============================================================================
 # =============================================================================
 cat("Starting pairwise vs no-signal comparison...\n")
 start.time <- Sys.time()
@@ -1749,9 +1648,9 @@ cat("Runtime:", as.numeric(time.taken, units = "mins"), "minutes.\n")
 cat("Simulation complete.\n")
 
 
-
-
-
+# Save simulation results
+saveRDS(sim_results, "sim_results.rds")
+# sim_results <- readRDS("sim_results.rds")
 
 # =============================================================================
 # SIMULATION RESULTS ANALYSIS AND FIGURES
@@ -1805,7 +1704,6 @@ tier_colors <- c(
 # =============================================================================
 # 1. DEPARTMENT PERSPECTIVE: SUMMARY STATISTICS
 # =============================================================================
-
 dept_summary_stats <- function(sim_results, year_filter = NULL) {
   results <- sim_results$results
   
@@ -1853,7 +1751,6 @@ dept_summary_stats <- function(sim_results, year_filter = NULL) {
 # =============================================================================
 # 2. FIGURE: WHO HIRES WHOM (HEATMAPS)
 # =============================================================================
-
 make_hiring_heatmap <- function(sim_results, year_filter = c(5, 10)) {
   
   results <- sim_results$results %>%
@@ -1964,9 +1861,7 @@ make_hiring_heatmap <- function(sim_results, year_filter = c(5, 10)) {
 # =============================================================================
 # 3. FIGURE: YIELD AND UTILITY BY DEPARTMENT TIER
 # =============================================================================
-
 make_dept_metrics_by_tier <- function(sim_results, year_filter = c(5, 10)) {
-  
   results <- sim_results$results %>%
     filter(year >= year_filter[1], year <= year_filter[2])
   
@@ -2028,7 +1923,6 @@ make_dept_metrics_by_tier <- function(sim_results, year_filter = c(5, 10)) {
 # =============================================================================
 # 4. FIGURE: QUALITY-FIT TRADEOFF IN HIRES
 # =============================================================================
-
 make_quality_fit_scatter <- function(sim_results, year_filter = c(5, 10)) {
   
   results <- sim_results$results %>%
@@ -2061,7 +1955,6 @@ make_quality_fit_scatter <- function(sim_results, year_filter = c(5, 10)) {
 # =============================================================================
 # 5. CANDIDATE PERSPECTIVE: INTERVIEW PROBABILITIES
 # =============================================================================
-
 make_candidate_interview_prob <- function(sim_results, year_filter = c(5, 10)) {
   
   apps <- sim_results$diagnostics$applicant_level %>%
@@ -2118,9 +2011,7 @@ make_candidate_interview_prob <- function(sim_results, year_filter = c(5, 10)) {
 # =============================================================================
 # 5.1. CANDIDATE PERSPECTIVE: INTERVIEW PROBABILITIES, STRATIFIED
 # =============================================================================
-
 make_candidate_interview_prob_stratified <- function(sim_results, year_filter = c(5, 10)) {
-  
   # Get applications data
   apps <- sim_results$diagnostics$applicant_level %>%
     filter(year >= year_filter[1], year <= year_filter[2],
@@ -2201,9 +2092,7 @@ make_candidate_interview_prob_stratified <- function(sim_results, year_filter = 
 # =============================================================================
 # 6. CANDIDATE PERSPECTIVE: BY QUALITY TIER
 # =============================================================================
-
 make_candidate_metrics_by_tier <- function(sim_results, year_filter = c(5, 10)) {
-  
   apps <- sim_results$diagnostics$applicant_level %>%
     filter(year >= year_filter[1], year <= year_filter[2],
            !is.na(strategy), considered == 1)
@@ -2268,9 +2157,7 @@ make_candidate_metrics_by_tier <- function(sim_results, year_filter = c(5, 10)) 
 # =============================================================================
 # 7. TABLE: SUMMARY STATISTICS
 # =============================================================================
-
 make_summary_table <- function(sim_results, year_filter = c(5, 10)) {
-  
   results <- sim_results$results %>%
     filter(year >= year_filter[1], year <= year_filter[2])
   
@@ -2294,12 +2181,10 @@ make_summary_table <- function(sim_results, year_filter = c(5, 10)) {
 }
 
 # =============================================================================
-# MAIN EXECUTION FUNCTION
+# RESULTS SUMMARY GENERATOR
 # =============================================================================
-
 generate_all_results <- function(sim_results, year_filter = c(5, 10), 
                                  output_dir = "simulation_results") {
-  
   # Create output directory
   dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
   
@@ -2399,3 +2284,235 @@ results_output <- generate_all_results(
   year_filter = c(5, 15),
   output_dir = "simulation_results"
 )
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# =============================================================================
+# =============================================================================
+# SIMULATION RUNNER (Participation Rates)
+# =============================================================================
+# =============================================================================
+participation_rates <- c(0.05, 0.20, 0.50, 0.90)
+all_sim_results <- list()
+
+for (rate in participation_rates) {
+  cat("\n========================================\n")
+  cat("Running simulation with", rate * 100, "% participation\n")
+  cat("========================================\n")
+  
+  all_sim_results[[as.character(rate)]] <- run_job_market_sim_two_strategies(
+    combined_df,
+    n_departments = 20,
+    n_candidates = 200,
+    sim_years = 15,
+    participation_rate = rate,
+    seed = 123,
+    n_numerical = 5,
+    n_categorical = 5,
+    alpha = 0.05,
+    L_repeats = 10,
+    noise_method = "bootstrap",
+    noise_scale = 0.15,
+    prestige_rescale = "minmax",
+    prestige_power = 1.0,
+    prestige_eps = 1e-3,
+    prestige_weight_on = "scaled",
+    cand_tier_cutpoints = c(0.10, 0.25, 0.50),
+    dept_tier_cutpoints = c(0.10, 0.25, 0.50)
+  )
+}
+
+# Save all results
+saveRDS(all_sim_results, "all_participation_results.rds")
+# all_sim_results <- readRDS("all_participation_results.rds")
+
+
+
+# =============================================================================
+# make_participation_comparison_plot <- function(all_sim_results, year_filter = c(5, 15)) {
+#   
+#   # Combine diagnostics from all participation rates
+#   combined_diag <- map_dfr(names(all_sim_results), function(rate_str) {
+#     rate <- as.numeric(rate_str)
+#     all_sim_results[[rate_str]]$diagnostics$applicant_level %>%
+#       filter(year >= year_filter[1], year <= year_filter[2],
+#              !is.na(strategy), considered == 1, strategy == "pairwise") %>%
+#       mutate(participation_rate = rate * 100)
+#   })
+#   
+#   # Get candidate rosters
+#   combined_roster <- map_dfr(names(all_sim_results), function(rate_str) {
+#     rate <- as.numeric(rate_str)
+#     all_sim_results[[rate_str]]$cand_roster %>%
+#       filter(year >= year_filter[1], year <= year_filter[2]) %>%
+#       mutate(participation_rate = rate * 100)
+#   })
+#   
+#   # Join with roster to get participation status
+#   combined_diag <- combined_diag %>%
+#     left_join(combined_roster %>% dplyr::select(year, cand_id, quality_tier, participates, participation_rate),
+#               by = c("year", "cand_id", "participation_rate"))
+#   
+#   # Calculate interview probabilities by participation status and rate
+#   interview_stats <- combined_diag %>%
+#     group_by(participation_rate, quality_tier, participates.y) %>%
+#     summarise(
+#       n_apps = n(),
+#       p_interviewed = mean(interviewed == 1, na.rm = TRUE),
+#       se = sqrt(p_interviewed * (1 - p_interviewed) / n_apps),
+#       .groups = "drop"
+#     ) %>%
+#     filter(n_apps >= 11) %>%
+#     mutate(
+#       participant_label = ifelse(participates.y, "Participates", "Does not participate"),
+#       quality_tier = factor(quality_tier, levels = c("Tier 1", "Tier 2", "Tier 3", "Tier 4"))
+#     )
+#   
+#   # Plot
+#   ggplot(interview_stats, aes(x = participation_rate, y = p_interviewed,
+#                               color = participant_label, linetype = participant_label)) +
+#     geom_line(linewidth = 1) +
+#     geom_point(size = 2.5) +
+#     geom_errorbar(aes(ymin = pmax(0, p_interviewed - 1.96*se),
+#                       ymax = pmin(1, p_interviewed + 1.96*se)),
+#                   width = 2) +
+#     facet_wrap(~ quality_tier, nrow = 2) +
+#     scale_color_manual(values = c("Participates" = "#0072B2", 
+#                                   "Does not participate" = "#D55E00")) +
+#     scale_linetype_manual(values = c("Participates" = "solid",
+#                                      "Does not participate" = "dashed")) +
+#     scale_x_continuous(breaks = c(5, 20, 50, 90),
+#                        labels = c("5%", "20%", "50%", "90%")) +
+#     scale_y_continuous(labels = percent_format(), limits = c(0, NA)) +
+#     labs(x = "Market Participation Rate",
+#          y = "P(interviewed | considered)",
+#          title = "Interview Probability by Market Participation Rate",
+#          subtitle = "Stratified by candidate quality tier and individual participation status",
+#          color = "Candidate Status",
+#          linetype = "Candidate Status") +
+#     theme_jasa() +
+#     theme(legend.position = "bottom")
+# }
+# 
+# # Generate the plot
+# (p_participation <- make_participation_comparison_plot(all_sim_results, year_filter = c(1, 5)))
+# ggsave("fig_participation_comparison.pdf", p_participation, width = 10, height = 8)
+# print(p_participation)
+make_participation_comparison_stratified <- function(all_sim_results, year_filter = c(5, 10)) {
+  
+  # Combine diagnostics from all participation rates
+  combined_diag <- map_dfr(names(all_sim_results), function(rate_str) {
+    rate <- as.numeric(rate_str)
+    all_sim_results[[rate_str]]$diagnostics$applicant_level %>%
+      filter(year >= year_filter[1], year <= year_filter[2],
+             !is.na(strategy), considered == 1, strategy == "pairwise") %>%
+      mutate(participation_rate = rate)
+  })
+  
+  # Get candidate rosters
+  combined_roster <- map_dfr(names(all_sim_results), function(rate_str) {
+    rate <- as.numeric(rate_str)
+    all_sim_results[[rate_str]]$cand_roster %>%
+      filter(year >= year_filter[1], year <= year_filter[2]) %>%
+      mutate(participation_rate = rate)
+  })
+  
+  # Get department info (same across all participation rates, so just use first)
+  departments <- all_sim_results[[1]]$departments %>%
+    dplyr::select(dept_id, prestige_tier)
+  
+  # Join with roster to get participation status
+  combined_diag <- combined_diag %>%
+    left_join(combined_roster %>% dplyr::select(year, cand_id, quality_tier, participates, participation_rate),
+              by = c("year", "cand_id", "participation_rate"))
+  
+  # Join with departments to get prestige tier
+  combined_diag <- combined_diag %>%
+    left_join(departments, by = "dept_id")
+  
+  # Bin alignment
+  breaks_f <- seq(0, 1, by = 0.1)  # Wider bins due to multiple stratifications
+  
+  # Calculate interview probabilities by participation status, rate, and tiers
+  interview_prob <- combined_diag %>%
+    mutate(
+      f_bin = cut(f_j, breaks = breaks_f, include.lowest = TRUE),
+      quality_tier = factor(quality_tier, levels = c("Tier 1", "Tier 2", "Tier 3", "Tier 4")),
+      prestige_tier = factor(prestige_tier, levels = c("Tier 1", "Tier 2", "Tier 3", "Tier 4")),
+      participation_pct = participation_rate * 100,
+      participant_label = ifelse(participates.y, "Participates", "Does not participate")
+    ) %>%
+    group_by(participation_pct, participant_label, quality_tier, prestige_tier, f_bin) %>%
+    summarise(
+      n_apps = n(),
+      p_int = mean(interviewed == 1, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    filter(n_apps >= 10) %>%  # Lower threshold due to heavy stratification
+    mutate(
+      f_mid = {
+        b_id <- as.numeric(f_bin)
+        width <- diff(breaks_f)[1]
+        breaks_f[1] + (b_id - 0.5) * width
+      }
+    )
+  
+  # Create faceted plot
+  p <- ggplot(interview_prob, aes(x = f_mid, y = p_int,
+                                  color = factor(participation_pct),
+                                  linetype = participant_label,
+                                  group = interaction(participation_pct, participant_label))) +
+    geom_line(linewidth = 0.7) +
+    geom_point(size = 1.5) +
+    facet_grid(quality_tier ~ prestige_tier,
+               labeller = labeller(
+                 quality_tier = function(x) paste("Cand:", x),
+                 prestige_tier = function(x) paste("Dept:", x)
+               )) +
+    scale_color_viridis_d(
+      name = "Market Participation Rate",
+      labels = c("5%", "20%", "50%", "90%"),
+      option = "viridis",
+      end = 0.9
+    ) +
+    scale_linetype_manual(
+      name = "Individual Status",
+      values = c("Participates" = "solid", "Does not participate" = "dashed")
+    ) +
+    scale_y_continuous(labels = scales::percent_format(), limits = c(0, NA)) +
+    labs(x = "Preference Alignment (f_j)",
+         y = "P(interviewed | considered)",
+         title = "Interview Probability by Market Participation Rate and Preference Alignment",
+         subtitle = "Stratified by Candidate and Department Tiers") +
+    theme_minimal() +
+    theme(
+      strip.text = element_text(size = 8, face = "bold"),
+      legend.position = "bottom",
+      legend.box = "vertical",
+      panel.grid.minor = element_blank(),
+      plot.title = element_text(face = "bold", size = 13),
+      plot.subtitle = element_text(size = 10),
+      axis.text = element_text(size = 7)
+    ) +
+    guides(
+      color = guide_legend(order = 1, nrow = 1),
+      linetype = guide_legend(order = 2, nrow = 1)
+    )
+  
+  p
+}
+
+# Usage:
+(p_participation_stratified <- make_participation_comparison_stratified(all_sim_results, year_filter = c(1, 10)))
+ggsave("fig_participation_stratified.pdf", p_participation_stratified, width = 12, height = 10)
