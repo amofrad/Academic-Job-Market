@@ -1715,7 +1715,6 @@ p_participation <- make_participation_comparison_plot(all_sim_results, year_filt
 ggsave("fig_participation_comparison.pdf", p_participation, width = 10, height = 8)
 print(p_participation)
 
- 
 
 # =============================================================================
 # SIMULATION RUNNER (Full)
