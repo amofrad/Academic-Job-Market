@@ -2286,9 +2286,9 @@ results_output <- generate_all_results(
 )
 
 
-
-
-
+# =============================================================================
+# =============================================================================
+# =============================================================================
 
 
 
@@ -2315,13 +2315,13 @@ for (rate in participation_rates) {
     combined_df,
     n_departments = 20,
     n_candidates = 200,
-    sim_years = 15,
+    sim_years = 10,
     participation_rate = rate,
     seed = 123,
     n_numerical = 5,
     n_categorical = 5,
     alpha = 0.05,
-    L_repeats = 10,
+    L_repeats = 100,
     noise_method = "bootstrap",
     noise_scale = 0.15,
     prestige_rescale = "minmax",
@@ -2336,6 +2336,10 @@ for (rate in participation_rates) {
 # Save all results
 saveRDS(all_sim_results, "all_participation_results.rds")
 # all_sim_results <- readRDS("all_participation_results.rds")
+
+# =============================================================================
+# =============================================================================
+
 
 
 
@@ -2406,9 +2410,11 @@ saveRDS(all_sim_results, "all_participation_results.rds")
 # }
 # 
 # # Generate the plot
-# (p_participation <- make_participation_comparison_plot(all_sim_results, year_filter = c(1, 5)))
+# (p_participation <- make_participation_comparison_plot(all_sim_results, year_filter = c(1, 15)))
 # ggsave("fig_participation_comparison.pdf", p_participation, width = 10, height = 8)
 # print(p_participation)
+
+
 make_participation_comparison_stratified <- function(all_sim_results, year_filter = c(5, 10)) {
   
   # Combine diagnostics from all participation rates
@@ -2483,8 +2489,10 @@ make_participation_comparison_stratified <- function(all_sim_results, year_filte
     scale_color_viridis_d(
       name = "Market Participation Rate",
       labels = c("5%", "20%", "50%", "90%"),
-      option = "viridis",
-      end = 0.9
+      option = "D",
+      begin = 0.0,
+      end = 0.8,
+      direction = -1
     ) +
     scale_linetype_manual(
       name = "Individual Status",
@@ -2513,6 +2521,114 @@ make_participation_comparison_stratified <- function(all_sim_results, year_filte
   p
 }
 
-# Usage:
-(p_participation_stratified <- make_participation_comparison_stratified(all_sim_results, year_filter = c(1, 10)))
+
+(p_participation_stratified <- make_participation_comparison_stratified(all_sim_results, year_filter = c(5, 15)))
 ggsave("fig_participation_stratified.pdf", p_participation_stratified, width = 12, height = 10)
+
+
+
+# =============================================================================
+# =============================================================================
+
+
+make_participation_comparison_by_candidate_tier <- function(all_sim_results, year_filter = c(5, 10)) {
+  
+  # Combine diagnostics from all participation rates
+  combined_diag <- map_dfr(names(all_sim_results), function(rate_str) {
+    rate <- as.numeric(rate_str)
+    all_sim_results[[rate_str]]$diagnostics$applicant_level %>%
+      filter(year >= year_filter[1], year <= year_filter[2],
+             !is.na(strategy), considered == 1, strategy == "pairwise") %>%
+      mutate(participation_rate = rate)
+  })
+  
+  # Get candidate rosters
+  combined_roster <- map_dfr(names(all_sim_results), function(rate_str) {
+    rate <- as.numeric(rate_str)
+    all_sim_results[[rate_str]]$cand_roster %>%
+      filter(year >= year_filter[1], year <= year_filter[2]) %>%
+      mutate(participation_rate = rate)
+  })
+  
+  # Join with roster to get participation status
+  combined_diag <- combined_diag %>%
+    left_join(combined_roster %>% dplyr::select(year, cand_id, quality_tier, participates, participation_rate),
+              by = c("year", "cand_id", "participation_rate"))
+  
+  # Bin alignment
+  breaks_f <- seq(0, 1, by = 0.05)  # Finer bins since we have fewer stratifications
+  
+  # Calculate interview probabilities by participation status, rate, and candidate tier only
+  interview_prob <- combined_diag %>%
+    mutate(
+      f_bin = cut(f_j, breaks = breaks_f, include.lowest = TRUE),
+      quality_tier = factor(quality_tier, levels = c("Tier 1", "Tier 2", "Tier 3", "Tier 4")),
+      participation_pct = participation_rate * 100,
+      participant_label = ifelse(participates.y, "Participates", "Does not participate")
+    ) %>%
+    group_by(participation_pct, participant_label, quality_tier, f_bin) %>%
+    summarise(
+      n_apps = n(),
+      p_int = mean(interviewed == 1, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    filter(n_apps >= 20) %>%  # Higher threshold since we have more data per bin
+    mutate(
+      f_mid = {
+        b_id <- as.numeric(f_bin)
+        width <- diff(breaks_f)[1]
+        breaks_f[1] + (b_id - 0.5) * width
+      }
+    )
+  
+  # Create faceted plot (only by candidate tier)
+  p <- ggplot(interview_prob, aes(x = f_mid, y = p_int,
+                                  color = factor(participation_pct),
+                                  linetype = participant_label,
+                                  group = interaction(participation_pct, participant_label))) +
+    geom_line(linewidth = 0.9) +
+    geom_point(size = 2) +
+    facet_wrap(~ quality_tier, nrow = 2, ncol = 2,
+               labeller = labeller(quality_tier = function(x) paste("Candidate:", x))) +
+    scale_color_viridis_d(
+      name = "Market Participation Rate",
+      labels = c("5%", "20%", "50%", "90%"),
+      option = "D",
+      begin = 0.0,
+      end = 0.8,
+      direction = -1
+    ) +
+    scale_linetype_manual(
+      name = "Individual Status",
+      values = c("Participates" = "solid", "Does not participate" = "dashed")
+    ) +
+    scale_y_continuous(labels = scales::percent_format(), limits = c(0, NA)) +
+    labs(x = "Preference Alignment (f_j)",
+         y = "P(interviewed | considered)",
+         title = "Interview Probability by Market Participation Rate and Preference Alignment",
+         subtitle = "Stratified by Candidate Quality Tier") +
+    theme_minimal() +
+    theme(
+      strip.text = element_text(size = 11, face = "bold"),
+      legend.position = "bottom",
+      legend.box = "vertical",
+      panel.grid.minor = element_blank(),
+      plot.title = element_text(face = "bold", size = 14),
+      plot.subtitle = element_text(size = 11),
+      axis.text = element_text(size = 9),
+      axis.title = element_text(size = 10)
+    ) +
+    guides(
+      color = guide_legend(order = 1, nrow = 1),
+      linetype = guide_legend(order = 2, nrow = 1)
+    )
+  
+  p
+}
+
+(p_participation_by_cand <- make_participation_comparison_by_candidate_tier(
+  all_sim_results, 
+  year_filter = c(5, 15)
+))
+ggsave("fig_participation_by_candidate_tier.pdf", p_participation_by_cand, width = 10, height = 8)
+print(p_participation_by_cand)
