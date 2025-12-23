@@ -2295,9 +2295,9 @@ make_fig_dept_interview_heatmap <- function(all_sim_results, year_filter = c(1, 
     dplyr::filter(year >= year_filter[1], year <= year_filter[2],
                   strategy == "pairwise", interviewed == 1)
   
-  # Get department tiers
+  # Get department tiers with k_j (interview budget)
   departments <- all_sim_results[[1]]$departments %>%
-    dplyr::select(dept_id, prestige_tier)
+    dplyr::select(dept_id, prestige_tier, k_j)  # Added k_j
   
   # Get candidate tiers
   baseline_roster <- all_sim_results[["baseline"]]$cand_roster %>%
@@ -2305,6 +2305,18 @@ make_fig_dept_interview_heatmap <- function(all_sim_results, year_filter = c(1, 
   
   full_roster <- all_sim_results[["1"]]$cand_roster %>%
     dplyr::filter(year >= year_filter[1], year <= year_filter[2])
+  
+  # Calculate total candidates and interview budgets by tier
+  cand_totals <- baseline_roster %>%  # Use baseline roster (same cohorts across scenarios)
+    count(quality_tier, name = "n_cand") %>%
+    mutate(quality_tier = factor(quality_tier, 
+                                 levels = c("Tier 1", "Tier 2", "Tier 3", "Tier 4")))
+  
+  interview_budget_totals <- departments %>%
+    group_by(prestige_tier) %>%
+    summarise(budget = sum(k_j) * length(year_filter[1]:year_filter[2]), .groups = "drop") %>%
+    mutate(prestige_tier = factor(prestige_tier, 
+                                  levels = c("Tier 1", "Tier 2", "Tier 3", "Tier 4")))
   
   # Combine
   combined_interviews <- bind_rows(
@@ -2339,6 +2351,17 @@ make_fig_dept_interview_heatmap <- function(all_sim_results, year_filter = c(1, 
     complete(scenario, prestige_tier, quality_tier, 
              fill = list(n_interviews = 0, mean_utility = NA))
   
+  # Create axis labels with totals
+  x_labels <- cand_totals %>%
+    mutate(label = paste0(quality_tier, "\n(n=", n_cand, ")")) %>%
+    dplyr::select(quality_tier, label) %>%
+    deframe()
+  
+  y_labels <- interview_budget_totals %>%
+    mutate(label = paste0(prestige_tier, "\n(budget=", budget, ")")) %>%
+    dplyr::select(prestige_tier, label) %>%
+    deframe()
+  
   ggplot(heatmap_data, aes(x = quality_tier, y = prestige_tier, fill = mean_utility)) +
     geom_tile() +
     geom_text(aes(label = ifelse(n_interviews > 0, n_interviews, "")),
@@ -2349,12 +2372,16 @@ make_fig_dept_interview_heatmap <- function(all_sim_results, year_filter = c(1, 
     facet_wrap(~ scenario) +
     scale_fill_viridis(name = "Mean dept utility", limits = c(0, 1),
                        na.value = "grey50", option = "viridis") +
+    scale_x_discrete(labels = x_labels) +  # Added
+    scale_y_discrete(labels = y_labels) +  # Added
     labs(title = "Interview Distribution by Department and Candidate Tier",
          subtitle = "Cell values show interview counts and mean department utility",
          x = "Candidate Quality Tier",
          y = "Department Prestige Tier") +
     theme_jasa() +
-    theme(legend.position = "right")
+    theme(legend.position = "right",
+          axis.text.x = element_text(size = 9),   # Added for readability
+          axis.text.y = element_text(size = 9))   # Added for readability
 }
 (p_interview_heatmap <- make_fig_dept_interview_heatmap(all_sim_results, year_filter = c(1, 10)))
 ggsave("fig_int_heatmap.pdf", p_interview_heatmap, width = 10, height = 5)
@@ -2375,13 +2402,25 @@ make_fig_dept_hiring_heatmap <- function(all_sim_results, year_filter = c(1, 10)
   
   # Get tiers
   departments <- all_sim_results[[1]]$departments %>%
-    dplyr::select(dept_id, prestige_tier)
+    dplyr::select(dept_id, prestige_tier, h_j)  # Added h_j
   
   baseline_roster <- all_sim_results[["baseline"]]$cand_roster %>%
     filter(year >= year_filter[1], year <= year_filter[2])
   
   full_roster <- all_sim_results[["1"]]$cand_roster %>%
     filter(year >= year_filter[1], year <= year_filter[2])
+  
+  # Calculate total candidates and quotas by tier
+  cand_totals <- baseline_roster %>%  # Use baseline roster (same cohorts across scenarios)
+    count(quality_tier, name = "n_cand") %>%
+    mutate(quality_tier = factor(quality_tier, 
+                                 levels = c("Tier 1", "Tier 2", "Tier 3", "Tier 4")))
+  
+  quota_totals <- departments %>%
+    group_by(prestige_tier) %>%
+    summarise(quota = sum(h_j) * length(year_filter[1]:year_filter[2]), .groups = "drop") %>%
+    mutate(prestige_tier = factor(prestige_tier, 
+                                  levels = c("Tier 1", "Tier 2", "Tier 3", "Tier 4")))
   
   # Combine
   combined_hires <- bind_rows(
@@ -2414,6 +2453,17 @@ make_fig_dept_hiring_heatmap <- function(all_sim_results, year_filter = c(1, 10)
     complete(scenario, prestige_tier, quality_tier, 
              fill = list(n_hires = 0, mean_utility = NA))
   
+  # Create axis labels with totals
+  x_labels <- cand_totals %>%
+    mutate(label = paste0(quality_tier, "\n(n=", n_cand, ")")) %>%
+    dplyr::select(quality_tier, label) %>%
+    deframe()
+  
+  y_labels <- quota_totals %>%
+    mutate(label = paste0(prestige_tier, "\n(quota=", quota, ")")) %>%
+    dplyr::select(prestige_tier, label) %>%
+    deframe()
+  
   ggplot(heatmap_data, aes(x = quality_tier, y = prestige_tier, fill = mean_utility)) +
     geom_tile() +
     geom_text(aes(label = ifelse(n_hires > 0, n_hires, "")),
@@ -2424,12 +2474,16 @@ make_fig_dept_hiring_heatmap <- function(all_sim_results, year_filter = c(1, 10)
     facet_wrap(~ scenario) +
     scale_fill_viridis(name = "Mean dept utility", limits = c(0, 1),
                        na.value = "grey50", option = "viridis") +
+    scale_x_discrete(labels = x_labels) +  # Added
+    scale_y_discrete(labels = y_labels) +  # Added
     labs(title = "Hiring Distribution by Department and Candidate Tier",
          subtitle = "Cell values show hire counts and mean department utility",
          x = "Candidate Quality Tier",
          y = "Department Prestige Tier") +
     theme_jasa() +
-    theme(legend.position = "right")
+    theme(legend.position = "right",
+          axis.text.x = element_text(size = 9),   # Added for readability
+          axis.text.y = element_text(size = 9))   # Added for readability
 }
 (p_hire_heatmap <- make_fig_dept_hiring_heatmap(all_sim_results, year_filter = c(1, 10)))
 ggsave("fig_hire_heatmap.pdf", p_hire_heatmap, width = 10, height = 5)
