@@ -3030,9 +3030,24 @@ make_hiring_heatmap <- function(sim_results, year_filter = c(1, 10)) {
 # =============================================================================
 # 3. FIGURE: YIELD AND UTILITY BY DEPARTMENT TIER
 # =============================================================================
-make_dept_metrics_by_tier <- function(sim_results, year_filter = c(5, 10)) {
-  results <- sim_results$results %>%
+make_dept_metrics_by_tier <- function(sim_results, year_filter = c(1, 10)) {
+  
+  results <- rbind(sim_results$results, all_sim_results$`baseline`$results)
+  
+  results <- results %>%
     filter(year >= year_filter[1], year <= year_filter[2])
+  
+  
+  results$strategy <- ifelse(results$participates == TRUE, "Questionnaire", "Baseline")
+  
+  strategy_labels <- c(
+    "Questionnaire" = "Questionnaire",
+    "Baseline" = "No Questionnaire (baseline)"
+  )
+  okabe_ito <- c(
+    "Questionnaire" = "#0072B2",   # blue
+    "No Questionnaire (baseline)" = "#D55E00"   # vermillion
+  )
   
   dept_tiers <- sim_results$departments %>%
     dplyr::select(dept_id, prestige_tier)
@@ -3054,9 +3069,8 @@ make_dept_metrics_by_tier <- function(sim_results, year_filter = c(5, 10)) {
     mutate(
       prestige_tier = factor(prestige_tier, 
                              levels = c("Tier 1","Tier 2","Tier 3","Tier 4")),
-      strategy = factor(strategy, levels = c("pairwise", "no_signal"),
-                        labels = strategy_labels)
-    )
+      strategy = factor(strategy, levels = c("Questionnaire", "Baseline"),
+                        labels = strategy_labels))
   
   # Yield plot
   p_yield <- ggplot(metrics, aes(x = prestige_tier, y = yield, 
@@ -3092,10 +3106,26 @@ make_dept_metrics_by_tier <- function(sim_results, year_filter = c(5, 10)) {
 # =============================================================================
 # 4. FIGURE: QUALITY-FIT TRADEOFF IN HIRES
 # =============================================================================
-make_quality_fit_scatter <- function(sim_results, year_filter = c(5, 10)) {
+make_quality_fit_scatter <- function(sim_results, year_filter = c(1, 10)) {
   
-  results <- sim_results$results %>%
+  results <- rbind(sim_results$results, all_sim_results$`baseline`$results)
+
+  results <- results %>%
     filter(year >= year_filter[1], year <= year_filter[2], accepted == 1)
+  
+  results$strategy <- ifelse(results$participates == TRUE, "Questionnaire", "Baseline")
+  
+  strategy_labels <- c(
+    "Questionnaire" = "Questionnaire",
+    "Baseline" = "No Questionnaire (baseline)"
+  )
+  okabe_ito <- c(
+    "Questionnaire" = "#0072B2",   # blue
+    "No Questionnaire (baseline)" = "#D55E00"   # vermillion
+  )
+  
+  
+
   
   dept_tiers <- sim_results$departments %>%
     dplyr::select(dept_id, prestige_tier)
@@ -3103,7 +3133,7 @@ make_quality_fit_scatter <- function(sim_results, year_filter = c(5, 10)) {
   plot_data <- results %>%
     left_join(dept_tiers, by = "dept_id") %>%
     mutate(
-      strategy = factor(strategy, levels = c("pairwise", "no_signal"),
+      strategy = factor(strategy, levels = c("Questionnaire", "Baseline"),
                         labels = strategy_labels),
       prestige_tier = factor(prestige_tier, 
                              levels = c("Tier 1","Tier 2","Tier 3","Tier 4"))
@@ -3124,11 +3154,17 @@ make_quality_fit_scatter <- function(sim_results, year_filter = c(5, 10)) {
 # =============================================================================
 # 5. CANDIDATE PERSPECTIVE: INTERVIEW PROBABILITIES
 # =============================================================================
-make_candidate_interview_prob <- function(sim_results, year_filter = c(5, 10)) {
+make_candidate_interview_prob <- function(sim_results, year_filter = c(1, 10)) {
   
-  apps <- sim_results$diagnostics$applicant_level %>%
+  apps <- rbind(sim_results$diagnostics$applicant_level,
+                   all_sim_results$`baseline`$diagnostics$applicant_level)
+  
+  apps <- apps %>%
     filter(year >= year_filter[1], year <= year_filter[2],
            !is.na(strategy), considered == 1)
+  
+  # cand_roster <- rbind(sim_results$cand_roster,
+  #       all_sim_results$`baseline`$cand_roster)
   
   cand_roster <- sim_results$cand_roster %>%
     filter(year >= year_filter[1], year <= year_filter[2])
@@ -3137,13 +3173,25 @@ make_candidate_interview_prob <- function(sim_results, year_filter = c(5, 10)) {
     left_join(cand_roster %>% dplyr::select(year, cand_id, quality_tier), 
               by = c("year", "cand_id"))
   
+  
+  apps$strategy <- ifelse(apps$participates == TRUE, "Questionnaire", "Baseline")
+  
+  strategy_labels <- c(
+    "Questionnaire" = "Questionnaire",
+    "Baseline" = "No Questionnaire (baseline)"
+  )
+  okabe_ito <- c(
+    "Questionnaire" = "#0072B2",   # blue
+    "No Questionnaire (baseline)" = "#D55E00"   # vermillion
+  )
+  
   # Bin alignment
   breaks_f <- seq(0, 1, by = 0.05)
   
   interview_prob <- apps %>%
     mutate(
       f_bin = cut(f_j, breaks = breaks_f, include.lowest = TRUE),
-      strategy = factor(strategy, levels = c("pairwise", "no_signal"),
+      strategy = factor(strategy, levels = c("Questionnaire", "Baseline"),
                         labels = strategy_labels)
     ) %>%
     group_by(strategy, f_bin) %>%
@@ -3180,9 +3228,25 @@ make_candidate_interview_prob <- function(sim_results, year_filter = c(5, 10)) {
 # =============================================================================
 # 5.1. CANDIDATE PERSPECTIVE: INTERVIEW PROBABILITIES, STRATIFIED
 # =============================================================================
-make_candidate_interview_prob_stratified <- function(sim_results, year_filter = c(5, 10)) {
+make_candidate_interview_prob_stratified <- function(sim_results, year_filter = c(1, 10)) {
+  
+  apps <- rbind(sim_results$diagnostics$applicant_level,
+                all_sim_results$`baseline`$diagnostics$applicant_level)
+  
+
+  apps$strategy <- ifelse(apps$participates == TRUE, "Questionnaire", "Baseline")
+  
+  strategy_labels <- c(
+    "Questionnaire" = "Questionnaire",
+    "Baseline" = "No Questionnaire (baseline)"
+  )
+  okabe_ito <- c(
+    "Questionnaire" = "#0072B2",   # blue
+    "No Questionnaire (baseline)" = "#D55E00"   # vermillion
+  )
+  
   # Get applications data
-  apps <- sim_results$diagnostics$applicant_level %>%
+  apps <- apps %>%
     filter(year >= year_filter[1], year <= year_filter[2],
            !is.na(strategy), considered == 1)
   
@@ -3205,7 +3269,7 @@ make_candidate_interview_prob_stratified <- function(sim_results, year_filter = 
   interview_prob <- apps %>%
     mutate(
       f_bin = cut(f_j, breaks = breaks_f, include.lowest = TRUE),
-      strategy = factor(strategy, levels = c("pairwise", "no_signal"),
+      strategy = factor(strategy, levels = c("Questionnaire", "Baseline"),
                         labels = c("Questionnaire", "No Questionnaire (baseline)")),
       quality_tier = factor(quality_tier, levels = c("Tier 1", "Tier 2", "Tier 3", "Tier 4")),
       prestige_tier = factor(prestige_tier, levels = c("Tier 1", "Tier 2", "Tier 3", "Tier 4"))
@@ -3261,8 +3325,24 @@ make_candidate_interview_prob_stratified <- function(sim_results, year_filter = 
 # =============================================================================
 # 6. CANDIDATE PERSPECTIVE: BY QUALITY TIER
 # =============================================================================
-make_candidate_metrics_by_tier <- function(sim_results, year_filter = c(5, 10)) {
-  apps <- sim_results$diagnostics$applicant_level %>%
+make_candidate_metrics_by_tier <- function(sim_results, year_filter = c(1, 10)) {
+  
+  apps <- rbind(sim_results$diagnostics$applicant_level,
+                all_sim_results$`baseline`$diagnostics$applicant_level)
+  
+  
+  apps$strategy <- ifelse(apps$participates == TRUE, "Questionnaire", "Baseline")
+  
+  strategy_labels <- c(
+    "Questionnaire" = "Questionnaire",
+    "Baseline" = "No Questionnaire (baseline)"
+  )
+  okabe_ito <- c(
+    "Questionnaire" = "#0072B2",   # blue
+    "No Questionnaire (baseline)" = "#D55E00"   # vermillion
+  )
+  
+  apps <- apps %>%
     filter(year >= year_filter[1], year <= year_filter[2],
            !is.na(strategy), considered == 1)
   
@@ -3292,7 +3372,7 @@ make_candidate_metrics_by_tier <- function(sim_results, year_filter = c(5, 10)) 
     mutate(
       quality_tier = factor(quality_tier, 
                             levels = c("Tier 1","Tier 2","Tier 3","Tier 4")),
-      strategy = factor(strategy, levels = c("pairwise", "no_signal"),
+      strategy = factor(strategy, levels = c("Questionnaire", "Baseline"),
                         labels = strategy_labels)
     )
   
@@ -3326,9 +3406,27 @@ make_candidate_metrics_by_tier <- function(sim_results, year_filter = c(5, 10)) 
 # =============================================================================
 # 7. TABLE: SUMMARY STATISTICS
 # =============================================================================
-make_summary_table <- function(sim_results, year_filter = c(5, 10)) {
-  results <- sim_results$results %>%
+make_summary_table <- function(sim_results, year_filter = c(1, 10)) {
+  
+  results <- rbind(sim_results$results,
+                all_sim_results$`baseline`$results)
+  
+  results <- results %>%
     filter(year >= year_filter[1], year <= year_filter[2])
+  
+  results$strategy <- ifelse(results$participates == TRUE, "Questionnaire", "Baseline")
+  
+  strategy_labels <- c(
+    "Questionnaire" = "Questionnaire",
+    "Baseline" = "No Questionnaire (baseline)"
+  )
+  okabe_ito <- c(
+    "Questionnaire" = "#0072B2",   # blue
+    "No Questionnaire (baseline)" = "#D55E00"   # vermillion
+  )
+  
+  
+
   
   overall <- results %>%
     group_by(strategy) %>%
@@ -3352,7 +3450,7 @@ make_summary_table <- function(sim_results, year_filter = c(5, 10)) {
 # =============================================================================
 # RESULTS SUMMARY GENERATOR
 # =============================================================================
-generate_all_results <- function(sim_results, year_filter = c(5, 10), 
+generate_all_results <- function(sim_results, year_filter = c(1, 10), 
                                  output_dir = "simulation_results") {
   # Create output directory
   dir.create(output_dir, showWarnings = FALSE, recursive = TRUE)
@@ -3385,13 +3483,13 @@ generate_all_results <- function(sim_results, year_filter = c(5, 10),
   print(summary_table)
   
   # 2. Hiring heatmap
-  cat("\n  2. Creating hiring heatmaps...\n")
-  p_heatmap <- make_hiring_heatmap(sim_results, year_filter)
-  ggsave(file.path(output_dir, "fig_hiring_heatmap.pdf"), 
-         p_heatmap, width = 12, height = 6)
-  ggsave(file.path(output_dir, "fig_hiring_heatmap.png"), 
-         p_heatmap, width = 12, height = 6, dpi = 300)
-  print(p_heatmap)
+  # cat("\n  2. Creating hiring heatmaps...\n")
+  # p_heatmap <- make_hiring_heatmap(sim_results, year_filter)
+  # ggsave(file.path(output_dir, "fig_hiring_heatmap.pdf"), 
+  #        p_heatmap, width = 12, height = 6)
+  # ggsave(file.path(output_dir, "fig_hiring_heatmap.png"), 
+  #        p_heatmap, width = 12, height = 6, dpi = 300)
+  # print(p_heatmap)
   
   # 3. Department metrics by tier
   cat("\n  3. Creating department metrics plots...\n")
