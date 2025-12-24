@@ -276,18 +276,40 @@ generate_departments_from_combined <- function(combined_df, questions,
     }
   }
   
-  # Weight vectors for alignment calculation
+  # =============================================================================
+  # REVISED: Weight vectors for alignment calculation
+  # Creates wider distribution of f_j scores with more realistic heterogeneity
+  # =============================================================================
   num_q <- length(questions$numerical)
   cat_q <- length(questions$categorical)
   n_total_q <- num_q + cat_q
-  alpha0 <- rep(1, n_total_q)
-  num_idx <- seq_len(num_q)
-  alpha_bump <- 2 * s_scaled
-  Alpha <- matrix(alpha0, nrow = nrow(departments), ncol = n_total_q, byrow = TRUE)
-  Alpha[, num_idx] <- Alpha[, num_idx, drop=FALSE] + alpha_bump
-  W <- matrix(rgamma(nrow(departments) * n_total_q, shape = Alpha, rate = 1), nrow = nrow(departments))
-  W <- W / rowSums(W)
+  
+  # NEW APPROACH: Create more diverse weight vectors
+  # Use a mixture of concentrated and dispersed distributions
+  W <- matrix(NA_real_, nrow = nrow(departments), ncol = n_total_q)
+  
+  for (j in 1:nrow(departments)) {
+    # Randomly choose concentration parameter
+    # Lower concentration = more dispersed weights = wider f_j distribution
+    concentration <- sample(c(0.3, 0.5, 1.0, 2.0, 4.0), 1, 
+                            prob = c(0.15, 0.25, 0.30, 0.20, 0.10))
+    
+    # Base alpha values
+    alpha_j <- rep(concentration, n_total_q)
+    
+    # Add some departments with strong preferences (high alpha on 1-2 questions)
+    if (runif(1) < 0.3) {  # 30% of departments have strong preferences
+      focus_questions <- sample(1:n_total_q, size = sample(1:2, 1))
+      alpha_j[focus_questions] <- alpha_j[focus_questions] * runif(length(focus_questions), 3, 8)
+    }
+    
+    # Generate weights from Dirichlet
+    w_j <- rgamma(n_total_q, shape = alpha_j, rate = 1)
+    W[j, ] <- w_j / sum(w_j)
+  }
+  
   departments$weight_vector <- split(W, row(W))
+  # =============================================================================
   
   departments$s_j_raw <- samp$s_raw
   
@@ -1628,14 +1650,14 @@ for (rate in participation_scenarios) {
     combined_df,
     n_departments = 20,
     n_candidates = 200,
-    sim_years = 20,
+    sim_years = 15,
     participation_rate = rate,
     yearly_candidate_cohorts = yearly_cohorts,  # REUSE SAME COHORTS
     seed = 123,
     n_numerical = 5,
     n_categorical = 5,
     alpha = 0.05,
-    L_repeats = 20,
+    L_repeats = 10,
     noise_method = "bootstrap",
     noise_scale = 0.15,
     prestige_rescale = "minmax",
