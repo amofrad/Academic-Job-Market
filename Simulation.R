@@ -2509,6 +2509,29 @@ run_job_market_sim_adaptive <- function(departments,
     res_all[[year]] <- out$results
     rank_all[[year]] <- out$rank_panel
     
+    # ==========================================================================
+    # PENALTY DIAGNOSTICS
+    # ==========================================================================
+    if (print_diagnostics && year == 1) {
+      penalty_summary <- out$diagnostics$applicant_level %>%
+        filter(!is.na(uses_questionnaire)) %>%
+        group_by(participates) %>%
+        summarise(
+          n = n(),
+          n_penalized = sum(penalized, na.rm = TRUE),
+          penalty_rate = mean(penalized, na.rm = TRUE),
+          mean_f_used = mean(f_j_used, na.rm = TRUE),
+          mean_f_actual = mean(f_j, na.rm = TRUE),
+          .groups = "drop"
+        )
+      
+      cat("\n")
+      cat(strrep("=", 70), "\n")
+      cat(sprintf("  PENALTY RATES (Year %d, ρ = %.0f%%)\n", year, participation_rate * 100))
+      cat(strrep("=", 70), "\n")
+      print(penalty_summary)
+      cat(strrep("=", 70), "\n\n")
+    }
     
     # ==========================================================================
     # CUMULATIVE DIAGNOSTICS
@@ -2746,7 +2769,7 @@ baseline_sim <- run_job_market_sim_adaptive(
   yearly_hiring_schedule = yearly_hiring_schedule,  # PASS THE SCHEDULE
   seed = 101,
   alpha = 0.05,
-  L_repeats = 10,
+  L_repeats = 20,
   noise_method = "bootstrap",
   noise_scale = 0.15,
   cand_tier_cutpoints = c(0.10, 0.25, 0.50)
@@ -2776,7 +2799,7 @@ for (rate in c(0.05, 0.20, 0.50, 0.90, 1.00)) {
     yearly_hiring_schedule = yearly_hiring_schedule,  # SAME SCHEDULE FOR ALL
     seed = 101,
     alpha = 0.05,
-    L_repeats = 10,
+    L_repeats = 20,
     noise_method = "bootstrap",
     noise_scale = 0.15,
     cand_tier_cutpoints = c(0.10, 0.25, 0.50)
@@ -4571,7 +4594,7 @@ make_fig_department_welfare_by_tier_normalized <- function(all_sim_results, year
     ) +
     labs(
       x = "Market Participation Rate (%)",
-      y = "Department Welfare per Department",
+      y = "Mean Welfare per Department",
       linetype = "Department Tier",
       shape = "Department Tier"
     ) +
@@ -4587,7 +4610,43 @@ make_fig_department_welfare_by_tier_normalized <- function(all_sim_results, year
       plot.margin = margin(10, 10, 10, 10)
     )
   
-  # Plot 2: Welfare gains per department (relative to baseline)
+  # Plot 2: Welfare per slot/position
+  p2 <- ggplot(welfare_by_tier, aes(x = participation_rate * 100,
+                                    y = mean_utility_per_slot,
+                                    linetype = prestige_tier,
+                                    shape = prestige_tier,
+                                    group = prestige_tier)) +
+    geom_line(linewidth = 1.2, color = "black") +
+    geom_point(size = 3, color = "black") +
+    scale_linetype_manual(values = c("solid", "dashed", "dotted", "dotdash")) +
+    scale_shape_manual(values = c(16, 17, 15, 18)) +
+    scale_x_continuous(
+      breaks = c(0, 5, 20, 50, 90, 100),
+      labels = c("0", "5", "20", "50", "90", "100")
+    ) +
+    scale_y_continuous(
+      limits = c(0, NA),
+      expand = expansion(mult = c(0, 0.05))
+    ) +
+    labs(
+      x = "Market Participation Rate (%)",
+      y = "Mean Welfare per Position",
+      linetype = "Department Tier",
+      shape = "Department Tier"
+    ) +
+    theme_minimal(base_size = 14) +
+    theme(
+      panel.grid.minor = element_blank(),
+      panel.grid.major = element_line(color = "gray90", linewidth = 0.5),
+      axis.title = element_text(size = 14, face = "bold"),
+      axis.text = element_text(size = 12),
+      legend.position = "bottom",
+      legend.title = element_text(size = 12, face = "bold"),
+      legend.text = element_text(size = 11),
+      plot.margin = margin(10, 10, 10, 10)
+    )
+  
+  # Plot 3: Welfare gains per department (relative to baseline)
   welfare_gains <- welfare_by_tier %>%
     group_by(prestige_tier) %>%
     mutate(
@@ -4597,7 +4656,7 @@ make_fig_department_welfare_by_tier_normalized <- function(all_sim_results, year
     ungroup() %>%
     filter(participation_rate > 0)
   
-  p2 <- ggplot(welfare_gains, aes(x = participation_rate * 100,
+  p3 <- ggplot(welfare_gains, aes(x = participation_rate * 100,
                                   y = welfare_gain_per_dept,
                                   linetype = prestige_tier,
                                   shape = prestige_tier,
@@ -4632,15 +4691,22 @@ make_fig_department_welfare_by_tier_normalized <- function(all_sim_results, year
       plot.margin = margin(10, 10, 10, 10)
     )
   
-  # Combine plots
-  combined_plot <- p1 + p2 +
+  # Combine plots (2 columns)
+  combined_plot_2 <- p1 + p2 +
     patchwork::plot_layout(ncol = 2, guides = "collect") &
     theme(legend.position = "bottom")
   
+  # Combine plots (3 panels)
+  combined_plot_3 <- p1 + p2 + p3 +
+    patchwork::plot_layout(ncol = 3, guides = "collect") &
+    theme(legend.position = "bottom")
+  
   list(
-    plot = combined_plot,
+    plot = combined_plot_2,  # Default: 2 panels
+    plot_3panel = combined_plot_3,  # 3 panels
     plot_total_welfare = p1,
-    plot_gains = p2,
+    plot_welfare_per_slot = p2,
+    plot_gains = p3,
     tests = tier_tests,
     tier_summaries = tier_summaries,
     gain_correlation = gain_corr,
@@ -4652,12 +4718,15 @@ make_fig_department_welfare_by_tier_normalized <- function(all_sim_results, year
 
 dept_welfare_results <- make_fig_department_welfare_by_tier_normalized(all_sim_results, year_filter = c(1, 10))
 
-dept_welfare_results$plot_total_welfare
+
+dept_welfare_results$plot_total_welfare     # Welfare per department
+dept_welfare_results$plot_welfare_per_slot
+
 # Save with appropriate dimensions for two-column layout
 ggsave("fig_department_welfare.pdf",
-       dept_welfare_results$plot_total_welfare,
-       width = 12,
-       height = 6,
+       dept_welfare_results$plot_welfare_per_slot,
+       width = 6,
+       height = 4,
        device = cairo_pdf)
 
 
