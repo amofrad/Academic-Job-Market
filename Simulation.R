@@ -206,7 +206,7 @@ calculate_f_j <- function(candidate_row, department_row, questions) {
   
   S_ij <- if (w_sum > 0) S_num / w_sum else 0
   
-  gamma <- 2.0
+  gamma <- 0.1 #2.0
   f <- (exp(gamma * S_ij) - 1) / (exp(gamma) - 1)
   
   eps <- 1e-6
@@ -295,7 +295,7 @@ calculate_candidate_f_j <- function(candidate_row, department_row, questions) {
   
   S_ij <- if (w_sum > 0) S_num / w_sum else 0
   
-  gamma <- 2.0
+  gamma <- 0.1#2.0
   f <- (exp(gamma * S_ij) - 1) / (exp(gamma) - 1)
   
   eps <- 1e-6
@@ -306,7 +306,13 @@ calculate_candidate_f_j <- function(candidate_row, department_row, questions) {
 # CANDIDATE GENERATION
 # =============================================================================
 
-# generate_candidates_new <- function(n_candidates, questions, seed = NULL) {
+# generate_candidates_new <- function(n_candidates, questions, seed = NULL,
+#                                     quality_correlation = 0.8) {
+#   # quality_correlation: controls how much preferences correlate with quality
+#   
+#   # 0 = completely random preferences, 1 = strong correlation (original)
+#   # Default 0.25 = mild correlation, mostly idiosyncratic
+#   
 #   if (!is.null(seed)) set.seed(seed)
 #   
 #   candidates <- tibble(
@@ -317,97 +323,316 @@ calculate_candidate_f_j <- function(candidate_row, department_row, questions) {
 #   ) %>%
 #     mutate(v_i_bar = (v_i1 * v_i2 * v_i3)^(1/3))
 #   
-#   # Generate numerical question responses
-#   for (q in questions$numerical) {
-#     if (q == "q4_cost_of_living") {
-#       candidates[[paste0("q_", q)]] <- runif(n_candidates, 60000, 140000)
-#     } else if (q == "q6_typical_salary_range") {
-#       candidates[[paste0("q_", q)]] <- 80000 + candidates$v_i_bar * 120000 + 
-#         rnorm(n_candidates, 0, 10000)
-#     } else if (q == "q14_phd_student_ratio") {
-#       candidates[[paste0("q_", q)]] <- runif(n_candidates, 0.5, 5.0)
-#     } else {
-#       candidates[[paste0("q_", q)]] <- runif(n_candidates)
-#     }
+#   # Create quality percentile for preference correlation
+#   candidates <- candidates %>%
+#     mutate(quality_pctl = percent_rank(v_i_bar))
+#   
+#   n <- n_candidates
+#   v_pctl <- candidates$quality_pctl
+#   qc <- quality_correlation  # Shorthand for scaling
+#   
+#   # ==========================================================================
+#   # NUMERICAL QUESTIONS - Reduced quality correlation, more noise
+#   # ==========================================================================
+#   
+#   # q4_cost_of_living: Mild correlation - some high-quality candidates prefer
+#   # low cost areas, some low-quality candidates are fine with high cost
+#   candidates$q_q4_cost_of_living <- 60000 + 
+#     qc * v_pctl * 40000 +           # Reduced quality effect (was 50000)
+#     (1 - qc) * runif(n, 0, 60000) + # Random component
+#     rnorm(n, 0, 20000)              # Increased noise
+#   candidates$q_q4_cost_of_living <- pmax(60000, pmin(140000, candidates$q_q4_cost_of_living))
+#   
+#   # q6_typical_salary_range: Some correlation but high variance
+#   # Even low-quality candidates may have high salary expectations (dual career, location, etc.)
+#   candidates$q_q6_typical_salary_range <- 80000 + 
+#     qc * v_pctl * 60000 +           # Reduced from 80000
+#     (1 - qc) * runif(n, 0, 80000) + # Random component
+#     rnorm(n, 0, 25000)              # More noise
+#   candidates$q_q6_typical_salary_range <- pmax(80000, pmin(200000, candidates$q_q6_typical_salary_range))
+#   
+#   # q14_phd_student_ratio: Weak correlation - research interest varies independently
+#   candidates$q_q14_phd_student_ratio <- 0.5 + 
+#     qc * v_pctl * 2.0 +             # Reduced from 3.0
+#     (1 - qc) * runif(n, 0, 3.5) +   # Random component
+#     rnorm(n, 0, 1.0)                # More noise
+#   candidates$q_q14_phd_student_ratio <- pmax(0.5, pmin(5.0, candidates$q_q14_phd_student_ratio))
+#   
+#   # ==========================================================================
+#   # CATEGORICAL QUESTIONS - Much more idiosyncratic
+#   # ==========================================================================
+#   
+#   # Helper function: blend quality-based probs with uniform
+#   blend_probs <- function(quality_probs, n_levels, qc) {
+#     uniform <- rep(1/n_levels, n_levels)
+#     blended <- qc * quality_probs + (1 - qc) * uniform
+#     blended <- pmax(blended, 0.05)
+#     blended / sum(blended)
 #   }
 #   
-#   # Generate categorical question responses
-#   for (q_name in names(questions$categorical)) {
-#     levels <- questions$categorical[[q_name]]
-#     if (is.null(levels) || !length(levels)) levels <- "unknown"
+#   # q1_geographic_setting: A=Urban, B=Suburban, C=Small city, D=Rural
+#   # Personal preference largely independent of quality
+#   candidates$q_q1_geographic_setting <- sapply(v_pctl, function(p) {
+#     # Quality-based component (high quality slightly prefer urban)
+#     q_probs <- c(0.25 + 0.25*p, 0.25 + 0.10*p, 0.25 - 0.15*p, 0.25 - 0.20*p)
+#     probs <- blend_probs(q_probs, 4, qc)
+#     sample(c("A", "B", "C", "D"), 1, prob = probs)
+#   })
+#   
+#   # q2_region: Geographic preference is highly personal (family, partner, lifestyle)
+#   # Minimal quality correlation
+#   candidates$q_q2_region <- sapply(v_pctl, function(p) {
+#     # Number of regions: mostly random, slight quality effect on selectivity
+#     base_selectivity <- sample(1:4, 1, prob = c(0.15, 0.35, 0.35, 0.15))
+#     n_reg <- max(1, min(5, base_selectivity - round(qc * p)))
 #     
-#     if (q_name == "q2_region") {
-#       # Candidates can select 1-3 regions
-#       n_regions <- sample(1:3, n_candidates, replace = TRUE)
-#       candidates[[paste0("q_", q_name)]] <- map_chr(n_regions, ~{
-#         selected <- sample(levels, size = .x, replace = FALSE)
-#         paste(selected, collapse = ",")
-#       })
-#     } else {
-#       # Single selection - ensure character type
-#       candidates[[paste0("q_", q_name)]] <- sample(as.character(levels), n_candidates, replace = TRUE)
+#     # Region probabilities: mostly uniform with slight quality tilt
+#     q_probs <- c(
+#       "Northeast" = 0.20 + 0.15*p,
+#       "West Coast" = 0.20 + 0.10*p,
+#       "Midwest" = 0.20,
+#       "Southeast" = 0.20 - 0.10*p,
+#       "Southwest" = 0.20 - 0.05*p
+#     )
+#     probs <- blend_probs(q_probs, 5, qc)
+#     
+#     selected <- sample(names(probs), n_reg, prob = probs, replace = FALSE)
+#     paste(selected, collapse = ",")
+#   })
+#   
+#   # q3_airport_proximity: Personal preference, weak quality correlation
+#   candidates$q_q3_airport_proximity <- sapply(v_pctl, function(p) {
+#     q_probs <- c(0.25 + 0.20*p, 0.25 + 0.05*p, 0.25 - 0.10*p, 0.25 - 0.15*p)
+#     probs <- blend_probs(q_probs, 4, qc)
+#     sample(c("A", "B", "C", "D"), 1, prob = probs)
+#   })
+#   
+#   # q5_dual_career: Completely random (life circumstances)
+#   candidates$q_q5_dual_career <- sample(c("Y", "N"), n, replace = TRUE, prob = c(0.4, 0.6))
+#   
+#   # q7_typical_startup: A=Lowest, E=Highest
+#   # Some correlation (research-focused candidates want more) but high variance
+#   candidates$q_q7_typical_startup <- sapply(v_pctl, function(p) {
+#     q_probs <- c(0.20 - 0.10*p, 0.20 - 0.05*p, 0.20, 0.20 + 0.05*p, 0.20 + 0.10*p)
+#     probs <- blend_probs(q_probs, 5, qc)
+#     sample(c("A", "B", "C", "D", "E"), 1, prob = probs)
+#   })
+#   
+#   # q8_guaranteed_summer: A=Full, D=None
+#   # Everyone wants summer support, weak quality correlation
+#   candidates$q_q8_guaranteed_summer <- sapply(v_pctl, function(p) {
+#     q_probs <- c(0.35 + 0.15*p, 0.30, 0.20 - 0.05*p, 0.15 - 0.10*p)
+#     probs <- blend_probs(q_probs, 4, qc)
+#     sample(c("A", "B", "C", "D"), 1, prob = probs)
+#   })
+#   
+#   # q9_typical_teaching_load: A=Light (1-1), D=Heavy (3-3)
+#   # Moderate correlation - research-focused want lighter loads
+#   candidates$q_q9_typical_teaching_load <- sapply(v_pctl, function(p) {
+#     q_probs <- c(0.25 + 0.25*p, 0.25 + 0.10*p, 0.25 - 0.15*p, 0.25 - 0.20*p)
+#     probs <- blend_probs(q_probs, 4, qc)
+#     sample(c("A", "B", "C", "D"), 1, prob = probs)
+#   })
+#   
+#   # q10_course_types: A=Mostly grad, D=Mostly undergrad
+#   # Weak correlation - some excellent teachers prefer undergrad
+#   candidates$q_q10_course_types <- sapply(v_pctl, function(p) {
+#     q_probs <- c(0.25 + 0.15*p, 0.25 + 0.05*p, 0.25 - 0.05*p, 0.25 - 0.15*p)
+#     probs <- blend_probs(q_probs, 4, qc)
+#     sample(c("A", "B", "C", "D"), 1, prob = probs)
+#   })
+#   
+#   # q11_mentoring_program: A=Formal, D=None
+#   # Essentially random - personal preference
+#   candidates$q_q11_mentoring_program <- sapply(v_pctl, function(p) {
+#     probs <- c(0.25, 0.30, 0.25, 0.20)  # No quality correlation
+#     sample(c("A", "B", "C", "D"), 1, prob = probs)
+#   })
+#   
+#   # q12_research_culture: A=Independent, E=Highly collaborative
+#   # Weak correlation - collaboration preference is personal style
+#   candidates$q_q12_research_culture <- sapply(v_pctl, function(p) {
+#     q_probs <- c(0.20 - 0.05*p, 0.20, 0.20, 0.20, 0.20 + 0.05*p)
+#     probs <- blend_probs(q_probs, 5, qc)
+#     sample(c("A", "B", "C", "D", "E"), 1, prob = probs)
+#   })
+#   
+#   # q13_publication_venues: A=Teaching focused, E=Top journals only
+#   # Moderate correlation but still variable
+#   candidates$q_q13_publication_venues <- sapply(v_pctl, function(p) {
+#     q_probs <- c(0.20 - 0.10*p, 0.20 - 0.05*p, 0.20, 0.20 + 0.05*p, 0.20 + 0.10*p)
+#     probs <- blend_probs(q_probs, 5, qc)
+#     sample(c("A", "B", "C", "D", "E"), 1, prob = probs)
+#   })
+#   
+#   # q15_medical_school_proximity: 0=No, 1=Yes
+#   # Field-specific, mostly random
+#   candidates$q_q15_medical_school_proximity <- sapply(v_pctl, function(p) {
+#     q_probs <- c(0.55 - 0.10*p, 0.45 + 0.10*p)
+#     probs <- blend_probs(q_probs, 2, qc)
+#     sample(c("0", "1"), 1, prob = probs)
+#   })
+#   
+#   # ==========================================================================
+#   # GENERATE CANDIDATE-SPECIFIC WEIGHT VECTORS
+#   # ==========================================================================
+#   # Candidates weight questions differently than departments when evaluating fit
+#   # This affects how candidates choose among multiple offers
+#   # These weights are MORE IDIOSYNCRATIC - not strongly tied to quality
+#   
+#   num_q <- length(questions$numerical)
+#   cat_q <- length(questions$categorical)
+#   n_total_q <- num_q + cat_q
+#   q_names <- c(questions$numerical, names(questions$categorical))
+#   
+#   weight_list <- vector("list", n_candidates)
+#   
+#   for (i in 1:n_candidates) {
+#     p <- v_pctl[i]  # Quality percentile for this candidate
+#     
+#     # Start with random base weights (more variance)
+#     base_weights <- runif(n_total_q, 0.5, 2.0)
+#     
+#     for (j in seq_along(q_names)) {
+#       q <- q_names[j]
+#       
+#       # ----- COMPENSATION: Everyone cares, individual variation -----
+#       if (q == "q6_typical_salary_range") {
+#         # Random importance with slight inverse quality correlation
+#         base_weights[j] <- runif(1, 1.5, 3.5) + (1 - p) * qc * runif(1, 0, 1.0)
+#       }
+#       if (q == "q7_typical_startup") {
+#         # Random with slight quality correlation
+#         base_weights[j] <- runif(1, 0.8, 2.5) + p * qc * runif(1, 0, 1.5)
+#       }
+#       if (q == "q8_guaranteed_summer") {
+#         # Universally important with variance
+#         base_weights[j] <- runif(1, 1.5, 3.0)
+#       }
+#       
+#       # ----- LOCATION: Highly personal, quality-independent -----
+#       if (q == "q1_geographic_setting") {
+#         base_weights[j] <- runif(1, 1.0, 3.0)  # High variance
+#       }
+#       if (q == "q2_region") {
+#         # Region is very important for many (family, partner)
+#         base_weights[j] <- runif(1, 2.0, 4.5)  # High and variable
+#       }
+#       if (q == "q4_cost_of_living") {
+#         # Important for everyone, individual circumstances vary
+#         base_weights[j] <- runif(1, 1.0, 3.0)
+#       }
+#       if (q == "q3_airport_proximity") {
+#         base_weights[j] <- runif(1, 0.5, 2.0)
+#       }
+#       
+#       # ----- RESEARCH ENVIRONMENT: Quality correlation reduced -----
+#       if (q == "q12_research_culture") {
+#         base_weights[j] <- runif(1, 0.8, 2.5) + p * qc * runif(1, 0, 1.0)
+#       }
+#       if (q == "q13_publication_venues") {
+#         base_weights[j] <- runif(1, 0.5, 2.0) + p * qc * runif(1, 0, 1.0)
+#       }
+#       if (q == "q14_phd_student_ratio") {
+#         base_weights[j] <- runif(1, 0.5, 2.0)
+#       }
+#       
+#       # ----- TEACHING: Individual preference -----
+#       if (q == "q9_typical_teaching_load") {
+#         base_weights[j] <- runif(1, 1.5, 3.5)  # Everyone cares
+#       }
+#       if (q == "q10_course_types") {
+#         base_weights[j] <- runif(1, 0.5, 2.0)
+#       }
+#       
+#       # ----- OTHER: Situational importance -----
+#       if (q == "q5_dual_career") {
+#         # Bimodal: either critical or irrelevant
+#         base_weights[j] <- sample(c(runif(1, 0.2, 0.8), runif(1, 3.0, 5.0)), 
+#                                   1, prob = c(0.55, 0.45))
+#       }
+#       if (q == "q11_mentoring_program") {
+#         base_weights[j] <- runif(1, 0.3, 1.5)
+#       }
+#       if (q == "q15_medical_school_proximity") {
+#         # Bimodal: field-dependent
+#         base_weights[j] <- sample(c(runif(1, 0.1, 0.5), runif(1, 2.0, 3.5)), 
+#                                   1, prob = c(0.70, 0.30))
+#       }
 #     }
+#     
+#     # Normalize weights to sum to 1
+#     weight_list[[i]] <- base_weights / sum(base_weights)
 #   }
 #   
-#   candidates
+#   candidates$cand_weight_vector <- weight_list
+#   
+#   # Remove helper column and return
+#   candidates %>% dplyr::select(-quality_pctl)
 # }
+
 generate_candidates_new <- function(n_candidates, questions, seed = NULL,
-                                    quality_correlation = 0.8) {
-  # quality_correlation: controls how much preferences correlate with quality
-  
-  # 0 = completely random preferences, 1 = strong correlation (original)
-  # Default 0.25 = mild correlation, mostly idiosyncratic
+                                    quality_correlation = 0.7) {
   
   if (!is.null(seed)) set.seed(seed)
   
+  # candidates <- tibble(
+  #   cand_id = 1:n_candidates,
+  #   v_i1 = 0.6 * rbeta(n_candidates, 8, 3) + 0.4 * rbeta(n_candidates, 3, 5),
+  #   v_i2 = 0.6 * rbeta(n_candidates, 8, 3) + 0.4 * rbeta(n_candidates, 3, 5),
+  #   v_i3 = 0.6 * rbeta(n_candidates, 8, 3) + 0.4 * rbeta(n_candidates, 3, 5)
+  # ) %>%
+  #   mutate(v_i_bar = (v_i1 * v_i2 * v_i3)^(1/3))
+  
   candidates <- tibble(
     cand_id = 1:n_candidates,
-    v_i1 = 0.6 * rbeta(n_candidates, 8, 3) + 0.4 * rbeta(n_candidates, 3, 5),
-    v_i2 = 0.6 * rbeta(n_candidates, 8, 3) + 0.4 * rbeta(n_candidates, 3, 5),
-    v_i3 = 0.6 * rbeta(n_candidates, 8, 3) + 0.4 * rbeta(n_candidates, 3, 5)
+    v_i1 = 0.7 * rbeta(n_candidates, 2, 4) + 0.3 * rbeta(n_candidates, 4, 1),
+    v_i2 = 0.4 * rbeta(n_candidates, 2, 4) + 0.6 * rbeta(n_candidates, 4, 1),
+    v_i3 = 0.8 * rbeta(n_candidates, 2, 4) + 0.2 * rbeta(n_candidates, 4, 1)
   ) %>%
     mutate(v_i_bar = (v_i1 * v_i2 * v_i3)^(1/3))
   
-  # Create quality percentile for preference correlation
+  
   candidates <- candidates %>%
     mutate(quality_pctl = percent_rank(v_i_bar))
   
   n <- n_candidates
   v_pctl <- candidates$quality_pctl
-  qc <- quality_correlation  # Shorthand for scaling
+  qc <- quality_correlation
   
   # ==========================================================================
-  # NUMERICAL QUESTIONS - Reduced quality correlation, more noise
+  # NUMERICAL QUESTIONS - MATCH DEPARTMENT DISTRIBUTIONS EXACTLY
+  # ==========================================================================
+  # Department ranges:
+  # - Salary: [58k, 152k], mean=89k, strong tier gradient
+  # - COL: [65k, 138k], mean=84k, moderate tier effect
+  # - PhD ratio: [1.24, 3.79], mean=2.42, strong tier gradient
+  
+  # SALARY: Strong quality → salary expectation
+  # Tier 1 depts: mean=134k, Tier 4: mean=73k (61k range)
+  candidates$q_q6_typical_salary_range <- 58000 + 
+    90000 * v_pctl^1.5 +            # Creates 58k→148k range
+    rnorm(n, 0, 8000)               # ±8k noise
+  candidates$q_q6_typical_salary_range <- pmax(58000, pmin(152000, candidates$q_q6_typical_salary_range))
+  
+  # COST OF LIVING: Moderate correlation
+  # Higher quality candidates more willing to accept high COL (urban/prestigious areas)
+  candidates$q_q4_cost_of_living <- 65000 + 
+    65000 * v_pctl^1.2 +            # Creates 65k→130k range
+    rnorm(n, 0, 9000)               # ±9k noise
+  candidates$q_q4_cost_of_living <- pmax(65000, pmin(138000, candidates$q_q4_cost_of_living))
+  
+  # PHD RATIO: Strong correlation with research focus
+  # Tier 1 depts: mean=3.44, Tier 4: mean=1.94 (1.5 range)
+  candidates$q_q14_phd_student_ratio <- 1.24 + 
+    2.3 * v_pctl^1.6 +              # Creates 1.24→3.54 range
+    rnorm(n, 0, 0.35)               # ±0.35 noise
+  candidates$q_q14_phd_student_ratio <- pmax(1.24, pmin(3.79, candidates$q_q14_phd_student_ratio))
+  
+  # ==========================================================================
+  # CATEGORICAL QUESTIONS - MATCH TIER-STRATIFIED DISTRIBUTIONS
   # ==========================================================================
   
-  # q4_cost_of_living: Mild correlation - some high-quality candidates prefer
-  # low cost areas, some low-quality candidates are fine with high cost
-  candidates$q_q4_cost_of_living <- 60000 + 
-    qc * v_pctl * 40000 +           # Reduced quality effect (was 50000)
-    (1 - qc) * runif(n, 0, 60000) + # Random component
-    rnorm(n, 0, 20000)              # Increased noise
-  candidates$q_q4_cost_of_living <- pmax(60000, pmin(140000, candidates$q_q4_cost_of_living))
-  
-  # q6_typical_salary_range: Some correlation but high variance
-  # Even low-quality candidates may have high salary expectations (dual career, location, etc.)
-  candidates$q_q6_typical_salary_range <- 80000 + 
-    qc * v_pctl * 60000 +           # Reduced from 80000
-    (1 - qc) * runif(n, 0, 80000) + # Random component
-    rnorm(n, 0, 25000)              # More noise
-  candidates$q_q6_typical_salary_range <- pmax(80000, pmin(200000, candidates$q_q6_typical_salary_range))
-  
-  # q14_phd_student_ratio: Weak correlation - research interest varies independently
-  candidates$q_q14_phd_student_ratio <- 0.5 + 
-    qc * v_pctl * 2.0 +             # Reduced from 3.0
-    (1 - qc) * runif(n, 0, 3.5) +   # Random component
-    rnorm(n, 0, 1.0)                # More noise
-  candidates$q_q14_phd_student_ratio <- pmax(0.5, pmin(5.0, candidates$q_q14_phd_student_ratio))
-  
-  # ==========================================================================
-  # CATEGORICAL QUESTIONS - Much more idiosyncratic
-  # ==========================================================================
-  
-  # Helper function: blend quality-based probs with uniform
   blend_probs <- function(quality_probs, n_levels, qc) {
     uniform <- rep(1/n_levels, n_levels)
     blended <- qc * quality_probs + (1 - qc) * uniform
@@ -415,29 +640,32 @@ generate_candidates_new <- function(n_candidates, questions, seed = NULL,
     blended / sum(blended)
   }
   
-  # q1_geographic_setting: A=Urban, B=Suburban, C=Small city, D=Rural
-  # Personal preference largely independent of quality
+  # q1_geographic_setting: CRITICAL - Tier 1/2 are A/B, Tier 3/4 are C
+  # A: Urban, B: Suburban, C: Small city, D: Rural
   candidates$q_q1_geographic_setting <- sapply(v_pctl, function(p) {
-    # Quality-based component (high quality slightly prefer urban)
-    q_probs <- c(0.25 + 0.25*p, 0.25 + 0.10*p, 0.25 - 0.15*p, 0.25 - 0.20*p)
+    # Very strong quality gradient to match tier stratification
+    q_probs <- c(
+      0.15 + 0.50*p,    # A: top candidates want urban
+      0.20 + 0.20*p,    # B: top candidates ok with suburban
+      0.55 - 0.60*p,    # C: lower candidates prefer small city
+      0.10 - 0.10*p     # D: few want rural
+    )
     probs <- blend_probs(q_probs, 4, qc)
     sample(c("A", "B", "C", "D"), 1, prob = probs)
   })
   
-  # q2_region: Geographic preference is highly personal (family, partner, lifestyle)
-  # Minimal quality correlation
+  # q2_region: Relatively even distribution, slight Northeast/West Coast preference for top
   candidates$q_q2_region <- sapply(v_pctl, function(p) {
-    # Number of regions: mostly random, slight quality effect on selectivity
-    base_selectivity <- sample(1:4, 1, prob = c(0.15, 0.35, 0.35, 0.15))
-    n_reg <- max(1, min(5, base_selectivity - round(qc * p)))
+    # Higher quality candidates are MORE geographically selective (fewer regions)
+    n_reg <- sample(1:3, 1, prob = c(0.15 + 0.25*p, 0.50, 0.35 - 0.25*p))
     
-    # Region probabilities: mostly uniform with slight quality tilt
+    # Slight coastal bias for high quality
     q_probs <- c(
-      "Northeast" = 0.20 + 0.15*p,
-      "West Coast" = 0.20 + 0.10*p,
-      "Midwest" = 0.20,
-      "Southeast" = 0.20 - 0.10*p,
-      "Southwest" = 0.20 - 0.05*p
+      "Northeast" = 0.21 + 0.10*p,
+      "West Coast" = 0.19 + 0.08*p,
+      "Midwest" = 0.30 - 0.08*p,
+      "Southeast" = 0.19 - 0.05*p,
+      "Southwest" = 0.11 - 0.05*p
     )
     probs <- blend_probs(q_probs, 5, qc)
     
@@ -445,86 +673,120 @@ generate_candidates_new <- function(n_candidates, questions, seed = NULL,
     paste(selected, collapse = ",")
   })
   
-  # q3_airport_proximity: Personal preference, weak quality correlation
+  # q3_airport_proximity: Not in your summary, use reasonable distribution
   candidates$q_q3_airport_proximity <- sapply(v_pctl, function(p) {
-    q_probs <- c(0.25 + 0.20*p, 0.25 + 0.05*p, 0.25 - 0.10*p, 0.25 - 0.15*p)
+    q_probs <- c(0.35 + 0.25*p, 0.40 + 0.05*p, 0.20 - 0.25*p, 0.05 - 0.05*p)
     probs <- blend_probs(q_probs, 4, qc)
     sample(c("A", "B", "C", "D"), 1, prob = probs)
   })
   
-  # q5_dual_career: Completely random (life circumstances)
-  candidates$q_q5_dual_career <- sample(c("Y", "N"), n, replace = TRUE, prob = c(0.4, 0.6))
+  # q5_dual_career: Not in summary, life circumstances
+  candidates$q_q5_dual_career <- sample(c("Y", "N"), n, replace = TRUE, 
+                                        prob = c(0.30, 0.70))
   
-  # q7_typical_startup: A=Lowest, E=Highest
-  # Some correlation (research-focused candidates want more) but high variance
+  # q7_typical_startup: CRITICAL STRATIFICATION
+  # Tier 1: 90% E, Tier 2: 100% D, Tier 3: mix C/B, Tier 4: 98% B
   candidates$q_q7_typical_startup <- sapply(v_pctl, function(p) {
-    q_probs <- c(0.20 - 0.10*p, 0.20 - 0.05*p, 0.20, 0.20 + 0.05*p, 0.20 + 0.10*p)
+    # Very strong gradient
+    q_probs <- c(
+      0.02 + 0.00*p,    # A: nobody wants lowest
+      0.20 - 0.19*p,    # B: low quality ok with low startup
+      0.28 - 0.23*p,    # C: mid quality
+      0.10 + 0.05*p,    # D: upper-mid quality
+      0.40 + 0.37*p     # E: top quality wants highest
+    )
     probs <- blend_probs(q_probs, 5, qc)
     sample(c("A", "B", "C", "D", "E"), 1, prob = probs)
   })
   
-  # q8_guaranteed_summer: A=Full, D=None
-  # Everyone wants summer support, weak quality correlation
+  # q8_guaranteed_summer: CRITICAL STRATIFICATION
+  # Tier 1: 80% B, Tier 2: 93% B, Tier 3: 100% C, Tier 4: 90% D
   candidates$q_q8_guaranteed_summer <- sapply(v_pctl, function(p) {
-    q_probs <- c(0.35 + 0.15*p, 0.30, 0.20 - 0.05*p, 0.15 - 0.10*p)
+    # Very strong gradient
+    q_probs <- c(
+      0.05 + 0.15*p,    # A: top candidates want full support
+      0.30 + 0.35*p,    # B: upper candidates want good support
+      0.50 - 0.35*p,    # C: mid candidates accept partial
+      0.15 - 0.15*p     # D: low candidates accept none
+    )
     probs <- blend_probs(q_probs, 4, qc)
     sample(c("A", "B", "C", "D"), 1, prob = probs)
   })
   
-  # q9_typical_teaching_load: A=Light (1-1), D=Heavy (3-3)
-  # Moderate correlation - research-focused want lighter loads
+  # q9_typical_teaching_load: CRITICAL STRATIFICATION
+  # Tier 1: 100% B, Tier 2: 67% C, Tier 3: 84% C, Tier 4: 79% C/22% D
   candidates$q_q9_typical_teaching_load <- sapply(v_pctl, function(p) {
-    q_probs <- c(0.25 + 0.25*p, 0.25 + 0.10*p, 0.25 - 0.15*p, 0.25 - 0.20*p)
+    # Strong gradient (no tier offers A)
+    q_probs <- c(
+      0.00,             # A: nobody gets 1-1
+      0.15 + 0.60*p,    # B: top candidates want 2-2
+      0.70 - 0.40*p,    # C: most get 2-3 or 3-2
+      0.15 - 0.20*p     # D: low quality get 3-3
+    )
     probs <- blend_probs(q_probs, 4, qc)
     sample(c("A", "B", "C", "D"), 1, prob = probs)
   })
   
-  # q10_course_types: A=Mostly grad, D=Mostly undergrad
-  # Weak correlation - some excellent teachers prefer undergrad
+  # q10_course_types: EXTREME STRATIFICATION
+  # Tier 1: 100% A, Tier 2: 100% B, Tier 3: 72% B, Tier 4: 100% D
   candidates$q_q10_course_types <- sapply(v_pctl, function(p) {
-    q_probs <- c(0.25 + 0.15*p, 0.25 + 0.05*p, 0.25 - 0.05*p, 0.25 - 0.15*p)
+    # Extreme gradient
+    q_probs <- c(
+      0.05 + 0.70*p,    # A: top candidates want grad courses
+      0.45 + 0.15*p,    # B: upper want mix with grad emphasis
+      0.00,             # C: nobody in middle (no depts offer this)
+      0.50 - 0.85*p     # D: low quality teach undergrad
+    )
     probs <- blend_probs(q_probs, 4, qc)
     sample(c("A", "B", "C", "D"), 1, prob = probs)
   })
   
-  # q11_mentoring_program: A=Formal, D=None
-  # Essentially random - personal preference
+  # q11_mentoring_program: Not in summary, use reasonable
   candidates$q_q11_mentoring_program <- sapply(v_pctl, function(p) {
-    probs <- c(0.25, 0.30, 0.25, 0.20)  # No quality correlation
+    q_probs <- c(0.30 + 0.15*p, 0.35, 0.25 - 0.10*p, 0.10 - 0.05*p)
+    probs <- blend_probs(q_probs, 4, qc)
     sample(c("A", "B", "C", "D"), 1, prob = probs)
   })
   
-  # q12_research_culture: A=Independent, E=Highly collaborative
-  # Weak correlation - collaboration preference is personal style
+  # q12_research_culture: MODERATE STRATIFICATION
+  # Tier 1: 50% D, Tier 2: 67% C, Tier 3: 80% C, Tier 4: 90% D
   candidates$q_q12_research_culture <- sapply(v_pctl, function(p) {
-    q_probs <- c(0.20 - 0.05*p, 0.20, 0.20, 0.20, 0.20 + 0.05*p)
+    q_probs <- c(
+      0.02 + 0.08*p,    # A: few want independent
+      0.08 + 0.02*p,    # B: 
+      0.40 + 0.00*p,    # C: many depts offer moderate
+      0.40 + 0.10*p,    # D: collaborative is common
+      0.10 - 0.20*p     # E: very collaborative less common
+    )
     probs <- blend_probs(q_probs, 5, qc)
     sample(c("A", "B", "C", "D", "E"), 1, prob = probs)
   })
   
-  # q13_publication_venues: A=Teaching focused, E=Top journals only
-  # Moderate correlation but still variable
+  # q13_publication_venues: EXTREME STRATIFICATION
+  # Tier 1: 60% A, Tier 2: 67% B, Tier 3: 80% B, Tier 4: 100% E
   candidates$q_q13_publication_venues <- sapply(v_pctl, function(p) {
-    q_probs <- c(0.20 - 0.10*p, 0.20 - 0.05*p, 0.20, 0.20 + 0.05*p, 0.20 + 0.10*p)
+    # Extreme gradient
+    q_probs <- c(
+      0.15 + 0.50*p,    # A: top candidates want top journals only
+      0.45 + 0.15*p,    # B: upper want strong publication culture
+      0.05 - 0.05*p,    # C: few in middle
+      0.00,             # D: nobody (no depts offer)
+      0.35 - 0.60*p     # E: low quality ok with teaching focus
+    )
     probs <- blend_probs(q_probs, 5, qc)
     sample(c("A", "B", "C", "D", "E"), 1, prob = probs)
   })
   
-  # q15_medical_school_proximity: 0=No, 1=Yes
-  # Field-specific, mostly random
+  # q15_medical_school_proximity: Not strong pattern, slight preference
   candidates$q_q15_medical_school_proximity <- sapply(v_pctl, function(p) {
-    q_probs <- c(0.55 - 0.10*p, 0.45 + 0.10*p)
+    q_probs <- c(0.55 - 0.15*p, 0.45 + 0.15*p)
     probs <- blend_probs(q_probs, 2, qc)
     sample(c("0", "1"), 1, prob = probs)
   })
   
   # ==========================================================================
-  # GENERATE CANDIDATE-SPECIFIC WEIGHT VECTORS
+  # CANDIDATE-SPECIFIC WEIGHT VECTORS
   # ==========================================================================
-  # Candidates weight questions differently than departments when evaluating fit
-  # This affects how candidates choose among multiple offers
-  # These weights are MORE IDIOSYNCRATIC - not strongly tied to quality
-  
   num_q <- length(questions$numerical)
   cat_q <- length(questions$categorical)
   n_total_q <- num_q + cat_q
@@ -533,88 +795,81 @@ generate_candidates_new <- function(n_candidates, questions, seed = NULL,
   weight_list <- vector("list", n_candidates)
   
   for (i in 1:n_candidates) {
-    p <- v_pctl[i]  # Quality percentile for this candidate
+    p <- v_pctl[i]
     
-    # Start with random base weights (more variance)
-    base_weights <- runif(n_total_q, 0.5, 2.0)
+    # More uniform base weights (less variance)
+    base_weights <- runif(n_total_q, 0.8, 1.3)
     
     for (j in seq_along(q_names)) {
       q <- q_names[j]
       
-      # ----- COMPENSATION: Everyone cares, individual variation -----
+      # CRITICAL FEATURES: Very high weights
       if (q == "q6_typical_salary_range") {
-        # Random importance with slight inverse quality correlation
-        base_weights[j] <- runif(1, 1.5, 3.5) + (1 - p) * qc * runif(1, 0, 1.0)
+        base_weights[j] <- runif(1, 2.5, 4.0)
       }
       if (q == "q7_typical_startup") {
-        # Random with slight quality correlation
-        base_weights[j] <- runif(1, 0.8, 2.5) + p * qc * runif(1, 0, 1.5)
+        base_weights[j] <- runif(1, 2.0, 3.5) + p * runif(1, 0, 1.0)
       }
       if (q == "q8_guaranteed_summer") {
-        # Universally important with variance
-        base_weights[j] <- runif(1, 1.5, 3.0)
+        base_weights[j] <- runif(1, 2.5, 4.0)
       }
-      
-      # ----- LOCATION: Highly personal, quality-independent -----
-      if (q == "q1_geographic_setting") {
-        base_weights[j] <- runif(1, 1.0, 3.0)  # High variance
-      }
-      if (q == "q2_region") {
-        # Region is very important for many (family, partner)
-        base_weights[j] <- runif(1, 2.0, 4.5)  # High and variable
-      }
-      if (q == "q4_cost_of_living") {
-        # Important for everyone, individual circumstances vary
-        base_weights[j] <- runif(1, 1.0, 3.0)
-      }
-      if (q == "q3_airport_proximity") {
-        base_weights[j] <- runif(1, 0.5, 2.0)
-      }
-      
-      # ----- RESEARCH ENVIRONMENT: Quality correlation reduced -----
-      if (q == "q12_research_culture") {
-        base_weights[j] <- runif(1, 0.8, 2.5) + p * qc * runif(1, 0, 1.0)
-      }
-      if (q == "q13_publication_venues") {
-        base_weights[j] <- runif(1, 0.5, 2.0) + p * qc * runif(1, 0, 1.0)
-      }
-      if (q == "q14_phd_student_ratio") {
-        base_weights[j] <- runif(1, 0.5, 2.0)
-      }
-      
-      # ----- TEACHING: Individual preference -----
       if (q == "q9_typical_teaching_load") {
-        base_weights[j] <- runif(1, 1.5, 3.5)  # Everyone cares
+        base_weights[j] <- runif(1, 2.5, 4.0)
       }
       if (q == "q10_course_types") {
-        base_weights[j] <- runif(1, 0.5, 2.0)
+        base_weights[j] <- runif(1, 2.0, 3.5) + p * runif(1, 0, 1.5)
+      }
+      if (q == "q13_publication_venues") {
+        base_weights[j] <- runif(1, 1.8, 3.0) + p * runif(1, 0, 1.5)
       }
       
-      # ----- OTHER: Situational importance -----
-      if (q == "q5_dual_career") {
-        # Bimodal: either critical or irrelevant
-        base_weights[j] <- sample(c(runif(1, 0.2, 0.8), runif(1, 3.0, 5.0)), 
-                                  1, prob = c(0.55, 0.45))
+      # LOCATION: Very important for many (life constraints)
+      if (q == "q1_geographic_setting") {
+        base_weights[j] <- runif(1, 2.0, 4.0)
+      }
+      if (q == "q2_region") {
+        base_weights[j] <- runif(1, 3.0, 5.0)  # Most important for many
+      }
+      if (q == "q4_cost_of_living") {
+        base_weights[j] <- runif(1, 1.8, 3.2)
+      }
+      
+      # RESEARCH ENVIRONMENT: Important for research-focused
+      if (q == "q14_phd_student_ratio") {
+        base_weights[j] <- runif(1, 1.2, 2.5) + p * runif(1, 0, 1.2)
+      }
+      if (q == "q12_research_culture") {
+        base_weights[j] <- runif(1, 1.0, 2.0)
+      }
+      
+      # MODERATE IMPORTANCE
+      if (q == "q3_airport_proximity") {
+        base_weights[j] <- runif(1, 0.8, 2.0)
       }
       if (q == "q11_mentoring_program") {
-        base_weights[j] <- runif(1, 0.3, 1.5)
+        base_weights[j] <- runif(1, 0.6, 1.5)
+      }
+      
+      # BIMODAL (critical for some, irrelevant for others)
+      if (q == "q5_dual_career") {
+        base_weights[j] <- sample(c(runif(1, 0.3, 0.9), runif(1, 4.0, 6.0)), 
+                                  1, prob = c(0.65, 0.35))
       }
       if (q == "q15_medical_school_proximity") {
-        # Bimodal: field-dependent
-        base_weights[j] <- sample(c(runif(1, 0.1, 0.5), runif(1, 2.0, 3.5)), 
+        base_weights[j] <- sample(c(runif(1, 0.3, 0.8), runif(1, 2.8, 4.5)), 
                                   1, prob = c(0.70, 0.30))
       }
     }
     
-    # Normalize weights to sum to 1
+    # Normalize
     weight_list[[i]] <- base_weights / sum(base_weights)
   }
   
   candidates$cand_weight_vector <- weight_list
   
-  # Remove helper column and return
   candidates %>% dplyr::select(-quality_pctl)
 }
+
 
 # =============================================================================
 # PREPARE DEPARTMENTS
@@ -1765,6 +2020,34 @@ generate_department_strategies_adaptive <- function(n_departments,
   strategy_matrix
 }
 
+
+
+# generate_department_strategies_adaptive <- function(n_departments,
+#                                                     n_years,
+#                                                     participation_rate,
+#                                                     seed = 456) {
+#   set.seed(seed + round(participation_rate * 1000))
+#   
+#   # Only allow S1 when participation rate >= 50%
+#   if (participation_rate < 0.50) {
+#     # Force all departments to use S2 (no questionnaire data)
+#     prob_S1 <- 0
+#   } else {
+#     # Scale probability from 0 at 50% to 0.9 at 100%
+#     # Linear interpolation: prob_S1 = (rate - 0.5) / 0.5 * 0.9
+#     prob_S1 <- pmin(0.9, pmax(0.0, participation_rate))
+#     # prob_S1 <- pmin(0.9, (participation_rate - 0.50) / 0.50 * 0.9)
+#   }
+#   
+#   strategy_matrix <- matrix(
+#     sample(1:2, n_departments * n_years, replace = TRUE,
+#            prob = c(prob_S1, 1 - prob_S1)),
+#     nrow = n_departments,
+#     ncol = n_years
+#   )
+#   strategy_matrix
+# }
+
 # =============================================================================
 # MAIN MARKET SIMULATION
 # =============================================================================
@@ -2226,6 +2509,7 @@ run_job_market_sim_adaptive <- function(departments,
     res_all[[year]] <- out$results
     rank_all[[year]] <- out$rank_panel
     
+    
     # ==========================================================================
     # CUMULATIVE DIAGNOSTICS
     # ==========================================================================
@@ -2462,7 +2746,7 @@ baseline_sim <- run_job_market_sim_adaptive(
   yearly_hiring_schedule = yearly_hiring_schedule,  # PASS THE SCHEDULE
   seed = 101,
   alpha = 0.05,
-  L_repeats = 2,
+  L_repeats = 10,
   noise_method = "bootstrap",
   noise_scale = 0.15,
   cand_tier_cutpoints = c(0.10, 0.25, 0.50)
@@ -2492,7 +2776,7 @@ for (rate in c(0.05, 0.20, 0.50, 0.90, 1.00)) {
     yearly_hiring_schedule = yearly_hiring_schedule,  # SAME SCHEDULE FOR ALL
     seed = 101,
     alpha = 0.05,
-    L_repeats = 2,
+    L_repeats = 10,
     noise_method = "bootstrap",
     noise_scale = 0.15,
     cand_tier_cutpoints = c(0.10, 0.25, 0.50)
@@ -2504,7 +2788,13 @@ cat("\n✓ All simulations complete!\n")
 
 
 
+#all_sim_results_W <- all_sim_results
 
+
+# all_sim_results <- all_sim_results_10L
+# all_sim_results <- all_sim_results_20L
+# all_sim_results <- all_sim_results_50L
+# all_sim_results <- all_sim_results_100L
 
 
 
@@ -2731,6 +3021,194 @@ make_fig_candidate_welfare_gain <- function(all_sim_results, year_filter = c(1, 
   )
 }
 
+
+# make_fig_candidate_welfare_gain <- function(all_sim_results, year_filter = c(1, 10)) {
+# 
+#   # Get the total number of candidates in the market (cohort size)
+#   n_candidates_per_year <- all_sim_results[["baseline"]]$cand_roster %>%
+#     dplyr::filter(year >= year_filter[1], year <= year_filter[2]) %>%
+#     dplyr::group_by(year) %>%
+#     dplyr::summarise(n = dplyr::n(), .groups = "drop") %>%
+#     dplyr::pull(n) %>%
+#     mean()
+# 
+#   n_years <- length(year_filter[1]:year_filter[2])
+#   total_candidates <- n_candidates_per_year * n_years
+# 
+#   # Extract accepted offers for welfare calculation
+#   welfare_data <- purrr::map_dfr(names(all_sim_results), function(rate_name) {
+#     rate <- ifelse(rate_name == "baseline", 0, as.numeric(rate_name))
+# 
+#     all_sim_results[[rate_name]]$results %>%
+#       dplyr::filter(
+#         year >= year_filter[1], year <= year_filter[2],
+#         strategy == "pairwise", accepted == 1
+#       ) %>%
+#       dplyr::mutate(
+#         participation_rate = rate,
+#         V_ij = candidate_utility(v_i_bar, s_j, f_j)
+#       )
+#   })
+# 
+#   # Aggregate welfare accounting for ALL candidates
+#   aggregate_welfare <- welfare_data %>%
+#     dplyr::group_by(participation_rate) %>%
+#     dplyr::summarise(
+#       total_welfare = sum(V_ij, na.rm = TRUE),
+#       n_matches = dplyr::n(),
+#       mean_welfare_per_match = mean(V_ij, na.rm = TRUE),
+#       se_per_match = sd(V_ij, na.rm = TRUE) / sqrt(dplyr::n()),
+#       mean_welfare_per_candidate = total_welfare / total_candidates,
+#       .groups = "drop"
+#     ) %>%
+#     dplyr::mutate(
+#       match_rate = n_matches / total_candidates
+#     )
+# 
+#   # Baselines (0% participation)
+#   baseline_total_welfare <- aggregate_welfare %>%
+#     dplyr::filter(participation_rate == 0) %>%
+#     dplyr::pull(total_welfare)
+# 
+#   baseline_match_rate <- aggregate_welfare %>%
+#     dplyr::filter(participation_rate == 0) %>%
+#     dplyr::pull(match_rate)
+# 
+#   # Safety (avoid divide-by-zero / missing baselines)
+#   if (length(baseline_total_welfare) != 1 || !is.finite(baseline_total_welfare) || baseline_total_welfare == 0) {
+#     stop("Baseline total_welfare is missing, non-finite, or zero; cannot compute % increase.")
+#   }
+#   if (length(baseline_match_rate) != 1 || !is.finite(baseline_match_rate) || baseline_match_rate == 0) {
+#     stop("Baseline match_rate is missing, non-finite, or zero; cannot compute relative increase.")
+#   }
+# 
+#   # Convert y-axes:
+#   #  - Welfare: percent increase vs baseline
+#   #  - Matching: relative increase in hiring probability (dimensionless; label as %)
+#   aggregate_welfare <- aggregate_welfare %>%
+#     dplyr::mutate(
+#       pct_increase_welfare = 100 * (total_welfare / baseline_total_welfare - 1),
+#       rel_increase_hiring_prob = (match_rate - baseline_match_rate) / baseline_match_rate
+#     )
+# 
+#   # Create candidate-level welfare (0 if unmatched)
+#   candidate_level_welfare <- purrr::map_dfr(names(all_sim_results), function(rate_name) {
+#     rate <- ifelse(rate_name == "baseline", 0, as.numeric(rate_name))
+# 
+#     all_cands <- all_sim_results[[rate_name]]$cand_roster %>%
+#       dplyr::filter(year >= year_filter[1], year <= year_filter[2]) %>%
+#       dplyr::select(year, cand_id)
+# 
+#     matched <- all_sim_results[[rate_name]]$results %>%
+#       dplyr::filter(
+#         year >= year_filter[1], year <= year_filter[2],
+#         strategy == "pairwise", accepted == 1
+#       ) %>%
+#       dplyr::mutate(V_ij = candidate_utility(v_i_bar, s_j, f_j)) %>%
+#       dplyr::group_by(year, cand_id) %>%
+#       dplyr::summarise(welfare = sum(V_ij), .groups = "drop")
+# 
+#     all_cands %>%
+#       dplyr::left_join(matched, by = c("year", "cand_id")) %>%
+#       dplyr::mutate(
+#         welfare = dplyr::coalesce(welfare, 0),
+#         participation_rate = rate
+#       )
+#   })
+# 
+#   # Statistical test (paired by construction in your setup)
+#   baseline_welfare <- candidate_level_welfare %>%
+#     dplyr::filter(participation_rate == 0) %>%
+#     dplyr::pull(welfare)
+# 
+#   full_welfare <- candidate_level_welfare %>%
+#     dplyr::filter(participation_rate == 1) %>%
+#     dplyr::pull(welfare)
+# 
+#   welfare_test <- t.test(full_welfare, baseline_welfare, paired = TRUE)
+# 
+#   cat("\n=== CANDIDATE WELFARE GAIN TEST ===\n")
+#   cat("Baseline: Total =", sprintf("%.2f", sum(baseline_welfare)),
+#       "| Matches:", sum(baseline_welfare > 0), "\n")
+#   cat("Full:     Total =", sprintf("%.2f", sum(full_welfare)),
+#       "| Matches:", sum(full_welfare > 0), "\n")
+#   cat("Gain:", sprintf("%.2f (%.1f%%)",
+#                        sum(full_welfare) - sum(baseline_welfare),
+#                        100 * (sum(full_welfare) / sum(baseline_welfare) - 1)), "\n\n")
+# 
+#   # Plot 1: Welfare (% increase vs baseline)
+#   p1 <- ggplot2::ggplot(
+#     aggregate_welfare,
+#     ggplot2::aes(x = participation_rate * 100, y = pct_increase_welfare)
+#   ) +
+#     ggplot2::geom_line(linewidth = 1.2, color = "black") +
+#     ggplot2::geom_point(size = 3, color = "black") +
+#     ggplot2::geom_hline(yintercept = 0, linetype = "dashed",
+#                         color = "gray50", linewidth = 0.8) +
+#     ggplot2::scale_x_continuous(
+#       breaks = c(0, 5, 20, 50, 90, 100),
+#       labels = c("0", "5", "20", "50", "90", "100")
+#     ) +
+#     ggplot2::scale_y_continuous(
+#       labels = function(x) paste0(x, "%"),
+#       expand = ggplot2::expansion(mult = c(0.05, 0.05))
+#     ) +
+#     ggplot2::labs(
+#       x = "Market Participation Rate (%)",
+#       y = "Relative change in aggregate welfare"
+#     ) +
+#     ggplot2::theme_minimal(base_size = 14) +
+#     ggplot2::theme(
+#       panel.grid.minor = ggplot2::element_blank(),
+#       panel.grid.major = ggplot2::element_line(color = "gray90", linewidth = 0.5),
+#       axis.title = ggplot2::element_text(size = 14, face = "bold"),
+#       axis.text  = ggplot2::element_text(size = 12),
+#       plot.margin = ggplot2::margin(10, 10, 10, 10)
+#     )
+# 
+#   # Plot 2: Relative increase in hiring probability (vs baseline)
+#   p2 <- ggplot2::ggplot(
+#     aggregate_welfare,
+#     ggplot2::aes(x = participation_rate * 100, y = rel_increase_hiring_prob)
+#   ) +
+#     ggplot2::geom_line(linewidth = 1.2, color = "black") +
+#     ggplot2::geom_point(size = 3, color = "black") +
+#     ggplot2::geom_hline(yintercept = 0, linetype = "dashed",
+#                         color = "gray50", linewidth = 0.8) +
+#     ggplot2::scale_x_continuous(
+#       breaks = c(0, 5, 20, 50, 90, 100),
+#       labels = c("0", "5", "20", "50", "90", "100")
+#     ) +
+#     ggplot2::scale_y_continuous(
+#       labels = scales::percent_format(accuracy = 1), # 0.25 -> "25%"
+#       expand = ggplot2::expansion(mult = c(0.05, 0.05))
+#     ) +
+#     ggplot2::labs(
+#       x = "Market Participation Rate (%)",
+#       y = "Relative increase in hiring probability"
+#     ) +
+#     ggplot2::theme_minimal(base_size = 14) +
+#     ggplot2::theme(
+#       panel.grid.minor = ggplot2::element_blank(),
+#       panel.grid.major = ggplot2::element_line(color = "gray90", linewidth = 0.5),
+#       axis.title = ggplot2::element_text(size = 14, face = "bold"),
+#       axis.text  = ggplot2::element_text(size = 12),
+#       plot.margin = ggplot2::margin(10, 10, 10, 10)
+#     )
+# 
+#   combined_plot <- p1 + p2 + patchwork::plot_layout(ncol = 2)
+# 
+#   list(
+#     plot = combined_plot,
+#     plot_welfare = p1,
+#     plot_matching = p2,
+#     test = welfare_test,
+#     aggregate_data = aggregate_welfare,
+#     candidate_data = candidate_level_welfare
+#   )
+# }
+
+
 # Generate figure
 welfare_results <- make_fig_candidate_welfare_gain(all_sim_results, year_filter = c(1, 10))
 
@@ -2742,232 +3220,233 @@ ggsave("fig_candidate_welfare_gain.pdf",
        height = 4,
        device = cairo_pdf)
 
+
 # =============================================================================
 # CANDIDATE WELFARE GAIN STRATIFIED BY TIER
 # =============================================================================
 
-make_fig_candidate_welfare_by_tier <- function(all_sim_results, year_filter = c(1, 10)) {
-  
-  # Get candidate roster with tiers
-  all_candidates <- map_dfr(names(all_sim_results), function(rate_name) {
-    rate <- ifelse(rate_name == "baseline", 0, as.numeric(rate_name))
-    
-    all_sim_results[[rate_name]]$cand_roster %>%
-      filter(year >= year_filter[1], year <= year_filter[2]) %>%
-      mutate(participation_rate = rate)
-  })
-  
-  # Calculate candidates per tier
-  cand_totals_by_tier <- all_candidates %>%
-    filter(participation_rate == 0) %>%
-    count(quality_tier, name = "n_cand")
-  
-  # Extract welfare by tier
-  welfare_data_by_tier <- map_dfr(names(all_sim_results), function(rate_name) {
-    rate <- ifelse(rate_name == "baseline", 0, as.numeric(rate_name))
-    
-    roster <- all_sim_results[[rate_name]]$cand_roster %>%
-      filter(year >= year_filter[1], year <= year_filter[2])
-    
-    matches <- all_sim_results[[rate_name]]$results %>%
-      filter(year >= year_filter[1], year <= year_filter[2],
-             strategy == "pairwise", accepted == 1) %>%
-      mutate(V_ij = candidate_utility(v_i_bar, s_j, f_j))
-    
-    roster %>%
-      left_join(
-        matches %>% 
-          group_by(year, cand_id) %>%
-          summarise(welfare = sum(V_ij), .groups = "drop"),
-        by = c("year", "cand_id")
-      ) %>%
-      mutate(
-        welfare = coalesce(welfare, 0),
-        participation_rate = rate
-      )
-  })
-  
-  # Aggregate welfare by tier
-  aggregate_welfare_by_tier <- welfare_data_by_tier %>%
-    group_by(participation_rate, quality_tier) %>%
-    summarise(
-      n_cand = n(),
-      total_welfare = sum(welfare, na.rm = TRUE),
-      n_matches = sum(welfare > 0),
-      mean_welfare_per_candidate = total_welfare / n_cand,
-      matching_rate = n_matches / n_cand,
-      mean_welfare_per_match = mean(welfare[welfare > 0], na.rm = TRUE),
-      se_per_match = sd(welfare[welfare > 0], na.rm = TRUE) / sqrt(n_matches),
-      .groups = "drop"
-    ) %>%
-    mutate(
-      quality_tier = factor(quality_tier, 
-                            levels = c("Tier 1", "Tier 2", "Tier 3", "Tier 4"))
-    )
-  
-  # Statistical tests by tier
-  cat("\n=== CANDIDATE WELFARE GAINS BY TIER ===\n")
-  
-  tier_tests <- list()
-  tier_summaries <- list()
-  
-  for (tier in c("Tier 1", "Tier 2", "Tier 3", "Tier 4")) {
-    baseline_tier <- welfare_data_by_tier %>%
-      filter(participation_rate == 0, quality_tier == tier) %>%
-      pull(welfare)
-    
-    full_tier <- welfare_data_by_tier %>%
-      filter(participation_rate == 1, quality_tier == tier) %>%
-      pull(welfare)
-    
-    if (length(baseline_tier) > 1 && length(full_tier) > 1) {
-      test <- t.test(full_tier, baseline_tier, paired = TRUE)
-      tier_tests[[tier]] <- test
-      
-      baseline_match_rate <- mean(baseline_tier > 0)
-      full_match_rate <- mean(full_tier > 0)
-      
-      tier_summaries[[tier]] <- list(
-        baseline_mean = mean(baseline_tier),
-        full_mean = mean(full_tier),
-        gain = mean(full_tier) - mean(baseline_tier),
-        baseline_match_rate = baseline_match_rate,
-        full_match_rate = full_match_rate,
-        p_value = test$p.value
-      )
-      
-      cat(tier, ":\n")
-      cat("  Baseline: Welfare/cand = %.5f, Match rate = %.1f%%\n" %>% 
-            sprintf(mean(baseline_tier), baseline_match_rate * 100))
-      cat("  Full:     Welfare/cand = %.5f, Match rate = %.1f%%\n" %>%
-            sprintf(mean(full_tier), full_match_rate * 100))
-      cat("  Gain:     %.5f (p = %.4f) %s\n" %>%
-            sprintf(mean(full_tier) - mean(baseline_tier), test$p.value,
-                    ifelse(test$p.value < 0.05, "✓", "")))
-      cat("\n")
-    }
-  }
-  
-  # Test differential gains
-  gains_by_tier <- tibble(
-    tier = names(tier_summaries),
-    gain = map_dbl(tier_summaries, "gain"),
-    tier_numeric = as.integer(factor(tier, levels = c("Tier 1", "Tier 2", "Tier 3", "Tier 4")))
-  )
-  
-  if (nrow(gains_by_tier) > 2) {
-    gain_corr <- cor.test(gains_by_tier$tier_numeric, gains_by_tier$gain, 
-                          method = "spearman")
-    
-    cat("Correlation(tier, gain):", sprintf("%.3f (p = %.4f)\n", 
-                                            gain_corr$estimate, gain_corr$p.value))
-  }
-  
-  # Plot 1: Matching rate by tier
-  p2 <- ggplot(aggregate_welfare_by_tier, 
-               aes(x = participation_rate * 100, 
-                   y = matching_rate,
-                   linetype = quality_tier,
-                   shape = quality_tier,
-                   group = quality_tier)) +
-    geom_line(linewidth = 1.2, color = "black") +
-    geom_point(size = 3, color = "black") +
-    scale_linetype_manual(values = c("solid", "dashed", "dotted", "dotdash")) +
-    scale_shape_manual(values = c(16, 17, 15, 18)) +
-    scale_x_continuous(
-      breaks = c(0, 5, 20, 50, 90, 100),
-      labels = c("0", "5", "20", "50", "90", "100")
-    ) +
-    scale_y_continuous(
-      labels = scales::percent_format(accuracy = 0.1),
-      limits = c(0, NA),
-      expand = expansion(mult = c(0, 0.05))
-    ) +
-    labs(
-      x = "Market Participation Rate (%)",
-      y = "Matching Rate",
-      linetype = "Candidate Tier",
-      shape = "Candidate Tier"
-    ) +
-    theme_minimal(base_size = 14) +
-    theme(
-      panel.grid.minor = element_blank(),
-      panel.grid.major = element_line(color = "gray90", linewidth = 0.5),
-      axis.title = element_text(size = 14, face = "bold"),
-      axis.text = element_text(size = 12),
-      legend.position = "bottom",
-      legend.title = element_text(size = 12, face = "bold"),
-      legend.text = element_text(size = 11),
-      plot.margin = margin(10, 10, 10, 10)
-    )
-  
-  # Plot 2: Welfare gains (relative to baseline)
-  welfare_gains <- aggregate_welfare_by_tier %>%
-    group_by(quality_tier) %>%
-    mutate(
-      baseline_welfare = mean_welfare_per_candidate[participation_rate == 0],
-      welfare_gain = mean_welfare_per_candidate - baseline_welfare
-    ) %>%
-    ungroup() %>%
-    filter(participation_rate > 0)
-  
-  p4 <- ggplot(welfare_gains, 
-               aes(x = participation_rate * 100, 
-                   y = welfare_gain,
-                   linetype = quality_tier,
-                   shape = quality_tier,
-                   group = quality_tier)) +
-    geom_line(linewidth = 1.2, color = "black") +
-    geom_point(size = 3, color = "black") +
-    geom_hline(yintercept = 0, linetype = "solid", color = "gray50", linewidth = 0.8) +
-    scale_linetype_manual(values = c("solid", "dashed", "dotted", "dotdash")) +
-    scale_shape_manual(values = c(16, 17, 15, 18)) +
-    scale_x_continuous(
-      breaks = c(5, 20, 50, 90, 100),
-      labels = c("5", "20", "50", "90", "100")
-    ) +
-    scale_y_continuous(
-      expand = expansion(mult = c(0.05, 0.05))
-    ) +
-    labs(
-      x = "Market Participation Rate (%)",
-      y = "Welfare Gain vs. Baseline",
-      linetype = "Candidate Tier",
-      shape = "Candidate Tier"
-    ) +
-    theme_minimal(base_size = 14) +
-    theme(
-      panel.grid.minor = element_blank(),
-      panel.grid.major = element_line(color = "gray90", linewidth = 0.5),
-      axis.title = element_text(size = 14, face = "bold"),
-      axis.text = element_text(size = 12),
-      legend.position = "bottom",
-      legend.title = element_text(size = 12, face = "bold"),
-      legend.text = element_text(size = 11),
-      plot.margin = margin(10, 10, 10, 10)
-    )
-  
-  # Combine plots
-  combined_plot <- p2 + p4 +
-    plot_layout(ncol = 2, guides = "collect") &
-    theme(legend.position = "bottom")
-  
-  list(
-    plot = combined_plot,
-    plot_matching = p2,
-    plot_gains = p4,
-    tests = tier_tests,
-    tier_summaries = tier_summaries,
-    gain_correlation = if(exists("gain_corr")) gain_corr else NULL,
-    aggregate_data = aggregate_welfare_by_tier,
-    candidate_data = welfare_data_by_tier
-  )
-}
-
-# Generate figure
-cand_welfare_by_tier <- make_fig_candidate_welfare_by_tier(all_sim_results, year_filter = c(1, 10))
-
-cand_welfare_by_tier$plot
+# make_fig_candidate_welfare_by_tier <- function(all_sim_results, year_filter = c(1, 10)) {
+#   
+#   # Get candidate roster with tiers
+#   all_candidates <- map_dfr(names(all_sim_results), function(rate_name) {
+#     rate <- ifelse(rate_name == "baseline", 0, as.numeric(rate_name))
+#     
+#     all_sim_results[[rate_name]]$cand_roster %>%
+#       filter(year >= year_filter[1], year <= year_filter[2]) %>%
+#       mutate(participation_rate = rate)
+#   })
+#   
+#   # Calculate candidates per tier
+#   cand_totals_by_tier <- all_candidates %>%
+#     filter(participation_rate == 0) %>%
+#     count(quality_tier, name = "n_cand")
+#   
+#   # Extract welfare by tier
+#   welfare_data_by_tier <- map_dfr(names(all_sim_results), function(rate_name) {
+#     rate <- ifelse(rate_name == "baseline", 0, as.numeric(rate_name))
+#     
+#     roster <- all_sim_results[[rate_name]]$cand_roster %>%
+#       filter(year >= year_filter[1], year <= year_filter[2])
+#     
+#     matches <- all_sim_results[[rate_name]]$results %>%
+#       filter(year >= year_filter[1], year <= year_filter[2],
+#              strategy == "pairwise", accepted == 1) %>%
+#       mutate(V_ij = candidate_utility(v_i_bar, s_j, f_j))
+#     
+#     roster %>%
+#       left_join(
+#         matches %>% 
+#           group_by(year, cand_id) %>%
+#           summarise(welfare = sum(V_ij), .groups = "drop"),
+#         by = c("year", "cand_id")
+#       ) %>%
+#       mutate(
+#         welfare = coalesce(welfare, 0),
+#         participation_rate = rate
+#       )
+#   })
+#   
+#   # Aggregate welfare by tier
+#   aggregate_welfare_by_tier <- welfare_data_by_tier %>%
+#     group_by(participation_rate, quality_tier) %>%
+#     summarise(
+#       n_cand = n(),
+#       total_welfare = sum(welfare, na.rm = TRUE),
+#       n_matches = sum(welfare > 0),
+#       mean_welfare_per_candidate = total_welfare / n_cand,
+#       matching_rate = n_matches / n_cand,
+#       mean_welfare_per_match = mean(welfare[welfare > 0], na.rm = TRUE),
+#       se_per_match = sd(welfare[welfare > 0], na.rm = TRUE) / sqrt(n_matches),
+#       .groups = "drop"
+#     ) %>%
+#     mutate(
+#       quality_tier = factor(quality_tier, 
+#                             levels = c("Tier 1", "Tier 2", "Tier 3", "Tier 4"))
+#     )
+#   
+#   # Statistical tests by tier
+#   cat("\n=== CANDIDATE WELFARE GAINS BY TIER ===\n")
+#   
+#   tier_tests <- list()
+#   tier_summaries <- list()
+#   
+#   for (tier in c("Tier 1", "Tier 2", "Tier 3", "Tier 4")) {
+#     baseline_tier <- welfare_data_by_tier %>%
+#       filter(participation_rate == 0, quality_tier == tier) %>%
+#       pull(welfare)
+#     
+#     full_tier <- welfare_data_by_tier %>%
+#       filter(participation_rate == 1, quality_tier == tier) %>%
+#       pull(welfare)
+#     
+#     if (length(baseline_tier) > 1 && length(full_tier) > 1) {
+#       test <- t.test(full_tier, baseline_tier, paired = TRUE)
+#       tier_tests[[tier]] <- test
+#       
+#       baseline_match_rate <- mean(baseline_tier > 0)
+#       full_match_rate <- mean(full_tier > 0)
+#       
+#       tier_summaries[[tier]] <- list(
+#         baseline_mean = mean(baseline_tier),
+#         full_mean = mean(full_tier),
+#         gain = mean(full_tier) - mean(baseline_tier),
+#         baseline_match_rate = baseline_match_rate,
+#         full_match_rate = full_match_rate,
+#         p_value = test$p.value
+#       )
+#       
+#       cat(tier, ":\n")
+#       cat("  Baseline: Welfare/cand = %.5f, Match rate = %.1f%%\n" %>% 
+#             sprintf(mean(baseline_tier), baseline_match_rate * 100))
+#       cat("  Full:     Welfare/cand = %.5f, Match rate = %.1f%%\n" %>%
+#             sprintf(mean(full_tier), full_match_rate * 100))
+#       cat("  Gain:     %.5f (p = %.4f) %s\n" %>%
+#             sprintf(mean(full_tier) - mean(baseline_tier), test$p.value,
+#                     ifelse(test$p.value < 0.05, "✓", "")))
+#       cat("\n")
+#     }
+#   }
+#   
+#   # Test differential gains
+#   gains_by_tier <- tibble(
+#     tier = names(tier_summaries),
+#     gain = map_dbl(tier_summaries, "gain"),
+#     tier_numeric = as.integer(factor(tier, levels = c("Tier 1", "Tier 2", "Tier 3", "Tier 4")))
+#   )
+#   
+#   if (nrow(gains_by_tier) > 2) {
+#     gain_corr <- cor.test(gains_by_tier$tier_numeric, gains_by_tier$gain, 
+#                           method = "spearman")
+#     
+#     cat("Correlation(tier, gain):", sprintf("%.3f (p = %.4f)\n", 
+#                                             gain_corr$estimate, gain_corr$p.value))
+#   }
+#   
+#   # Plot 1: Matching rate by tier
+#   p2 <- ggplot(aggregate_welfare_by_tier, 
+#                aes(x = participation_rate * 100, 
+#                    y = matching_rate,
+#                    linetype = quality_tier,
+#                    shape = quality_tier,
+#                    group = quality_tier)) +
+#     geom_line(linewidth = 1.2, color = "black") +
+#     geom_point(size = 3, color = "black") +
+#     scale_linetype_manual(values = c("solid", "dashed", "dotted", "dotdash")) +
+#     scale_shape_manual(values = c(16, 17, 15, 18)) +
+#     scale_x_continuous(
+#       breaks = c(0, 5, 20, 50, 90, 100),
+#       labels = c("0", "5", "20", "50", "90", "100")
+#     ) +
+#     scale_y_continuous(
+#       labels = scales::percent_format(accuracy = 0.1),
+#       limits = c(0, NA),
+#       expand = expansion(mult = c(0, 0.05))
+#     ) +
+#     labs(
+#       x = "Market Participation Rate (%)",
+#       y = "Matching Rate",
+#       linetype = "Candidate Tier",
+#       shape = "Candidate Tier"
+#     ) +
+#     theme_minimal(base_size = 14) +
+#     theme(
+#       panel.grid.minor = element_blank(),
+#       panel.grid.major = element_line(color = "gray90", linewidth = 0.5),
+#       axis.title = element_text(size = 14, face = "bold"),
+#       axis.text = element_text(size = 12),
+#       legend.position = "bottom",
+#       legend.title = element_text(size = 12, face = "bold"),
+#       legend.text = element_text(size = 11),
+#       plot.margin = margin(10, 10, 10, 10)
+#     )
+#   
+#   # Plot 2: Welfare gains (relative to baseline)
+#   welfare_gains <- aggregate_welfare_by_tier %>%
+#     group_by(quality_tier) %>%
+#     mutate(
+#       baseline_welfare = mean_welfare_per_candidate[participation_rate == 0],
+#       welfare_gain = mean_welfare_per_candidate - baseline_welfare
+#     ) %>%
+#     ungroup() %>%
+#     filter(participation_rate > 0)
+#   
+#   p4 <- ggplot(welfare_gains, 
+#                aes(x = participation_rate * 100, 
+#                    y = welfare_gain,
+#                    linetype = quality_tier,
+#                    shape = quality_tier,
+#                    group = quality_tier)) +
+#     geom_line(linewidth = 1.2, color = "black") +
+#     geom_point(size = 3, color = "black") +
+#     geom_hline(yintercept = 0, linetype = "solid", color = "gray50", linewidth = 0.8) +
+#     scale_linetype_manual(values = c("solid", "dashed", "dotted", "dotdash")) +
+#     scale_shape_manual(values = c(16, 17, 15, 18)) +
+#     scale_x_continuous(
+#       breaks = c(5, 20, 50, 90, 100),
+#       labels = c("5", "20", "50", "90", "100")
+#     ) +
+#     scale_y_continuous(
+#       expand = expansion(mult = c(0.05, 0.05))
+#     ) +
+#     labs(
+#       x = "Market Participation Rate (%)",
+#       y = "Welfare Gain vs. Baseline",
+#       linetype = "Candidate Tier",
+#       shape = "Candidate Tier"
+#     ) +
+#     theme_minimal(base_size = 14) +
+#     theme(
+#       panel.grid.minor = element_blank(),
+#       panel.grid.major = element_line(color = "gray90", linewidth = 0.5),
+#       axis.title = element_text(size = 14, face = "bold"),
+#       axis.text = element_text(size = 12),
+#       legend.position = "bottom",
+#       legend.title = element_text(size = 12, face = "bold"),
+#       legend.text = element_text(size = 11),
+#       plot.margin = margin(10, 10, 10, 10)
+#     )
+#   
+#   # Combine plots
+#   combined_plot <- p2 + p4 +
+#     plot_layout(ncol = 2, guides = "collect") &
+#     theme(legend.position = "bottom")
+#   
+#   list(
+#     plot = combined_plot,
+#     plot_matching = p2,
+#     plot_gains = p4,
+#     tests = tier_tests,
+#     tier_summaries = tier_summaries,
+#     gain_correlation = if(exists("gain_corr")) gain_corr else NULL,
+#     aggregate_data = aggregate_welfare_by_tier,
+#     candidate_data = welfare_data_by_tier
+#   )
+# }
+# 
+# # Generate figure
+# cand_welfare_by_tier <- make_fig_candidate_welfare_by_tier(all_sim_results, year_filter = c(1, 10))
+# 
+# cand_welfare_by_tier$plot
 
 
 
@@ -2990,6 +3469,7 @@ make_fig_candidate_welfare_by_tier_revised <- function(all_sim_results, year_fil
     roster <- all_sim_results[[rate_name]]$cand_roster %>%
       filter(year >= year_filter[1], year <= year_filter[2])
     
+    # In make_fig_candidate_welfare_by_tier_revised, change:
     matches <- all_sim_results[[rate_name]]$results %>%
       filter(year >= year_filter[1], year <= year_filter[2],
              strategy == "pairwise", accepted == 1) %>%
@@ -2999,8 +3479,9 @@ make_fig_candidate_welfare_by_tier_revised <- function(all_sim_results, year_fil
       left_join(
         matches %>% 
           group_by(year, cand_id) %>%
+          slice(1) %>%  # ← ADD THIS: Take only first acceptance
           summarise(
-            welfare = sum(V_ij),
+            welfare = V_ij,  # ← CHANGE: Don't sum, just take value
             match_s_j = first(s_j),
             match_f_j = first(f_j),
             .groups = "drop"
@@ -3272,15 +3753,310 @@ make_fig_candidate_welfare_by_tier_revised <- function(all_sim_results, year_fil
 cand_welfare_revised <- make_fig_candidate_welfare_by_tier_revised(all_sim_results, year_filter = c(1, 10))
 
 # Display
-cand_welfare_revised$plot        # Two-panel
-cand_welfare_revised$plot_3panel # Three-panel: adds alignment
+cand_welfare_revised$plot_conditional   # Two-panel
+#cand_welfare_revised$plot_3panel # Three-panel: adds alignment
 
 # Save
 ggsave("fig_candidate_welfare_by_tier.pdf",
-       cand_welfare_revised$plot,
-       width = 12, height = 5, device = cairo_pdf)
+       cand_welfare_revised$plot_conditional,
+       width = 6, height = 4, device = cairo_pdf)
 
 
+
+###############################################################################
+
+make_fig_candidate_by_participation <- function(all_sim_results, year_filter = c(1, 10)) {
+  
+  # Get baseline statistics for reference lines
+  baseline_stats <- all_sim_results$baseline$cand_roster %>%
+    filter(year >= year_filter[1], year <= year_filter[2]) %>%
+    dplyr::select(year, cand_id) %>%
+    left_join(
+      all_sim_results$baseline$results %>%
+        filter(year >= year_filter[1], year <= year_filter[2],
+               strategy == "pairwise", accepted == 1) %>%
+        mutate(V_ij = candidate_utility(v_i_bar, s_j, f_j)) %>%
+        group_by(year, cand_id) %>%
+        summarise(welfare = sum(V_ij), .groups = "drop"),
+      by = c("year", "cand_id")
+    ) %>%
+    mutate(
+      welfare = coalesce(welfare, 0),
+      matched = welfare > 0
+    ) %>%
+    summarise(
+      baseline_mean_welfare = mean(welfare),
+      baseline_matching_rate = mean(matched),
+      baseline_mean_welfare_if_matched = mean(welfare[matched], na.rm = TRUE)
+    )
+  
+  cat("\n=== BASELINE STATISTICS ===\n")
+  cat(sprintf("Baseline mean welfare: %.4f\n", baseline_stats$baseline_mean_welfare))
+  cat(sprintf("Baseline matching rate: %.2f%%\n", baseline_stats$baseline_matching_rate * 100))
+  cat(sprintf("Baseline mean welfare (if matched): %.4f\n", baseline_stats$baseline_mean_welfare_if_matched))
+  
+  # For each participation rate, compare participating vs non-participating candidates
+  comparison_data <- map_dfr(names(all_sim_results), function(rate_name) {
+    if (rate_name == "baseline" || rate_name == "1") return(NULL)  # Skip extremes
+    
+    rate <- as.numeric(rate_name)
+    
+    # Get roster with participation status
+    roster <- all_sim_results[[rate_name]]$cand_roster %>%
+      filter(year >= year_filter[1], year <= year_filter[2])
+    
+    # Determine participation status
+    if (!"participates" %in% names(roster)) {
+      n_per_year <- roster %>% 
+        group_by(year) %>% 
+        summarise(n = n(), .groups = "drop") %>%
+        pull(n) %>% unique()
+      n_participants <- floor(n_per_year[1] * rate)
+      
+      roster <- roster %>%
+        group_by(year) %>%
+        mutate(participates = cand_id <= n_participants) %>%
+        ungroup()
+    }
+    
+    # Get matched welfare - take only first acceptance per candidate
+    matched <- all_sim_results[[rate_name]]$results %>%
+      filter(accepted == 1) %>%
+      mutate(V_ij = candidate_utility(v_i_bar, s_j, f_j)) %>%
+      group_by(year, cand_id) %>%
+      slice(1) %>%
+      summarise(welfare = V_ij, .groups = "drop")
+    
+    # Join and compute statistics by participation status
+    roster %>%
+      left_join(matched, by = c("year", "cand_id")) %>%
+      mutate(
+        welfare = coalesce(welfare, 0),
+        matched = welfare > 0
+      ) %>%
+      group_by(participates) %>%
+      summarise(
+        participation_rate = rate,
+        n_candidates = n(),
+        n_matched = sum(matched),
+        matching_rate = mean(matched),
+        mean_welfare = mean(welfare),
+        se_welfare = sd(welfare) / sqrt(n()),
+        mean_welfare_if_matched = mean(welfare[matched], na.rm = TRUE),
+        se_welfare_if_matched = sd(welfare[matched], na.rm = TRUE) / sqrt(sum(matched)),
+        .groups = "drop"
+      ) %>%
+      mutate(
+        participation_status = ifelse(participates, "Participating", "Non-participating")
+      )
+  })
+  
+  # Print summary statistics
+  cat("\n=== THEOREM 1 VALIDATION: Participating vs Non-Participating ===\n")
+  print(comparison_data %>%
+          dplyr::select(participation_rate, participation_status, n_candidates,
+                        n_matched, matching_rate, mean_welfare, mean_welfare_if_matched) %>%
+          arrange(participation_rate), n = 20)
+  
+  # Statistical tests
+  cat("\n=== STATISTICAL TESTS (Within Each Market Rate) ===\n")
+  for (rate in unique(comparison_data$participation_rate)) {
+    part_data <- comparison_data %>% 
+      filter(participation_rate == rate, participates == TRUE)
+    non_part_data <- comparison_data %>% 
+      filter(participation_rate == rate, participates == FALSE)
+    
+    if (nrow(part_data) > 0 && nrow(non_part_data) > 0) {
+      # Test on mean welfare (all candidates)
+      welfare_diff <- part_data$mean_welfare - non_part_data$mean_welfare
+      se_diff <- sqrt(part_data$se_welfare^2 + non_part_data$se_welfare^2)
+      t_stat <- welfare_diff / se_diff
+      
+      # Test on mean welfare conditional on matching
+      welfare_matched_diff <- part_data$mean_welfare_if_matched - non_part_data$mean_welfare_if_matched
+      se_matched_diff <- sqrt(part_data$se_welfare_if_matched^2 + non_part_data$se_welfare_if_matched^2)
+      t_stat_matched <- welfare_matched_diff / se_matched_diff
+      
+      cat(sprintf("\nMarket Participation Rate = %.0f%%:\n", rate * 100))
+      cat(sprintf("  [All Candidates]\n"))
+      cat(sprintf("    Participating: n=%d, welfare=%.4f (SE=%.4f)\n",
+                  part_data$n_candidates, part_data$mean_welfare, part_data$se_welfare))
+      cat(sprintf("    Non-participating: n=%d, welfare=%.4f (SE=%.4f)\n",
+                  non_part_data$n_candidates, non_part_data$mean_welfare, 
+                  non_part_data$se_welfare))
+      cat(sprintf("    Difference: %.4f (SE=%.4f, t=%.2f) %s\n",
+                  welfare_diff, se_diff, t_stat,
+                  ifelse(abs(t_stat) > 1.96, "✓ significant", "")))
+      
+      cat(sprintf("  [Matched Candidates Only]\n"))
+      cat(sprintf("    Participating: n=%d, welfare=%.4f (SE=%.4f)\n",
+                  part_data$n_matched, part_data$mean_welfare_if_matched, 
+                  part_data$se_welfare_if_matched))
+      cat(sprintf("    Non-participating: n=%d, welfare=%.4f (SE=%.4f)\n",
+                  non_part_data$n_matched, non_part_data$mean_welfare_if_matched,
+                  non_part_data$se_welfare_if_matched))
+      cat(sprintf("    Difference: %.4f (SE=%.4f, t=%.2f) %s\n",
+                  welfare_matched_diff, se_matched_diff, t_stat_matched,
+                  ifelse(abs(t_stat_matched) > 1.96, "✓ significant", "")))
+    }
+  }
+  
+  # Plot 1: Mean welfare comparison (all candidates)
+  p1 <- ggplot(comparison_data, 
+               aes(x = participation_rate * 100,
+                   y = mean_welfare,
+                   linetype = participation_status,
+                   shape = participation_status)) +
+    geom_hline(yintercept = baseline_stats$baseline_mean_welfare,
+               linetype = "dotted", color = "gray50", linewidth = 0.8) +
+    geom_line(linewidth = 1.2, color = "black") +
+    geom_point(size = 3.5, color = "black") +
+    scale_linetype_manual(
+      values = c("Participating" = "solid", "Non-participating" = "dashed")
+    ) +
+    scale_shape_manual(
+      values = c("Participating" = 16, "Non-participating" = 17)
+    ) +
+    scale_x_continuous(
+      breaks = c(5, 20, 50, 90),
+      labels = c("5", "20", "50", "90")
+    ) +
+    scale_y_continuous(
+      limits = c(0, NA),
+      expand = expansion(mult = c(0, 0.05))
+    ) +
+    labs(
+      x = "Market Participation Rate (%)",
+      y = "Mean Candidate Welfare",
+      linetype = NULL,
+      shape = NULL
+    ) +
+    theme_minimal(base_size = 14) +
+    theme(
+      panel.grid.minor = element_blank(),
+      panel.grid.major = element_line(color = "gray90", linewidth = 0.5),
+      axis.title = element_text(size = 14, face = "bold"),
+      axis.text = element_text(size = 12),
+      legend.position = "bottom",
+      legend.text = element_text(size = 12),
+      plot.margin = margin(10, 10, 10, 10)
+    )
+  
+  # Plot 2: Matching rate comparison
+  p2 <- ggplot(comparison_data,
+               aes(x = participation_rate * 100,
+                   y = matching_rate,
+                   linetype = participation_status,
+                   shape = participation_status)) +
+    geom_hline(yintercept = baseline_stats$baseline_matching_rate,
+               linetype = "dotted", color = "gray50", linewidth = 0.8) +
+    geom_line(linewidth = 1.2, color = "black") +
+    geom_point(size = 3.5, color = "black") +
+    scale_linetype_manual(
+      values = c("Participating" = "solid", "Non-participating" = "dashed")
+    ) +
+    scale_shape_manual(
+      values = c("Participating" = 16, "Non-participating" = 17)
+    ) +
+    scale_x_continuous(
+      breaks = c(5, 20, 50, 90),
+      labels = c("5", "20", "50", "90")
+    ) +
+    scale_y_continuous(
+      labels = scales::percent_format(accuracy = 0.1),
+      limits = c(0, NA),
+      expand = expansion(mult = c(0, 0.05))
+    ) +
+    labs(
+      x = "Market Participation Rate (%)",
+      y = "Matching Rate",
+      linetype = NULL,
+      shape = NULL
+    ) +
+    theme_minimal(base_size = 14) +
+    theme(
+      panel.grid.minor = element_blank(),
+      panel.grid.major = element_line(color = "gray90", linewidth = 0.5),
+      axis.title = element_text(size = 14, face = "bold"),
+      axis.text = element_text(size = 12),
+      legend.position = "bottom",
+      legend.text = element_text(size = 12),
+      plot.margin = margin(10, 10, 10, 10)
+    )
+  
+  # Plot 3: Mean welfare conditional on matching
+  p3 <- ggplot(comparison_data,
+               aes(x = participation_rate * 100,
+                   y = mean_welfare_if_matched,
+                   linetype = participation_status,
+                   shape = participation_status)) +
+    geom_hline(yintercept = baseline_stats$baseline_mean_welfare_if_matched,
+               linetype = "dotted", color = "gray50", linewidth = 0.8) +
+    geom_line(linewidth = 1.2, color = "black") +
+    geom_point(size = 3.5, color = "black") +
+    scale_linetype_manual(
+      values = c("Participating" = "solid", "Non-participating" = "dashed")
+    ) +
+    scale_shape_manual(
+      values = c("Participating" = 16, "Non-participating" = 17)
+    ) +
+    scale_x_continuous(
+      breaks = c(5, 20, 50, 90),
+      labels = c("5", "20", "50", "90")
+    ) +
+    scale_y_continuous(
+      limits = c(0, NA),
+      expand = expansion(mult = c(0, 0.05))
+    ) +
+    labs(
+      x = "Market Participation Rate (%)",
+      y = "Mean Welfare (If Matched)",
+      linetype = NULL,
+      shape = NULL
+    ) +
+    theme_minimal(base_size = 14) +
+    theme(
+      panel.grid.minor = element_blank(),
+      panel.grid.major = element_line(color = "gray90", linewidth = 0.5),
+      axis.title = element_text(size = 14, face = "bold"),
+      axis.text = element_text(size = 12),
+      legend.position = "bottom",
+      legend.text = element_text(size = 12),
+      plot.margin = margin(10, 10, 10, 10)
+    )
+  
+  # Combined 2-panel plot (original)
+  combined_2panel <- (p1 | p2) +
+    plot_layout(guides = "collect") &
+    theme(legend.position = "bottom")
+  
+  # Combined 3-panel plot (with conditional welfare)
+  combined_3panel <- (p1 | p2 | p3) +
+    plot_layout(guides = "collect") &
+    theme(legend.position = "bottom")
+  
+  list(
+    plot = combined_2panel,  # Default 2-panel
+    plot_3panel = combined_3panel,  # 3-panel version
+    plot_welfare = p1,
+    plot_matching = p2,
+    plot_welfare_conditional = p3,
+    data = comparison_data,
+    baseline_stats = baseline_stats
+  )
+}
+
+
+# Example usage:
+candidate_by_participation <- make_fig_candidate_by_participation(all_sim_results, year_filter = c(1, 10))
+candidate_by_participation$plot
+ggsave("fig_candidate_by_participation.pdf", candidate_by_participation$plot, width = 10, height = 4, device = cairo_pdf)
+
+
+
+# =============================================================================
+########################### DEPARTMENT FIGURES ################################
+# =============================================================================
 # =============================================================================
 # FIGURE 2: Department Welfare by Informativeness (Theorem 4.2)
 # =============================================================================
@@ -3589,6 +4365,301 @@ ggsave("fig_department_welfare_combined.pdf",
 # =============================================================================
 # FIGURE 3: Monotonicity of Offer Probability (Lemma 4.1)
 # =============================================================================
+
+make_fig_department_welfare_by_tier_normalized <- function(all_sim_results, year_filter = c(1, 10)) {
+  
+  # Get department info (without h_j since it's now year-specific)
+  departments <- all_sim_results[[1]]$departments %>%
+    dplyr::select(dept_id, prestige_tier, s_j)
+  
+  # Get the yearly hiring schedule
+  yearly_hiring_schedule <- all_sim_results[["baseline"]]$yearly_hiring_schedule
+  
+  years_in_filter <- year_filter[1]:year_filter[2]
+  n_years <- length(years_in_filter)
+  
+  # Calculate total quota by tier from the yearly hiring schedule
+  quota_by_tier <- tibble(
+    dept_id = 1:nrow(departments)
+  ) %>%
+    left_join(departments, by = "dept_id") %>%
+    crossing(year = years_in_filter) %>%
+    mutate(
+      h_j = purrr::map2_int(dept_id, year, ~yearly_hiring_schedule[.x, .y])
+    ) %>%
+    group_by(prestige_tier) %>%
+    summarise(
+      total_quota = sum(h_j),
+      n_depts = n_distinct(dept_id),
+      n_hiring_events = sum(h_j > 0),
+      .groups = "drop"
+    )
+  
+  # Create department-year level data with year-specific h_j
+  dept_year_quotas <- tibble(
+    dept_id = 1:nrow(departments)
+  ) %>%
+    left_join(departments, by = "dept_id") %>%
+    crossing(year = years_in_filter) %>%
+    mutate(
+      h_j = purrr::map2_int(dept_id, year, ~yearly_hiring_schedule[.x, .y])
+    )
+  
+  # Extract hired candidates
+  dept_welfare_data <- purrr::map_dfr(names(all_sim_results), function(rate_name) {
+    rate <- ifelse(rate_name == "baseline", 0, as.numeric(rate_name))
+    
+    all_sim_results[[rate_name]]$results %>%
+      filter(year >= year_filter[1], year <= year_filter[2],
+             strategy == "pairwise", accepted == 1) %>%
+      left_join(departments, by = "dept_id") %>%
+      mutate(participation_rate = rate, prestige_tier = prestige_tier)
+  })
+  
+  # Calculate welfare metrics by tier
+  welfare_by_tier <- dept_welfare_data %>%
+    group_by(participation_rate, prestige_tier) %>%
+    summarise(
+      n_hires = n(),
+      total_utility = sum(U_true, na.rm = TRUE),
+      mean_utility_per_hire = mean(U_true, na.rm = TRUE),
+      se_per_hire = sd(U_true, na.rm = TRUE) / sqrt(n()),
+      .groups = "drop"
+    ) %>%
+    left_join(quota_by_tier, by = "prestige_tier") %>%
+    mutate(
+      mean_utility_per_slot = ifelse(total_quota > 0, total_utility / total_quota, NA_real_),
+      fill_rate = ifelse(total_quota > 0, n_hires / total_quota, NA_real_),
+      # NEW: normalize by number of departments in the tier
+      utility_per_dept = ifelse(n_depts > 0, total_utility / n_depts, NA_real_),
+      prestige_tier = factor(prestige_tier,
+                             levels = c("Tier 1", "Tier 2", "Tier 3", "Tier 4"))
+    )
+  
+  # For statistical testing, we need department-year level data with year-specific h_j
+  dept_level_welfare <- purrr::map_dfr(names(all_sim_results), function(rate_name) {
+    rate <- ifelse(rate_name == "baseline", 0, as.numeric(rate_name))
+    
+    # Get all department-years with their year-specific quotas
+    all_dept_years <- dept_year_quotas
+    
+    hires <- all_sim_results[[rate_name]]$results %>%
+      filter(year >= year_filter[1], year <= year_filter[2],
+             strategy == "pairwise", accepted == 1) %>%
+      group_by(dept_id, year) %>%
+      summarise(
+        total_utility = sum(U_true, na.rm = TRUE),
+        n_hires = n(),
+        .groups = "drop"
+      )
+    
+    all_dept_years %>%
+      left_join(hires, by = c("dept_id", "year")) %>%
+      mutate(
+        total_utility = dplyr::coalesce(total_utility, 0),
+        n_hires = dplyr::coalesce(n_hires, 0L),
+        # Only calculate welfare_per_slot when h_j > 0 (department was hiring)
+        welfare_per_slot = ifelse(h_j > 0, total_utility / h_j, NA_real_),
+        participation_rate = rate
+      )
+  })
+  
+  # Statistical tests by tier (only using department-years where h_j > 0)
+  cat("\n=== DEPARTMENT WELFARE GAINS BY TIER ===\n")
+  
+  tier_tests <- list()
+  tier_summaries <- list()
+  
+  for (tier in c("Tier 1", "Tier 2", "Tier 3", "Tier 4")) {
+    # Filter to only department-years that were actually hiring
+    baseline_dept <- dept_level_welfare %>%
+      filter(participation_rate == 0, prestige_tier == tier, h_j > 0) %>%
+      pull(welfare_per_slot)
+    
+    full_dept <- dept_level_welfare %>%
+      filter(participation_rate == 1, prestige_tier == tier, h_j > 0) %>%
+      pull(welfare_per_slot)
+    
+    if (length(baseline_dept) > 1 && length(full_dept) > 1) {
+      test <- t.test(full_dept, baseline_dept, paired = TRUE)
+      tier_tests[[tier]] <- test
+      
+      # Calculate fill rates only for hiring department-years
+      baseline_fill <- dept_level_welfare %>%
+        filter(participation_rate == 0, prestige_tier == tier, h_j > 0) %>%
+        summarise(fill_rate = sum(n_hires) / sum(h_j)) %>%
+        pull(fill_rate)
+      
+      full_fill <- dept_level_welfare %>%
+        filter(participation_rate == 1, prestige_tier == tier, h_j > 0) %>%
+        summarise(fill_rate = sum(n_hires) / sum(h_j)) %>%
+        pull(fill_rate)
+      
+      tier_summaries[[tier]] <- list(
+        baseline_mean = mean(baseline_dept, na.rm = TRUE),
+        full_mean = mean(full_dept, na.rm = TRUE),
+        gain = mean(full_dept, na.rm = TRUE) - mean(baseline_dept, na.rm = TRUE),
+        baseline_fill = baseline_fill,
+        full_fill = full_fill,
+        p_value = test$p.value,
+        n_hiring_events = sum(dept_level_welfare$prestige_tier == tier &
+                                dept_level_welfare$h_j > 0 &
+                                dept_level_welfare$participation_rate == 0)
+      )
+      
+      cat(tier, ":\n")
+      cat("  N hiring dept-years:", tier_summaries[[tier]]$n_hiring_events, "\n")
+      cat("  Baseline: Welfare/slot = %.4f, Fill rate = %.1f%%\n" %>%
+            sprintf(mean(baseline_dept, na.rm = TRUE), baseline_fill * 100))
+      cat("  Full:     Welfare/slot = %.4f, Fill rate = %.1f%%\n" %>%
+            sprintf(mean(full_dept, na.rm = TRUE), full_fill * 100))
+      cat("  Gain:     %.4f (p = %.4f) %s\n" %>%
+            sprintf(mean(full_dept, na.rm = TRUE) - mean(baseline_dept, na.rm = TRUE),
+                    test$p.value,
+                    ifelse(test$p.value < 0.05, "✓", "")))
+      cat("\n")
+    } else {
+      cat(tier, ": Insufficient data for test\n\n")
+    }
+  }
+  
+  # Test differential gains by prestige
+  if (length(tier_summaries) >= 2) {
+    gains_by_tier <- tibble(
+      tier = names(tier_summaries),
+      gain = purrr::map_dbl(tier_summaries, "gain")
+    ) %>%
+      left_join(
+        departments %>%
+          group_by(prestige_tier) %>%
+          summarise(s_j_mean = mean(s_j), .groups = "drop") %>%
+          rename(tier = prestige_tier),
+        by = "tier"
+      ) %>%
+      arrange(s_j_mean)
+    
+    if (nrow(gains_by_tier) >= 3) {
+      gain_corr <- cor.test(gains_by_tier$s_j_mean, gains_by_tier$gain,
+                            method = "spearman")
+      cat("Correlation(s_j, gain):", sprintf("%.3f (p = %.4f)\n",
+                                             gain_corr$estimate, gain_corr$p.value))
+    } else {
+      gain_corr <- NULL
+      cat("Insufficient tiers for correlation test\n")
+    }
+  } else {
+    gain_corr <- NULL
+  }
+  
+  # Plot 1: Welfare per department (tier-normalized)
+  p1 <- ggplot(welfare_by_tier, aes(x = participation_rate * 100,
+                                    y = utility_per_dept,
+                                    linetype = prestige_tier,
+                                    shape = prestige_tier,
+                                    group = prestige_tier)) +
+    geom_line(linewidth = 1.2, color = "black") +
+    geom_point(size = 3, color = "black") +
+    scale_linetype_manual(values = c("solid", "dashed", "dotted", "dotdash")) +
+    scale_shape_manual(values = c(16, 17, 15, 18)) +
+    scale_x_continuous(
+      breaks = c(0, 5, 20, 50, 90, 100),
+      labels = c("0", "5", "20", "50", "90", "100")
+    ) +
+    scale_y_continuous(
+      limits = c(0, NA),
+      expand = expansion(mult = c(0, 0.05))
+    ) +
+    labs(
+      x = "Market Participation Rate (%)",
+      y = "Department Welfare per Department",
+      linetype = "Department Tier",
+      shape = "Department Tier"
+    ) +
+    theme_minimal(base_size = 14) +
+    theme(
+      panel.grid.minor = element_blank(),
+      panel.grid.major = element_line(color = "gray90", linewidth = 0.5),
+      axis.title = element_text(size = 14, face = "bold"),
+      axis.text = element_text(size = 12),
+      legend.position = "bottom",
+      legend.title = element_text(size = 12, face = "bold"),
+      legend.text = element_text(size = 11),
+      plot.margin = margin(10, 10, 10, 10)
+    )
+  
+  # Plot 2: Welfare gains per department (relative to baseline)
+  welfare_gains <- welfare_by_tier %>%
+    group_by(prestige_tier) %>%
+    mutate(
+      baseline_utility_per_dept = utility_per_dept[participation_rate == 0],
+      welfare_gain_per_dept = utility_per_dept - baseline_utility_per_dept
+    ) %>%
+    ungroup() %>%
+    filter(participation_rate > 0)
+  
+  p2 <- ggplot(welfare_gains, aes(x = participation_rate * 100,
+                                  y = welfare_gain_per_dept,
+                                  linetype = prestige_tier,
+                                  shape = prestige_tier,
+                                  group = prestige_tier)) +
+    geom_line(linewidth = 1.2, color = "black") +
+    geom_point(size = 3, color = "black") +
+    geom_hline(yintercept = 0, linetype = "solid", color = "gray50", linewidth = 0.8) +
+    scale_linetype_manual(values = c("solid", "dashed", "dotted", "dotdash")) +
+    scale_shape_manual(values = c(16, 17, 15, 18)) +
+    scale_x_continuous(
+      breaks = c(5, 20, 50, 90, 100),
+      labels = c("5", "20", "50", "90", "100")
+    ) +
+    scale_y_continuous(
+      expand = expansion(mult = c(0.05, 0.05))
+    ) +
+    labs(
+      x = "Market Participation Rate (%)",
+      y = "Welfare Gain per Department vs. Baseline",
+      linetype = "Department Tier",
+      shape = "Department Tier"
+    ) +
+    theme_minimal(base_size = 14) +
+    theme(
+      panel.grid.minor = element_blank(),
+      panel.grid.major = element_line(color = "gray90", linewidth = 0.5),
+      axis.title = element_text(size = 14, face = "bold"),
+      axis.text = element_text(size = 12),
+      legend.position = "bottom",
+      legend.title = element_text(size = 12, face = "bold"),
+      legend.text = element_text(size = 11),
+      plot.margin = margin(10, 10, 10, 10)
+    )
+  
+  # Combine plots
+  combined_plot <- p1 + p2 +
+    patchwork::plot_layout(ncol = 2, guides = "collect") &
+    theme(legend.position = "bottom")
+  
+  list(
+    plot = combined_plot,
+    plot_total_welfare = p1,
+    plot_gains = p2,
+    tests = tier_tests,
+    tier_summaries = tier_summaries,
+    gain_correlation = gain_corr,
+    aggregate_data = welfare_by_tier,
+    dept_level_data = dept_level_welfare,
+    quota_by_tier = quota_by_tier
+  )
+}
+
+dept_welfare_results <- make_fig_department_welfare_by_tier_normalized(all_sim_results, year_filter = c(1, 10))
+
+dept_welfare_results$plot_total_welfare
+# Save with appropriate dimensions for two-column layout
+ggsave("fig_department_welfare.pdf",
+       dept_welfare_results$plot_total_welfare,
+       width = 12,
+       height = 6,
+       device = cairo_pdf)
+
 
 make_fig_offer_monotonicity <- function(all_sim_results, year_filter = c(1, 10)) {
   
@@ -4136,6 +5207,10 @@ print(interview_heatmap_results$data %>%
         filter(n_interviews > 0) %>%
         arrange(scenario, desc(prestige_tier), quality_tier))
 
+
+# all_sim_results <- all_sim_results_10L
+# all_sim_results <- all_sim_results_20L
+# all_sim_results <- all_sim_results_100L
 
 (hiring_heatmap_results <- make_fig_dept_hiring_heatmap(all_sim_results, year_filter = c(1, 10)))
 
