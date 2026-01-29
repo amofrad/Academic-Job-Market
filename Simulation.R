@@ -2509,29 +2509,6 @@ run_job_market_sim_adaptive <- function(departments,
     res_all[[year]] <- out$results
     rank_all[[year]] <- out$rank_panel
     
-    # ==========================================================================
-    # PENALTY DIAGNOSTICS
-    # ==========================================================================
-    if (print_diagnostics && year == 1) {
-      penalty_summary <- out$diagnostics$applicant_level %>%
-        filter(!is.na(uses_questionnaire)) %>%
-        group_by(participates) %>%
-        summarise(
-          n = n(),
-          n_penalized = sum(penalized, na.rm = TRUE),
-          penalty_rate = mean(penalized, na.rm = TRUE),
-          mean_f_used = mean(f_j_used, na.rm = TRUE),
-          mean_f_actual = mean(f_j, na.rm = TRUE),
-          .groups = "drop"
-        )
-      
-      cat("\n")
-      cat(strrep("=", 70), "\n")
-      cat(sprintf("  PENALTY RATES (Year %d, ρ = %.0f%%)\n", year, participation_rate * 100))
-      cat(strrep("=", 70), "\n")
-      print(penalty_summary)
-      cat(strrep("=", 70), "\n\n")
-    }
     
     # ==========================================================================
     # CUMULATIVE DIAGNOSTICS
@@ -2769,7 +2746,7 @@ baseline_sim <- run_job_market_sim_adaptive(
   yearly_hiring_schedule = yearly_hiring_schedule,  # PASS THE SCHEDULE
   seed = 101,
   alpha = 0.05,
-  L_repeats = 20,
+  L_repeats = 100,
   noise_method = "bootstrap",
   noise_scale = 0.15,
   cand_tier_cutpoints = c(0.10, 0.25, 0.50)
@@ -2799,7 +2776,7 @@ for (rate in c(0.05, 0.20, 0.50, 0.90, 1.00)) {
     yearly_hiring_schedule = yearly_hiring_schedule,  # SAME SCHEDULE FOR ALL
     seed = 101,
     alpha = 0.05,
-    L_repeats = 20,
+    L_repeats = 100,
     noise_method = "bootstrap",
     noise_scale = 0.15,
     cand_tier_cutpoints = c(0.10, 0.25, 0.50)
@@ -2814,10 +2791,8 @@ cat("\n✓ All simulations complete!\n")
 #all_sim_results_W <- all_sim_results
 
 
-# all_sim_results <- all_sim_results_10L
 # all_sim_results <- all_sim_results_20L
-# all_sim_results <- all_sim_results_50L
-# all_sim_results <- all_sim_results_100L
+
 
 
 
