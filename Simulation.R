@@ -236,23 +236,15 @@ calculate_f_j_batch <- function(candidates_df, dept_row, questions, gamma = 2.5)
   
   if (length(num_scores) > 0) {
     num_mat <- do.call(cbind, num_scores)
-    # Weighted average using department-specific numerical weights
-    num_w_norm <- num_w / sum(num_w)
-    num_avg <- as.numeric(num_mat %*% num_w_norm)
-    # Handle NAs: for rows with all NA, default to 0.5
-    all_na <- rowSums(!is.na(num_mat)) == 0
-    num_avg[all_na] <- 0.5
-    # For partial NA, reweight over non-NA dimensions
-    partial_na <- is.na(num_avg) & !all_na
-    if (any(partial_na)) {
-      for (i in which(partial_na)) {
-        valid <- !is.na(num_mat[i, ])
-        if (any(valid)) {
-          w_valid <- num_w[valid] / sum(num_w[valid])
-          num_avg[i] <- sum(num_mat[i, valid] * w_valid)
-        } else num_avg[i] <- 0.5
-      }
-    }
+    # Vectorized weighted average with NA handling:
+    # Replace NAs with 0, compute weighted sum / effective weight per row
+    w_vec <- num_w / sum(num_w)
+    not_na <- !is.na(num_mat)
+    num_mat_clean <- num_mat
+    num_mat_clean[!not_na] <- 0
+    weighted_sum <- as.numeric(num_mat_clean %*% w_vec)
+    effective_w <- as.numeric(not_na %*% w_vec)
+    num_avg <- ifelse(effective_w > 0, weighted_sum / effective_w, 0.5)
   } else {
     num_avg <- rep(0.5, n)
   }
@@ -317,235 +309,6 @@ calculate_f_j_batch <- function(candidates_df, dept_row, questions, gamma = 2.5)
 
 
 # =============================================================================
-# REVISED prepare_departments: weights reflect distinctiveness
-#
-# Key idea: departments put more emphasis on dimensions where they are
-# more distinctive (i.e., further from the cross-department median).
-# This is realistic: a rural department cares more about geographic
-# preferences because that's what differentiates it; a department with
-# a typical teaching load gains less from weighting that dimension.
-# =============================================================================
-prepare_departments <- function(sampled_depts, questions, seed = NULL) {
-  if (!is.null(seed)) set.seed(seed)
-  num_q <- length(questions$numerical)
-  cat_q <- length(questions$categorical)
-  n_total_q <- num_q + cat_q
-  q_names <- c(questions$numerical, names(questions$categorical))
-  
-  result <- sampled_depts %>%
-    mutate(prestige_tier = tier,
-           q1_geographic_setting = as.character(q1_geographic_setting),
-           q2_region = as.character(q2_region),
-           q3_airport_proximity = as.character(q3_airport_proximity),
-           q5_dual_career = as.character(q5_dual_career),
-           q7_typical_startup = as.character(q7_typical_startup),
-           q8_guaranteed_summer = as.character(q8_guaranteed_summer),
-           q9_typical_teaching_load = as.character(q9_typical_teaching_load),
-           q10_course_types = as.character(q10_course_types),
-           q11_mentoring_program = as.character(q11_mentoring_program),
-           q12_research_culture = as.character(q12_research_culture),
-           q13_publication_venues = as.character(q13_publication_venues),
-           q15_medical_school_proximity = as.character(q15_medical_school_proximity))
-  
-  n_depts <- nrow(result)
-  
-  # --- Step 1: Compute cross-department statistics for each dimension ---
-  # For numerical: median values across departments
-  # For categorical: mode (most common category) across departments
-  num_medians <- numeric(num_q)
-  num_ranges <- numeric(num_q)
-  for (qi in seq_along(questions$numerical)) {
-    vals <- as.numeric(result[[questions$numerical[qi]]])
-    num_medians[qi] <- median(vals, na.rm = TRUE)
-    num_ranges[qi] <- diff(range(vals, na.rm = TRUE))
-    if (num_ranges[qi] == 0) num_ranges[qi] <- 1
-  }
-  
-  cat_modes <- character(cat_q)
-  cat_n_levels <- integer(cat_q)
-  for (qi in seq_along(names(questions$categorical))) {
-    qn <- names(questions$categorical)[qi]
-    vals <- as.character(result[[qn]])
-    vals <- vals[!is.na(vals)]
-    if (length(vals) > 0) {
-      tab <- table(vals)
-      cat_modes[qi] <- names(which.max(tab))
-    } else {
-      cat_modes[qi] <- questions$categorical[[qn]][1]
-    }
-    cat_n_levels[qi] <- length(questions$categorical[[qn]])
-  }
-  
-  # --- Step 2: For each department, compute distinctiveness-based weights ---
-  weight_list <- vector("list", n_depts)
-  
-  for (j in 1:n_depts) {
-    raw_weights <- numeric(n_total_q)
-    
-    # Numerical dimensions: distinctiveness = |dept_value - median| / range
-    for (qi in seq_along(questions$numerical)) {
-      dept_val <- as.numeric(result[[questions$numerical[qi]]][j])
-      if (is.na(dept_val)) {
-        raw_weights[qi] <- 1.0  # default weight if missing
-      } else {
-        distinctiveness <- abs(dept_val - num_medians[qi]) / num_ranges[qi]
-        # Map distinctiveness to weight: base weight + bonus for being distinctive
-        raw_weights[qi] <- 1.0 + 2.0 * distinctiveness
-      }
-    }
-    
-    # Categorical dimensions: distinctiveness = 1 if different from mode
-    for (qi in seq_along(names(questions$categorical))) {
-      idx <- num_q + qi
-      qn <- names(questions$categorical)[qi]
-      dept_val <- as.character(result[[qn]][j])
-      if (is.na(dept_val)) {
-        raw_weights[idx] <- 1.0
-      } else {
-        is_atypical <- as.numeric(dept_val != cat_modes[qi])
-        # Departments with atypical characteristics weight them more
-        raw_weights[idx] <- 1.0 + 1.5 * is_atypical
-      }
-    }
-    
-    # Add small random perturbation for heterogeneity even among similar depts
-    raw_weights <- raw_weights * runif(n_total_q, 0.85, 1.15)
-    
-    # Normalize
-    weight_list[[j]] <- raw_weights / sum(raw_weights)
-  }
-  
-  result$weight_vector <- weight_list
-  
-  cat("\n=== DEPARTMENT WEIGHT SUMMARY ===\n")
-  weight_matrix <- do.call(rbind, weight_list)
-  colnames(weight_matrix) <- q_names
-  cat("Mean weights by question:\n")
-  print(round(colMeans(weight_matrix), 3))
-  cat("\nWeight range (min-max) by question:\n")
-  for (i in 1:ncol(weight_matrix))
-    cat(sprintf("  %s: [%.3f, %.3f]\n", q_names[i],
-                min(weight_matrix[, i]), max(weight_matrix[, i])))
-  
-  result
-}
-
-
-# =============================================================================
-# REVISED prepare_departments: weights reflect distinctiveness
-#
-# Key idea: departments put more emphasis on dimensions where they are
-# more distinctive (i.e., further from the cross-department median).
-# This is realistic: a rural department cares more about geographic
-# preferences because that's what differentiates it; a department with
-# a typical teaching load gains less from weighting that dimension.
-# =============================================================================
-prepare_departments <- function(sampled_depts, questions, seed = NULL) {
-  if (!is.null(seed)) set.seed(seed)
-  num_q <- length(questions$numerical)
-  cat_q <- length(questions$categorical)
-  n_total_q <- num_q + cat_q
-  q_names <- c(questions$numerical, names(questions$categorical))
-  
-  result <- sampled_depts %>%
-    mutate(prestige_tier = tier,
-           q1_geographic_setting = as.character(q1_geographic_setting),
-           q2_region = as.character(q2_region),
-           q3_airport_proximity = as.character(q3_airport_proximity),
-           q5_dual_career = as.character(q5_dual_career),
-           q7_typical_startup = as.character(q7_typical_startup),
-           q8_guaranteed_summer = as.character(q8_guaranteed_summer),
-           q9_typical_teaching_load = as.character(q9_typical_teaching_load),
-           q10_course_types = as.character(q10_course_types),
-           q11_mentoring_program = as.character(q11_mentoring_program),
-           q12_research_culture = as.character(q12_research_culture),
-           q13_publication_venues = as.character(q13_publication_venues),
-           q15_medical_school_proximity = as.character(q15_medical_school_proximity))
-  
-  n_depts <- nrow(result)
-  
-  # --- Step 1: Compute cross-department statistics for each dimension ---
-  # For numerical: median values across departments
-  # For categorical: mode (most common category) across departments
-  num_medians <- numeric(num_q)
-  num_ranges <- numeric(num_q)
-  for (qi in seq_along(questions$numerical)) {
-    vals <- as.numeric(result[[questions$numerical[qi]]])
-    num_medians[qi] <- median(vals, na.rm = TRUE)
-    num_ranges[qi] <- diff(range(vals, na.rm = TRUE))
-    if (num_ranges[qi] == 0) num_ranges[qi] <- 1
-  }
-  
-  cat_modes <- character(cat_q)
-  cat_n_levels <- integer(cat_q)
-  for (qi in seq_along(names(questions$categorical))) {
-    qn <- names(questions$categorical)[qi]
-    vals <- as.character(result[[qn]])
-    vals <- vals[!is.na(vals)]
-    if (length(vals) > 0) {
-      tab <- table(vals)
-      cat_modes[qi] <- names(which.max(tab))
-    } else {
-      cat_modes[qi] <- questions$categorical[[qn]][1]
-    }
-    cat_n_levels[qi] <- length(questions$categorical[[qn]])
-  }
-  
-  # --- Step 2: For each department, compute distinctiveness-based weights ---
-  weight_list <- vector("list", n_depts)
-  
-  for (j in 1:n_depts) {
-    raw_weights <- numeric(n_total_q)
-    
-    # Numerical dimensions: distinctiveness = |dept_value - median| / range
-    for (qi in seq_along(questions$numerical)) {
-      dept_val <- as.numeric(result[[questions$numerical[qi]]][j])
-      if (is.na(dept_val)) {
-        raw_weights[qi] <- 1.0  # default weight if missing
-      } else {
-        distinctiveness <- abs(dept_val - num_medians[qi]) / num_ranges[qi]
-        # Map distinctiveness to weight: base weight + bonus for being distinctive
-        raw_weights[qi] <- 1.0 + 2.0 * distinctiveness
-      }
-    }
-    
-    # Categorical dimensions: distinctiveness = 1 if different from mode
-    for (qi in seq_along(names(questions$categorical))) {
-      idx <- num_q + qi
-      qn <- names(questions$categorical)[qi]
-      dept_val <- as.character(result[[qn]][j])
-      if (is.na(dept_val)) {
-        raw_weights[idx] <- 1.0
-      } else {
-        is_atypical <- as.numeric(dept_val != cat_modes[qi])
-        # Departments with atypical characteristics weight them more
-        raw_weights[idx] <- 1.0 + 1.5 * is_atypical
-      }
-    }
-    
-    # Add small random perturbation for heterogeneity even among similar depts
-    raw_weights <- raw_weights * runif(n_total_q, 0.85, 1.15)
-    
-    # Normalize
-    weight_list[[j]] <- raw_weights / sum(raw_weights)
-  }
-  
-  result$weight_vector <- weight_list
-  
-  cat("\n=== DEPARTMENT WEIGHT SUMMARY ===\n")
-  weight_matrix <- do.call(rbind, weight_list)
-  colnames(weight_matrix) <- q_names
-  cat("Mean weights by question:\n")
-  print(round(colMeans(weight_matrix), 3))
-  cat("\nWeight range (min-max) by question:\n")
-  for (i in 1:ncol(weight_matrix))
-    cat(sprintf("  %s: [%.3f, %.3f]\n", q_names[i],
-                min(weight_matrix[, i]), max(weight_matrix[, i])))
-  
-  result
-}
-
-# =============================================================================
 # OPTIMIZED generate_candidates_new - Vectorized categorical sampling
 # =============================================================================
 generate_candidates_new <- function(n_candidates, questions, seed = NULL) {
@@ -569,13 +332,17 @@ generate_candidates_new <- function(n_candidates, questions, seed = NULL) {
   within_rank <- candidates$within_tier_rank
   flexibility <- 0.3 + 0.7 * within_rank
   
-  # Helper: vectorized weighted sampling (cumulative-probability trick)
+  # Helper: fully vectorized weighted sampling (no apply)
   vsample <- function(choices, prob_matrix) {
-    pm <- prob_matrix / rowSums(prob_matrix)
+    rs <- rowSums(prob_matrix)
+    pm <- prob_matrix / rs
     u <- runif(nrow(pm))
-    cum <- t(apply(pm, 1, cumsum))
-    idx <- rowSums(u > cum) + 1L
-    choices[pmin(idx, length(choices))]
+    # Compute cumulative sums column-wise (avoids t(apply(...)))
+    nc <- ncol(pm)
+    cum <- pm
+    for (k in 2:nc) cum[, k] <- cum[, k - 1L] + pm[, k]
+    idx <- nc - rowSums(u < cum) + 1L
+    choices[pmin(pmax(idx, 1L), nc)]
   }
   
   # Numerical questions (already vectorized)
@@ -654,43 +421,77 @@ prepare_departments <- function(sampled_depts, questions, seed = NULL) {
            q12_research_culture = as.character(q12_research_culture),
            q13_publication_venues = as.character(q13_publication_venues),
            q15_medical_school_proximity = as.character(q15_medical_school_proximity))
-  n_depts <- nrow(result); weight_list <- vector("list", n_depts)
+  n_depts <- nrow(result)
   q_names <- c(questions$numerical, names(questions$categorical))
-  for (j in 1:n_depts) {
-    dept_tier <- result$tier[j]; base_weights <- rep(1, n_total_q)
-    dept_type <- sample(1:4, 1, prob = c(0.25, 0.25, 0.30, 0.20))
-    if (dept_type == 1) { base_weights <- runif(n_total_q, 0.7, 1.3)
-    } else if (dept_type == 2) {
-      for (i in seq_along(q_names)) {
-        if (q_names[i] %in% c("q1_geographic_setting","q2_region","q3_airport_proximity")) base_weights[i] <- runif(1,2.0,4.0)
-        else if (q_names[i] == "q4_cost_of_living") base_weights[i] <- runif(1,1.5,2.5)
-      }
-    } else if (dept_type == 3) {
-      for (i in seq_along(q_names)) {
-        if (q_names[i] %in% c("q14_phd_student_ratio","q12_research_culture","q13_publication_venues")) base_weights[i] <- runif(1,2.5,4.5)
-        else if (q_names[i] %in% c("q9_typical_teaching_load","q10_course_types")) base_weights[i] <- runif(1,1.5,2.5)
-      }
-    } else if (dept_type == 4) {
-      for (i in seq_along(q_names)) {
-        if (q_names[i] %in% c("q6_typical_salary_range","q7_typical_startup","q8_guaranteed_summer")) base_weights[i] <- runif(1,2.0,4.0)
-      }
-    }
-    if (dept_tier == "Tier 1") for (i in seq_along(q_names)) if (q_names[i] %in% c("q13_publication_venues","q12_research_culture")) base_weights[i] <- base_weights[i] * runif(1,1.3,1.8)
-    if (dept_tier == "Tier 4") for (i in seq_along(q_names)) if (q_names[i] %in% c("q1_geographic_setting","q4_cost_of_living")) base_weights[i] <- base_weights[i] * runif(1,1.2,1.6)
-    weight_list[[j]] <- base_weights / sum(base_weights)
+
+  # Pre-compute question name masks (vectorized index lookup)
+  geo_idx <- which(q_names %in% c("q1_geographic_setting","q2_region","q3_airport_proximity"))
+  col_idx <- which(q_names == "q4_cost_of_living")
+  research_idx <- which(q_names %in% c("q14_phd_student_ratio","q12_research_culture","q13_publication_venues"))
+  teaching_idx <- which(q_names %in% c("q9_typical_teaching_load","q10_course_types"))
+  comp_idx <- which(q_names %in% c("q6_typical_salary_range","q7_typical_startup","q8_guaranteed_summer"))
+  t1_idx <- which(q_names %in% c("q13_publication_venues","q12_research_culture"))
+  t4_idx <- which(q_names %in% c("q1_geographic_setting","q4_cost_of_living"))
+
+  # Vectorized: sample all dept_types at once
+  dept_types <- sample(1:4, n_depts, replace = TRUE, prob = c(0.25, 0.25, 0.30, 0.20))
+  dept_tiers <- as.character(result$tier)
+
+  # Build weight matrix (n_depts x n_total_q) all at once
+  weight_matrix <- matrix(1, nrow = n_depts, ncol = n_total_q)
+
+  # Type 1: uniform random weights
+  mask1 <- dept_types == 1
+  if (any(mask1)) weight_matrix[mask1, ] <- matrix(runif(sum(mask1) * n_total_q, 0.7, 1.3), nrow = sum(mask1))
+
+  # Type 2: geography-focused
+  mask2 <- dept_types == 2
+  n2 <- sum(mask2)
+  if (n2 > 0) {
+    if (length(geo_idx) > 0) weight_matrix[mask2, geo_idx] <- matrix(runif(n2 * length(geo_idx), 2.0, 4.0), nrow = n2)
+    if (length(col_idx) > 0) weight_matrix[mask2, col_idx] <- runif(n2, 1.5, 2.5)
   }
+
+  # Type 3: research-focused
+  mask3 <- dept_types == 3
+  n3 <- sum(mask3)
+  if (n3 > 0) {
+    if (length(research_idx) > 0) weight_matrix[mask3, research_idx] <- matrix(runif(n3 * length(research_idx), 2.5, 4.5), nrow = n3)
+    if (length(teaching_idx) > 0) weight_matrix[mask3, teaching_idx] <- matrix(runif(n3 * length(teaching_idx), 1.5, 2.5), nrow = n3)
+  }
+
+  # Type 4: compensation-focused
+  mask4 <- dept_types == 4
+  n4 <- sum(mask4)
+  if (n4 > 0 && length(comp_idx) > 0) {
+    weight_matrix[mask4, comp_idx] <- matrix(runif(n4 * length(comp_idx), 2.0, 4.0), nrow = n4)
+  }
+
+  # Tier-specific adjustments (vectorized)
+  mask_t1 <- dept_tiers == "Tier 1"
+  nt1 <- sum(mask_t1)
+  if (nt1 > 0 && length(t1_idx) > 0) {
+    weight_matrix[mask_t1, t1_idx] <- weight_matrix[mask_t1, t1_idx] * matrix(runif(nt1 * length(t1_idx), 1.3, 1.8), nrow = nt1)
+  }
+  mask_t4 <- dept_tiers == "Tier 4"
+  nt4 <- sum(mask_t4)
+  if (nt4 > 0 && length(t4_idx) > 0) {
+    weight_matrix[mask_t4, t4_idx] <- weight_matrix[mask_t4, t4_idx] * matrix(runif(nt4 * length(t4_idx), 1.2, 1.6), nrow = nt4)
+  }
+
+  # Normalize rows
+  row_sums <- rowSums(weight_matrix)
+  weight_matrix <- weight_matrix / row_sums
+
+  # Convert to list for storage
+  weight_list <- lapply(seq_len(n_depts), function(j) weight_matrix[j, ])
   result$weight_vector <- weight_list
-  cat("\
-=== DEPARTMENT WEIGHT SUMMARY ===\
-")
-  weight_matrix <- do.call(rbind, weight_list); colnames(weight_matrix) <- q_names
-  cat("Mean weights by question:\
-"); print(round(colMeans(weight_matrix), 3))
-  cat("\
-Weight range (min-max) by question:\
-")
-  for (i in 1:ncol(weight_matrix)) cat(sprintf("  %s: [%.3f, %.3f]\
-", q_names[i], min(weight_matrix[,i]), max(weight_matrix[,i])))
+
+  colnames(weight_matrix) <- q_names
+  cat("\n=== DEPARTMENT WEIGHT SUMMARY ===\n")
+  cat("Mean weights by question:\n"); print(round(colMeans(weight_matrix), 3))
+  cat("\nWeight range (min-max) by question:\n")
+  for (i in 1:ncol(weight_matrix)) cat(sprintf("  %s: [%.3f, %.3f]\n", q_names[i], min(weight_matrix[,i]), max(weight_matrix[,i])))
   result
 }
 
@@ -698,27 +499,21 @@ Weight range (min-max) by question:\
 generate_yearly_hiring_schedule <- function(n_departments, n_years, departments, seed = 123) {
   set.seed(seed)
   hire_prob_by_tier <- c("Tier 1"=0.6,"Tier 2"=0.6,"Tier 3"=0.6,"Tier 4"=0.6)
-  hiring_schedule <- matrix(0L, nrow=n_departments, ncol=n_years)
-  for (j in 1:n_departments) {
-    tier <- as.character(departments$prestige_tier[j])
-    prob <- hire_prob_by_tier[[tier]]; if (is.null(prob)) prob <- 0.5
-    hiring_schedule[j, ] <- rbinom(n_years, size=1, prob=prob)
-  }
-  cat("\
-=== YEARLY HIRING SCHEDULE SUMMARY ===\
-")
-  cat("Total department-years:", n_departments * n_years, "\
-")
-  cat("Total hiring events:", sum(hiring_schedule), "\
-")
-  cat("Overall hiring rate:", round(mean(hiring_schedule), 3), "\
-\
-")
+  # Vectorized: look up probability for all departments at once
+  tiers <- as.character(departments$prestige_tier)
+  probs <- hire_prob_by_tier[tiers]
+  probs[is.na(probs)] <- 0.5
+  # Generate all draws in one call: rbinom is vectorized over prob
+  hiring_schedule <- matrix(rbinom(n_departments * n_years, size = 1, prob = rep(probs, n_years)),
+                            nrow = n_departments, ncol = n_years)
+  cat("\n=== YEARLY HIRING SCHEDULE SUMMARY ===\n")
+  cat("Total department-years:", n_departments * n_years, "\n")
+  cat("Total hiring events:", sum(hiring_schedule), "\n")
+  cat("Overall hiring rate:", round(mean(hiring_schedule), 3), "\n\n")
   for (tier in c("Tier 1","Tier 2","Tier 3","Tier 4")) {
-    tier_idx <- which(departments$prestige_tier == tier)
+    tier_idx <- which(tiers == tier)
     if (length(tier_idx) > 0) cat(tier, ": ", sum(hiring_schedule[tier_idx,]), " hires over ",
-                                  length(tier_idx)*n_years, " dept-years (rate = ", round(mean(hiring_schedule[tier_idx,]),3), ")\
-", sep="")
+                                  length(tier_idx)*n_years, " dept-years (rate = ", round(mean(hiring_schedule[tier_idx,]),3), ")\n", sep="")
   }
   hiring_schedule
 }
@@ -777,11 +572,12 @@ prepare_nn_data <- function(data, questions, include_fit = TRUE, include_questio
       if (qcol %in% colnames(data)) {
         cat_i <- cat_i + 1L; raw_values <- data[[qcol]]
         if (q_name == "q2_region") {
-          values <- vapply(raw_values, function(x) {
-            if (is.na(x) || !is.character(x) || x == "") return(levels[1])
-            parts <- strsplit(as.character(x), ",")[[1]]
-            if (length(parts)==0) levels[1] else trimws(parts[1])
-          }, character(1))
+          # Vectorized: extract first region before comma
+          rv_char <- as.character(raw_values)
+          rv_char[is.na(rv_char) | rv_char == ""] <- levels[1]
+          first_comma <- regexpr(",", rv_char, fixed = TRUE)
+          values <- ifelse(first_comma > 0, trimws(substr(rv_char, 1, first_comma - 1)), trimws(rv_char))
+          values[values == "" | is.na(values)] <- levels[1]
         } else values <- as.character(raw_values)
         x_cat_list[[cat_i]] <- safe_categorical_to_index(values, levels, paste0("cand_", q_name))
         embedding_specs[[cat_i]] <- list(n_levels=n_levels, embed_dim=embed_dim)
@@ -796,7 +592,13 @@ prepare_nn_data <- function(data, questions, include_fit = TRUE, include_questio
   cont_features <- intersect(cont_features, colnames(data))
   if (length(cont_features)==0) stop("No continuous features available for neural network")
   cont_matrix <- as.matrix(data[, cont_features, drop=FALSE])
-  for (col in 1:ncol(cont_matrix)) { na_mask <- is.na(cont_matrix[,col]); if (any(na_mask)) { m <- mean(cont_matrix[,col],na.rm=TRUE); if(is.na(m)) m <- 0; cont_matrix[na_mask,col] <- m } }
+  # Vectorized NA imputation: replace NAs with column means
+  na_mask <- is.na(cont_matrix)
+  if (any(na_mask)) {
+    col_means <- colMeans(cont_matrix, na.rm = TRUE)
+    col_means[is.na(col_means)] <- 0
+    cont_matrix[na_mask] <- col_means[col(cont_matrix)[na_mask]]
+  }
   x_cont_tensor <- torch_tensor(cont_matrix, dtype=torch_float())
   x_cat_tensors <- list()
   for (i in seq_along(x_cat_list)) {
@@ -944,25 +746,37 @@ predict_acceptance_probability <- function(dept_model, applicant_data, n_bootstr
     attr(res,"pi_draws") <- matrix(pi_mean, nrow=1); return(res)
   }
   n_hist <- nrow(hist_data); pi_draws_matrix <- matrix(NA_real_, nrow=n_bootstrap, ncol=nrow(applicant_data))
+  # Cache inference data ONCE (same applicant_data & questions every bootstrap iteration)
+  nn_data_cached <- tryCatch(prepare_nn_data(applicant_data, dept_model$questions, include_fit=include_fit, include_questions=include_questions), error=function(e) NULL)
+  if (is.null(nn_data_cached)) {
+    tg <- pmax(0, applicant_data$dept_tier-applicant_data$cand_tier)
+    mu <- pmin(pmax(case_when(tg==0~0.55,tg==1~0.45,tg==2~0.35,TRUE~0.25)+rnorm(nrow(applicant_data),0,0.05),1e-5),1-1e-5)
+    res <- applicant_data %>% mutate(pi_pred=mu, pi_var=0)
+    attr(res,"pi_draws") <- matrix(mu, nrow=1); return(res)
+  }
+  # Save trained model state for warm-start bootstrap
+  trained_state <- if (dept_model$is_trained) lapply(dept_model$model$parameters, function(p) p$clone()$detach()) else NULL
   for (b in 1:n_bootstrap) {
     boot_data <- hist_data[sample.int(n_hist,n_hist,replace=TRUE),]
     temp_model <- initialize_department_model(dept_model$questions, include_fit=include_fit, include_questions=include_questions)
+    # Warm-start: copy trained weights instead of random init
+    if (!is.null(trained_state)) {
+      tp <- temp_model$model$parameters
+      with_no_grad({ for (i in seq_along(tp)) tp[[i]]$copy_(trained_state[[i]]) })
+    }
     temp_model$historical_data <- boot_data
-    temp_model <- tryCatch(train_department_model(temp_model, boot_data, n_epochs=30, include_fit=include_fit, include_questions=include_questions, seed=seed+b), error=function(e) temp_model)
+    temp_model <- tryCatch(train_department_model(temp_model, boot_data, n_epochs=5, include_fit=include_fit, include_questions=include_questions, seed=seed+b), error=function(e) temp_model)
     if (!temp_model$is_trained) {
       tg <- pmax(0, applicant_data$dept_tier-applicant_data$cand_tier)
       pi_draws_matrix[b,] <- pmin(pmax(case_when(tg==0~0.6,tg==1~0.3,tg==2~0.12,TRUE~0.05)+rnorm(nrow(applicant_data),0,0.05),1e-5),1-1e-5); next
     }
-    nn_data <- tryCatch(prepare_nn_data(applicant_data, temp_model$questions, include_fit=include_fit, include_questions=include_questions), error=function(e) NULL)
-    if (is.null(nn_data)) {
-      tg <- pmax(0, applicant_data$dept_tier-applicant_data$cand_tier)
-      pi_draws_matrix[b,] <- pmin(pmax(case_when(tg==0~0.55,tg==1~0.45,tg==2~0.35,TRUE~0.25)+rnorm(nrow(applicant_data),0,0.05),1e-5),1-1e-5); next
-    }
     temp_model$model$eval()
-    with_no_grad({ log_odds <- temp_model$model(nn_data$x_cont, nn_data$x_cat); pi_b <- as.numeric(torch_sigmoid(log_odds)$squeeze()$to(device="cpu")) })
+    with_no_grad({ log_odds <- temp_model$model(nn_data_cached$x_cont, nn_data_cached$x_cat); pi_b <- as.numeric(torch_sigmoid(log_odds)$squeeze()$to(device="cpu")) })
     pi_draws_matrix[b,] <- pmin(pmax(pi_b,1e-5),1-1e-5)
   }
-  res <- applicant_data %>% mutate(pi_pred=colMeans(pi_draws_matrix,na.rm=TRUE), pi_var=apply(pi_draws_matrix,2,stats::var,na.rm=TRUE))
+  pi_means <- colMeans(pi_draws_matrix, na.rm = TRUE)
+  pi_vars <- colMeans(sweep(pi_draws_matrix, 2, pi_means)^2, na.rm = TRUE) * nrow(pi_draws_matrix) / (nrow(pi_draws_matrix) - 1)
+  res <- applicant_data %>% mutate(pi_pred = pi_means, pi_var = pi_vars)
   attr(res,"pi_draws") <- pi_draws_matrix; res
 }
 
@@ -1013,7 +827,9 @@ compute_c_alpha_from_draws <- function(U_hat, U_draws, alpha = 0.05, ridge = 0.0
   if (n <= 1L || B <= 1L) return(list(c_alpha=0, sigma_hat=matrix(0,n,n)))
   
   # Compute sigma_hat via Var(X_i - X_l) = Var(X_i) + Var(X_l) - 2*Cov(X_i,X_l)
-  col_vars <- apply(U_draws, 2, var, na.rm=TRUE); col_vars[!is.finite(col_vars)] <- 0
+  col_means <- colMeans(U_draws, na.rm = TRUE)
+  col_vars <- colMeans(sweep(U_draws, 2, col_means)^2, na.rm = TRUE) * nrow(U_draws) / (nrow(U_draws) - 1)
+  col_vars[!is.finite(col_vars)] <- 0
   cov_mat <- cov(U_draws, use="pairwise.complete.obs"); cov_mat[!is.finite(cov_mat)] <- 0
   var_diff <- outer(col_vars, col_vars, "+") - 2*cov_mat
   var_diff[var_diff < 0] <- 0
@@ -1030,7 +846,9 @@ compute_c_alpha_from_draws <- function(U_hat, U_draws, alpha = 0.05, ridge = 0.0
     delta_hat_pairs <- delta_hat_mat[pairs]; sigma_pairs <- sigma_hat[pairs]
     z_pairs <- sweep(sweep(delta_b_pairs, 2, delta_hat_pairs, "-"), 2, sigma_pairs, "/")
     z_pairs[!is.finite(z_pairs)] <- -Inf
-    Zb <- apply(z_pairs, 1, max, na.rm=TRUE)
+    # Row max via column-wise reduction (avoids apply)
+    Zb <- z_pairs[, 1]
+    if (ncol(z_pairs) > 1) for (cc in 2:ncol(z_pairs)) Zb <- pmax(Zb, z_pairs[, cc])
   } else {
     # Row-chunked for larger n
     Zb <- rep(-Inf, B)
@@ -1039,7 +857,10 @@ compute_c_alpha_from_draws <- function(U_hat, U_draws, alpha = 0.05, ridge = 0.0
       z_batch <- sweep(U_draws[,i]-U_draws[,l_idx,drop=FALSE], 2, delta_hat_mat[i,l_idx], "-")
       z_batch <- sweep(z_batch, 2, sigma_hat[i,l_idx], "/")
       z_batch[!is.finite(z_batch)] <- -Inf
-      Zb <- pmax(Zb, apply(z_batch, 1, max, na.rm=TRUE))
+      # Row max via column-wise reduction
+      row_max <- z_batch[, 1]
+      if (ncol(z_batch) > 1) for (cc in 2:ncol(z_batch)) row_max <- pmax(row_max, z_batch[, cc])
+      Zb <- pmax(Zb, row_max)
     }
   }
   Zb[!is.finite(Zb)] <- -Inf
@@ -1188,13 +1009,14 @@ print_hiring_allocation <- function(all_results, year, participation_rate) {
 }
 
 add_dept_info_to_learning_data <- function(ld_selected, dept_info) {
+  n <- nrow(ld_selected)
   ld_selected$q4_cost_of_living <- dept_info$q4_cost_of_living
   ld_selected$q6_typical_salary_range <- dept_info$q6_typical_salary_range
   ld_selected$q14_phd_student_ratio <- dept_info$q14_phd_student_ratio
-  for (q in c("q1_geographic_setting","q2_region","q3_airport_proximity","q5_dual_career","q7_typical_startup",
+  cat_qs <- c("q1_geographic_setting","q2_region","q3_airport_proximity","q5_dual_career","q7_typical_startup",
               "q8_guaranteed_summer","q9_typical_teaching_load","q10_course_types","q11_mentoring_program",
-              "q12_research_culture","q13_publication_venues","q15_medical_school_proximity"))
-    ld_selected[[q]] <- as.character(dept_info[[q]])
+              "q12_research_culture","q13_publication_venues","q15_medical_school_proximity")
+  for (q in cat_qs) ld_selected[[q]] <- as.character(dept_info[[q]])
   ld_selected
 }
 
@@ -1282,7 +1104,7 @@ simulate_market_year_adaptive_sequential <- function(candidates, departments, qu
     ld_pw <- all_results %>% dplyr::filter(dept_id==departments$dept_id[j], strategy=="pairwise", interviewed==1L)
     if (nrow(ld_pw)>0) learning_data_pairwise[[j]] <- ld_pw %>% dplyr::select(year,dept_id,cand_id,s_j,v_i_bar,f_j,offered,accepted,dplyr::starts_with("q_")) %>% add_dept_info_to_learning_data(departments[j,])
   }
-  diag_list <- diag_list[!sapply(diag_list, is.null)]
+  diag_list <- diag_list[!vapply(diag_list, is.null, logical(1))]
   list(results=all_results, learning_data_pairwise=learning_data_pairwise, rank_panel=rank_panel, diagnostics=list(applicant_level=bind_rows(diag_list)))
 }
 
@@ -1329,15 +1151,11 @@ resolve_offers_sequential <- function(interviewed_data, departments, questions,
   candidate_held <- list()
   
   # dept_held_cands: named list  dept_id (char) -> vector of cand_ids currently held
-  dept_held_cands <- list()
-  for (d in unique(interviewed_data$dept_id))
-    dept_held_cands[[as.character(d)]] <- integer(0)
-  
+  unique_depts <- as.character(unique(interviewed_data$dept_id))
+  dept_held_cands <- setNames(replicate(length(unique_depts), integer(0), simplify = FALSE), unique_depts)
+
   # dept_rejected_by: tracks which candidates have rejected each dept
-  # (dept should not re-propose to them)
-  dept_rejected_by <- list()
-  for (d in unique(interviewed_data$dept_id))
-    dept_rejected_by[[as.character(d)]] <- integer(0)
+  dept_rejected_by <- setNames(replicate(length(unique_depts), integer(0), simplify = FALSE), unique_depts)
   
   # Department quotas
   dept_quota <- interviewed_data %>%
@@ -1351,32 +1169,44 @@ resolve_offers_sequential <- function(interviewed_data, departments, questions,
     cat(sprintf("  Offer Round %d...\n", round))
     offers_this_round <- tibble()
     
-    # --- Each department proposes to fill open slots ---
-    for (d in unique(interviewed_data$dept_id)) {
+    # --- Each department proposes to fill open slots (base R, no dplyr in loop) ---
+    # Pre-sort interviewed_data by dept_id then desc(U_hat) for fast slicing
+    dept_ids_data <- interviewed_data$dept_id
+    cand_ids_data <- interviewed_data$cand_id
+    u_hat_data <- interviewed_data$U_hat
+    dept_row_groups <- split(seq_len(nrow(interviewed_data)), dept_ids_data)
+
+    offer_dept_list <- vector("list", length(unique(dept_ids_data)))
+    offer_cand_list <- vector("list", length(unique(dept_ids_data)))
+    ol <- 0L
+    for (d in unique(dept_ids_data)) {
       d_char <- as.character(d)
       h_j <- dept_quota[[d_char]]
       n_held <- length(dept_held_cands[[d_char]])
       positions_remaining <- h_j - n_held
       if (positions_remaining <= 0) next
-      
-      # Candidates this dept should NOT propose to:
-      # - already holding an offer from this dept
-      # - previously rejected this dept
+
       excluded <- c(dept_held_cands[[d_char]], dept_rejected_by[[d_char]])
-      
-      eligible <- interviewed_data %>%
-        dplyr::filter(dept_id == d, !(cand_id %in% excluded)) %>%
-        dplyr::arrange(dplyr::desc(U_hat))
-      
-      if (nrow(eligible) == 0) next
-      
-      new_offers <- eligible %>%
-        dplyr::slice_head(n = min(positions_remaining, nrow(eligible)))
-      
-      offers_this_round <- dplyr::bind_rows(
-        offers_this_round,
-        new_offers %>% dplyr::select(dept_id, cand_id) %>% dplyr::mutate(round = round)
-      )
+      rows_d <- dept_row_groups[[d_char]]
+      if (length(rows_d) == 0) next
+
+      keep <- !(cand_ids_data[rows_d] %in% excluded)
+      eligible_rows <- rows_d[keep]
+      if (length(eligible_rows) == 0) next
+
+      # Sort by U_hat descending and take top positions_remaining
+      ord <- order(u_hat_data[eligible_rows], decreasing = TRUE)
+      top_n <- min(positions_remaining, length(eligible_rows))
+      selected_rows <- eligible_rows[ord[1:top_n]]
+
+      ol <- ol + 1L
+      offer_dept_list[[ol]] <- dept_ids_data[selected_rows]
+      offer_cand_list[[ol]] <- cand_ids_data[selected_rows]
+    }
+    if (ol > 0) {
+      offers_this_round <- tibble(dept_id = unlist(offer_dept_list[1:ol]),
+                                  cand_id = unlist(offer_cand_list[1:ol]),
+                                  round = round)
     }
     
     if (nrow(offers_this_round) == 0) {
@@ -1385,71 +1215,68 @@ resolve_offers_sequential <- function(interviewed_data, departments, questions,
     }
     cat(sprintf("  %d new offers extended in round %d\n", nrow(offers_this_round), round))
     
-    # Mark offers in the data
-    for (i in 1:nrow(offers_this_round)) {
-      idx <- which(interviewed_data$dept_id == offers_this_round$dept_id[i] &
-                     interviewed_data$cand_id == offers_this_round$cand_id[i])
-      if (length(idx) == 1) {
-        interviewed_data$offered[idx] <- 1L
-        interviewed_data$offer_round[idx] <- round
-      }
+    # Mark offers in the data (vectorized via composite key match)
+    offer_keys <- paste(offers_this_round$dept_id, offers_this_round$cand_id, sep = "_")
+    data_keys <- paste(interviewed_data$dept_id, interviewed_data$cand_id, sep = "_")
+    match_idx <- match(offer_keys, data_keys)
+    valid_matches <- !is.na(match_idx)
+    if (any(valid_matches)) {
+      interviewed_data$offered[match_idx[valid_matches]] <- 1L
+      interviewed_data$offer_round[match_idx[valid_matches]] <- round
     }
     
     # --- Each candidate with a new offer evaluates: hold best, reject rest ---
-    for (cand in unique(offers_this_round$cand_id)) {
+    # Pre-build lookup: for each candidate with a new offer, get their new depts and utils
+    # using base R vector ops instead of per-candidate dplyr calls
+    offer_cands <- unique(offers_this_round$cand_id)
+    offer_cand_depts <- split(offers_this_round$dept_id, offers_this_round$cand_id)
+
+    # Pre-build cand_util lookup from interviewed_data (vectorized)
+    id_util_lookup <- setNames(interviewed_data$cand_util,
+                               paste(interviewed_data$cand_id, interviewed_data$dept_id, sep = "_"))
+
+    for (cand in offer_cands) {
       cand_char <- as.character(cand)
-      
-      # New offer(s) this round for this candidate
-      new_depts <- offers_this_round %>%
-        dplyr::filter(cand_id == cand) %>%
-        dplyr::pull(dept_id)
-      
-      # Get utilities for new offers
-      new_utils <- interviewed_data %>%
-        dplyr::filter(cand_id == cand, dept_id %in% new_depts) %>%
-        dplyr::select(dept_id, cand_util)
-      
-      # Current held offer (if any)
+      new_depts <- offer_cand_depts[[cand_char]]
+
+      # Get utilities via lookup (base R, no dplyr)
+      new_keys <- paste(cand, new_depts, sep = "_")
+      new_utils_vec <- id_util_lookup[new_keys]
+      opt_depts <- new_depts
+      opt_utils <- as.numeric(new_utils_vec)
+
+      # Add current hold if any
       current_hold <- candidate_held[[cand_char]]
-      
-      # Combine current hold + new offers to find best
-      all_options <- new_utils
       if (!is.null(current_hold)) {
-        all_options <- dplyr::bind_rows(
-          all_options,
-          tibble::tibble(dept_id = current_hold$dept_id, cand_util = current_hold$util)
-        )
+        opt_depts <- c(opt_depts, current_hold$dept_id)
+        opt_utils <- c(opt_utils, current_hold$util)
       }
-      
-      # Add small noise for tie-breaking (very small to keep mostly deterministic)
-      all_options <- all_options %>%
-        dplyr::mutate(noisy_util = cand_util + rnorm(n(), 0, noise_sd * 0.1))
-      
-      # Pick best
-      best_row <- all_options %>% dplyr::slice_max(noisy_util, n = 1, with_ties = FALSE)
-      best_dept <- best_row$dept_id[1]
-      best_util <- best_row$cand_util[1]
-      
-      # Reject all others
-      rejected_depts <- setdiff(all_options$dept_id, best_dept)
-      
+
+      # Pick best with small noise for tie-breaking
+      noisy <- opt_utils + rnorm(length(opt_utils), 0, noise_sd * 0.1)
+      best_i <- which.max(noisy)
+      best_dept <- opt_depts[best_i]
+      best_util <- opt_utils[best_i]
+      rejected_depts <- opt_depts[-best_i]
+
       # If switching away from current hold, free that dept's slot
       if (!is.null(current_hold) && current_hold$dept_id != best_dept) {
         old_d_char <- as.character(current_hold$dept_id)
         dept_held_cands[[old_d_char]] <- setdiff(dept_held_cands[[old_d_char]], cand)
         dept_rejected_by[[old_d_char]] <- c(dept_rejected_by[[old_d_char]], cand)
       }
-      
+
       # Record rejections for new offers that weren't chosen
-      for (rd in intersect(rejected_depts, new_depts)) {
+      rej_new <- intersect(rejected_depts, new_depts)
+      for (rd in rej_new) {
         rd_char <- as.character(rd)
         dept_rejected_by[[rd_char]] <- c(dept_rejected_by[[rd_char]], cand)
       }
-      
+
       # Update hold
       candidate_held[[cand_char]] <- list(dept_id = best_dept, util = best_util, round = round)
-      
-      # Add candidate to held list for the chosen dept (if not already there)
+
+      # Add candidate to held list for the chosen dept
       best_d_char <- as.character(best_dept)
       if (!(cand %in% dept_held_cands[[best_d_char]])) {
         dept_held_cands[[best_d_char]] <- c(dept_held_cands[[best_d_char]], cand)
@@ -1457,7 +1284,7 @@ resolve_offers_sequential <- function(interviewed_data, departments, questions,
     }
     
     # --- Summary ---
-    total_held <- sum(sapply(dept_held_cands, length))
+    total_held <- sum(lengths(dept_held_cands))
     total_positions <- sum(dept_quota)
     total_unfilled <- total_positions - total_held
     cat(sprintf("  After round %d: %d offers held, %d positions still unfilled\n",
@@ -1468,28 +1295,31 @@ resolve_offers_sequential <- function(interviewed_data, departments, questions,
     }
   }
   
-  # ── Finalize held offers as acceptances ──
-  candidates_with_accepted_offer <- integer(0)
-  for (cand_char in names(candidate_held)) {
-    cand <- as.integer(cand_char)
-    held <- candidate_held[[cand_char]]
-    idx <- which(interviewed_data$dept_id == held$dept_id &
-                   interviewed_data$cand_id == cand)
-    if (length(idx) == 1) {
-      interviewed_data$accepted[idx] <- 1L
-      candidates_with_accepted_offer <- c(candidates_with_accepted_offer, cand)
+  # ── Finalize held offers as acceptances (vectorized) ──
+  if (length(candidate_held) > 0) {
+    held_cands <- as.integer(names(candidate_held))
+    held_depts <- vapply(candidate_held, function(h) h$dept_id, integer(1))
+    held_keys <- paste(held_depts, held_cands, sep = "_")
+    data_keys_final <- paste(interviewed_data$dept_id, interviewed_data$cand_id, sep = "_")
+    accept_idx <- match(held_keys, data_keys_final)
+    valid_accept <- !is.na(accept_idx)
+    if (any(valid_accept)) {
+      interviewed_data$accepted[accept_idx[valid_accept]] <- 1L
     }
+    candidates_with_accepted_offer <- held_cands[valid_accept]
+  } else {
+    candidates_with_accepted_offer <- integer(0)
   }
-  
-  # Build dept_positions_filled for scramble compatibility
+
+  # Build dept_positions_filled (vectorized via table)
+  dept_id_vec <- as.integer(names(dept_quota))
+  accepted_counts <- table(interviewed_data$dept_id[interviewed_data$accepted == 1L])
   dept_positions_filled <- tibble::tibble(
-    dept_id = as.integer(names(dept_quota)),
-    h_j     = as.integer(dept_quota)
-  ) %>% dplyr::mutate(
-    filled = purrr::map_int(dept_id, function(d) {
-      sum(interviewed_data$dept_id == d & interviewed_data$accepted == 1L)
-    })
+    dept_id = dept_id_vec,
+    h_j     = as.integer(dept_quota[as.character(dept_id_vec)]),
+    filled  = as.integer(accepted_counts[as.character(dept_id_vec)])
   )
+  dept_positions_filled$filled[is.na(dept_positions_filled$filled)] <- 0L
   
   # === SCRAMBLE ROUND with batch f_j + SHORTLIST ENFORCEMENT ===
   total_remaining <- sum(dept_positions_filled$h_j - dept_positions_filled$filled)
@@ -1546,39 +1376,61 @@ resolve_offers_sequential <- function(interviewed_data, departments, questions,
         
         scramble_priority <- 0.85 * vbn + 0.15 * f_j_values
         top_indices <- order(scramble_priority, decreasing = TRUE)[1:min(pn, nrow(still_available))]
-        
-        for (ti in top_indices) {
-          cand <- still_available$cand_id[ti]
-          if (cand %in% candidates_with_accepted_offer) next
-          cr  <- still_available[ti, ]
-          sjv <- dept_info$s_j[1]
-          fjv <- f_j_values[ti]
-          
-          cuv <- if ("prestige_sensitivity" %in% names(cr))
-            candidate_utility(cr$v_i_bar, sjv, fjv, prestige_sensitivity = cr$prestige_sensitivity)
-          else
-            candidate_utility(cr$v_i_bar, sjv, fjv)
-          
-          ap <- if (fjv < 0.60) 0.3 else 0.95
-          if (runif(1) < ap) {
-            sm <- tibble(
-              dept_id = d, cand_id = cand, s_j = sjv, v_i_bar = cr$v_i_bar, f_j = fjv,
-              cand_tier = tti(cr$quality_tier), dept_tier = tti(dept_info$prestige_tier),
-              offered = 1L, accepted = 1L, offer_round = scramble_round, cand_util = cuv,
-              h_j = dept_info$h_j_this_year %||% 1L, strategy = "pairwise", interviewed = 0L,
-              year = year,
-              participates = if ("participates" %in% names(cr)) cr$participates else NA
-            )
-            if ("quality_tier" %in% names(cr))
-              sm$quality_tier <- as.character(cr$quality_tier)
-            
-            scramble_matches <- dplyr::bind_rows(scramble_matches, sm)
-            candidates_with_accepted_offer <- c(candidates_with_accepted_offer, cand)
-            di <- which(dept_positions_filled$dept_id == d)
-            dept_positions_filled$filled[di] <- dept_positions_filled$filled[di] + 1L
-            if (dept_positions_filled$filled[di] >= dept_positions_filled$h_j[di]) break
-          }
+
+        # Vectorize scramble candidate processing
+        top_cands <- still_available$cand_id[top_indices]
+        top_not_taken <- !(top_cands %in% candidates_with_accepted_offer)
+        top_indices <- top_indices[top_not_taken]
+        top_cands <- top_cands[top_not_taken]
+        if (length(top_indices) == 0) next
+
+        sjv <- dept_info$s_j[1]
+        top_fj <- f_j_values[top_indices]
+        top_vbar <- still_available$v_i_bar[top_indices]
+
+        # Vectorized acceptance probabilities
+        accept_probs <- ifelse(top_fj < 0.60, 0.3, 0.95)
+        accept_draws <- runif(length(top_indices))
+        accept_mask <- accept_draws < accept_probs
+
+        # Vectorized candidate utilities
+        if ("prestige_sensitivity" %in% names(still_available)) {
+          top_ps <- still_available$prestige_sensitivity[top_indices]
+          top_cuv <- candidate_utility(top_vbar, sjv, top_fj, prestige_sensitivity = top_ps)
+        } else {
+          top_cuv <- candidate_utility(top_vbar, sjv, top_fj)
         }
+
+        di <- which(dept_positions_filled$dept_id == d)
+        dept_max <- dept_positions_filled$h_j[di]
+        has_qt <- "quality_tier" %in% names(still_available)
+        has_part <- "participates" %in% names(still_available)
+
+        # Collect matches (limited by positions needed)
+        scramble_match_list <- vector("list", sum(accept_mask))
+        sm_count <- 0L
+        for (ii in which(accept_mask)) {
+          if (top_cands[ii] %in% candidates_with_accepted_offer) next
+          if (dept_positions_filled$filled[di] >= dept_max) break
+          sm_count <- sm_count + 1L
+          sm <- tibble(
+            dept_id = d, cand_id = top_cands[ii], s_j = sjv,
+            v_i_bar = top_vbar[ii], f_j = top_fj[ii],
+            cand_tier = tti(still_available$quality_tier[top_indices[ii]]),
+            dept_tier = tti(dept_info$prestige_tier),
+            offered = 1L, accepted = 1L, offer_round = scramble_round,
+            cand_util = top_cuv[ii],
+            h_j = dept_info$h_j_this_year %||% 1L, strategy = "pairwise",
+            interviewed = 0L, year = year,
+            participates = if (has_part) still_available$participates[top_indices[ii]] else NA
+          )
+          if (has_qt) sm$quality_tier <- as.character(still_available$quality_tier[top_indices[ii]])
+          scramble_match_list[[sm_count]] <- sm
+          candidates_with_accepted_offer <- c(candidates_with_accepted_offer, top_cands[ii])
+          dept_positions_filled$filled[di] <- dept_positions_filled$filled[di] + 1L
+        }
+        if (sm_count > 0)
+          scramble_matches <- dplyr::bind_rows(scramble_matches, dplyr::bind_rows(scramble_match_list[1:sm_count]))
       }
       
       if (nrow(scramble_matches) > 0) {
@@ -1668,8 +1520,8 @@ run_burn_in_phase <- function(departments, questions, n_candidates = 500, burn_i
       cat(sprintf("  Dept %d: Insufficient data (%d obs)\n", j, n_obs))
     }
   }
-  total_hires <- sum(sapply(res_all, function(r) sum(r$accepted == 1, na.rm = TRUE)))
-  total_offers <- sum(sapply(res_all, function(r) sum(r$offered == 1, na.rm = TRUE)))
+  total_hires <- sum(vapply(res_all, function(r) sum(r$accepted == 1, na.rm = TRUE), numeric(1)))
+  total_offers <- sum(vapply(res_all, function(r) sum(r$offered == 1, na.rm = TRUE), numeric(1)))
   cat(sprintf("\nBurn-in complete. Offers: %d | Hires: %d | Yield: %.1f%%\n",
               total_offers, total_hires, 100 * total_hires / max(total_offers, 1)))
   
@@ -1776,65 +1628,66 @@ predict_acceptance_probability_with_learned_prior <- function(dept_model, applic
   }
   
   # ── Step 4: Full bootstrap (>= 10 obs) ──
-  #    For each bootstrap iteration:
-  #      1. Resample sim-phase historical data
-  #      2. Retrain sim-phase model
-  #      3. Predict on applicants
-  #      4. Blend with prior (same blend weight logic)
-  #    This parallels predict_acceptance_probability but adds prior blending.
+  #    Warm-start bootstrap: clone trained weights, fine-tune on resampled data.
+  #    Inference prepare_nn_data cached outside loop (same applicant_data every iteration).
   mw <- pmin(1, n_hist / 40)
   pi_draws_matrix <- matrix(NA_real_, nrow = n_bootstrap, ncol = n_applicants)
-  
+
+  # Cache inference data ONCE
+  nn_data_cached <- tryCatch(
+    prepare_nn_data(applicant_data, dept_model$questions,
+                    include_fit = include_fit,
+                    include_questions = include_questions),
+    error = function(e) NULL)
+  if (is.null(nn_data_cached)) {
+    pi_point <- pmax(0.10, pmin(0.90, pi_prior + rnorm(n_applicants, 0, 0.02)))
+    res <- applicant_data %>% dplyr::mutate(pi_pred = pi_point, pi_var = 0)
+    attr(res, "pi_draws") <- matrix(pi_point, nrow = 1)
+    return(res)
+  }
+
+  # Save trained model state for warm-start bootstrap
+  trained_state <- if (dept_model$is_trained) lapply(dept_model$model$parameters, function(p) p$clone()$detach()) else NULL
+
   for (b in 1:n_bootstrap) {
-    # Resample historical data
     boot_data <- hist_data[sample.int(n_hist, n_hist, replace = TRUE), ]
-    
-    # Initialize and train a fresh model on the bootstrap sample
+
+    # Warm-start: copy trained weights instead of random init
     temp_model <- initialize_department_model(dept_model$questions,
                                               include_fit = include_fit,
                                               include_questions = include_questions)
+    if (!is.null(trained_state)) {
+      tp <- temp_model$model$parameters
+      with_no_grad({ for (i in seq_along(tp)) tp[[i]]$copy_(trained_state[[i]]) })
+    }
     temp_model$historical_data <- boot_data
     temp_model <- tryCatch(
-      train_department_model(temp_model, boot_data, n_epochs = 15,
+      train_department_model(temp_model, boot_data, n_epochs = 5,
                              include_fit = include_fit,
                              include_questions = include_questions,
                              seed = seed + b),
       error = function(e) temp_model)
-    
+
     if (!temp_model$is_trained) {
-      # Fallback: use prior with small noise for this draw
       pi_draws_matrix[b, ] <- pmin(pmax(
         pi_prior + rnorm(n_applicants, 0, 0.05), 1e-5), 1 - 1e-5)
       next
     }
-    
-    # Predict with bootstrap model
-    nn_data <- tryCatch(
-      prepare_nn_data(applicant_data, temp_model$questions,
-                      include_fit = include_fit,
-                      include_questions = include_questions),
-      error = function(e) NULL)
-    
-    if (is.null(nn_data)) {
-      pi_draws_matrix[b, ] <- pmin(pmax(
-        pi_prior + rnorm(n_applicants, 0, 0.05), 1e-5), 1 - 1e-5)
-      next
-    }
-    
+
     temp_model$model$eval()
     with_no_grad({
-      lo <- temp_model$model(nn_data$x_cont, nn_data$x_cat)
+      lo <- temp_model$model(nn_data_cached$x_cont, nn_data_cached$x_cat)
       pi_b <- as.numeric(torch_sigmoid(lo)$squeeze()$to(device = "cpu"))
     })
     pi_b <- pmin(pmax(pi_b, 1e-5), 1 - 1e-5)
-    
+
     # Blend with prior (same weight for all bootstrap draws)
     pi_draws_matrix[b, ] <- mw * pi_b + (1 - mw) * pi_prior
   }
   
   # Aggregate bootstrap draws
   pi_mean <- colMeans(pi_draws_matrix, na.rm = TRUE)
-  pi_var  <- apply(pi_draws_matrix, 2, stats::var, na.rm = TRUE)
+  pi_var  <- colMeans(sweep(pi_draws_matrix, 2, pi_mean)^2, na.rm = TRUE) * nrow(pi_draws_matrix) / (nrow(pi_draws_matrix) - 1)
   
   res <- applicant_data %>%
     dplyr::mutate(pi_pred = pi_mean, pi_var = pi_var)
@@ -2032,7 +1885,7 @@ simulate_market_year_with_learned_prior <- function(candidates, departments, que
         dplyr::select(year,dept_id,cand_id,s_j,v_i_bar,f_j,offered,accepted,starts_with("q_")) %>%
         add_dept_info_to_learning_data(departments[j,])
   }
-  diag_list <- diag_list[!sapply(diag_list, is.null)]
+  diag_list <- diag_list[!vapply(diag_list, is.null, logical(1))]
   list(results=all_results, learning_data_pairwise=learning_data_pairwise,
        rank_panel=rank_panel, diagnostics=list(applicant_level=bind_rows(diag_list)))
 }
@@ -2132,7 +1985,7 @@ run_job_market_sim_with_learned_prior <- function(departments, questions, n_cand
         cumulative_quota <- tibble(dept_id = 1:n_departments) %>%
           left_join(dept_tier_info, by = "dept_id") %>%
           crossing(yr = 1:year) %>%
-          mutate(h_j = purrr::map2_int(dept_id, yr, ~yearly_hiring_schedule_sim[.x, .y])) %>%
+          mutate(h_j = yearly_hiring_schedule_sim[cbind(dept_id, yr)]) %>%
           group_by(tier) %>%
           summarise(total_quota = sum(h_j), .groups = "drop")
         overall_offers <- sum(cumulative_with_tiers$offered, na.rm = TRUE)
@@ -2247,7 +2100,7 @@ run_job_market_sim_with_learned_prior <- function(departments, questions, n_cand
         mdl[[j]]$historical_data <- bind_rows(mdl[[j]]$historical_data, out$learning_data_pairwise[[j]])
         if (nrow(mdl[[j]]$historical_data) >= 5)
           mdl[[j]] <- tryCatch(
-            train_department_model(mdl[[j]], mdl[[j]]$historical_data, n_epochs = 30,
+            train_department_model(mdl[[j]], mdl[[j]]$historical_data, n_epochs = 10,
                                    include_fit = !is_baseline, include_questions = !is_baseline,
                                    seed = j * 1000 + year),
             error = function(e) mdl[[j]])
@@ -2562,7 +2415,7 @@ make_fig_dept_interview_heatmap <- function(all_sim_results, year_filter = c(1, 
   interview_budget_totals <- tibble(dept_id = 1:nrow(departments)) %>%
     left_join(departments, by = "dept_id") %>%
     crossing(year = years_in_filter) %>%
-    mutate(h_j = purrr::map2_int(dept_id, year, ~yearly_hiring_schedule[.x, .y]),
+    mutate(h_j = yearly_hiring_schedule[cbind(dept_id, year)],
            k_j = 5L * h_j) %>%
     group_by(prestige_tier) %>%
     summarise(budget = sum(k_j), .groups = "drop") %>%
@@ -2677,7 +2530,7 @@ make_fig_dept_hiring_heatmap <- function(all_sim_results, year_filter = c(1, 10)
   quota_totals <- tibble(dept_id = 1:nrow(departments)) %>%
     left_join(departments, by = "dept_id") %>%
     crossing(year = years_in_filter) %>%
-    mutate(h_j = purrr::map2_int(dept_id, year, ~yearly_hiring_schedule[.x, .y])) %>%
+    mutate(h_j = yearly_hiring_schedule[cbind(dept_id, year)]) %>%
     group_by(prestige_tier) %>%
     summarise(quota = sum(h_j), .groups = "drop") %>%
     mutate(prestige_tier = factor(prestige_tier,
@@ -2776,7 +2629,7 @@ make_fig_department_welfare_by_tier_normalized <- function(all_sim_results,
   quota_by_tier <- tibble(dept_id = 1:n_departments) %>%
     left_join(departments, by = "dept_id") %>%
     crossing(year = years_in_filter) %>%
-    mutate(h_j = purrr::map2_int(dept_id, year, ~yearly_hiring_schedule[.x, .y])) %>%
+    mutate(h_j = yearly_hiring_schedule[cbind(dept_id, year)]) %>%
     group_by(prestige_tier) %>%
     summarise(total_quota = sum(h_j), n_depts = n_distinct(dept_id), .groups = "drop")
   
@@ -2784,7 +2637,7 @@ make_fig_department_welfare_by_tier_normalized <- function(all_sim_results,
   dept_year_quotas <- tibble(dept_id = 1:n_departments) %>%
     left_join(departments, by = "dept_id") %>%
     crossing(year = years_in_filter) %>%
-    mutate(h_j = purrr::map2_int(dept_id, year, ~yearly_hiring_schedule[.x, .y]))
+    mutate(h_j = yearly_hiring_schedule[cbind(dept_id, year)])
   
   # Extract welfare per (rate, replicate, tier)
   rate_chrs <- names(all_sim_results$sim_results)
