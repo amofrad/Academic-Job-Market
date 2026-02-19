@@ -1,4 +1,0 @@
-benefits.csv filter=lfs diff=lfs merge=lfs -text
-companies.csv filter=lfs diff=lfs merge=lfs -text
-postings.csv filter=lfs diff=lfs merge=lfs -text
-employee_counts.csv filter=lfs diff=lfs merge=lfs -text

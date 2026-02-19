@@ -9,6 +9,9 @@ suppressPackageStartupMessages({
   library(janitor)
   library(patchwork)
   library(scales)
+  library(parallel)
+  library(future)
+  library(future.apply)
 })
 
 norm01 <- function(x) {
@@ -30,8 +33,8 @@ assign_tiers_from_quantiles <- function(x, cutpoints = c(0.10, 0.25, 0.50),
 candidate_utility <- function(v_i_bar, s_j, f_j, cand_tier = NULL,
                               prestige_sensitivity = NULL) {
   if (is.null(prestige_sensitivity)) {
-    #beta <- 0.15 + 0.25 * v_i_bar^1.5
-    beta <- 0.10 + 0.15 * v_i_bar 
+    # Shift weight modestly toward prestige to improve early regular-round acceptance.
+    beta <- 0.10 + 0.15 * v_i_bar
   } else {
     beta <- prestige_sensitivity
   }
@@ -40,6 +43,7 @@ candidate_utility <- function(v_i_bar, s_j, f_j, cand_tier = NULL,
 }
 
 true_utility <- function(s_j, v_i_bar, f_j, dept_tier = NULL, cand_tier = NULL) {
+  # Keep s_j in [0,1] but avoid overly fit-dominated utility at low s_j.
   (v_i_bar + 1e-8)^s_j * (f_j + 1e-8)^(1 - s_j)
 }
 
@@ -167,7 +171,7 @@ calculate_f_j <- function(candidate_row, department_row, questions, gamma = 2.5)
 # that departments differentially value preference dimensions via
 # department-specific normalized weights {w_tilde_jk}.
 # =============================================================================
-calculate_f_j_batch <- function(candidates_df, dept_row, questions, gamma = 2.5) {
+calculate_f_j_batch <- function(candidates_df, dept_row, questions, gamma = 1.8) {
   n <- nrow(candidates_df)
   if (n == 0) return(numeric(0))
   if (is.data.frame(dept_row)) dept_row <- as.list(dept_row[1, ])
@@ -397,7 +401,7 @@ generate_candidates_new <- function(n_candidates, questions, seed = NULL) {
   
   candidates$q_q15_medical_school_proximity <- sample(c("0","1"), n, replace=TRUE, prob=c(0.60,0.40))
   #candidates$prestige_sensitivity <- 0.15 + 0.25 * (1 - flexibility)
-  candidates$prestige_sensitivity <- 0.10 + 0.20 * candidates$v_i_bar
+  candidates$prestige_sensitivity <- 0.10 + 0.15 * candidates$v_i_bar
   candidates %>% dplyr::select(-quality_pctl, -within_tier_rank)
 }
 
@@ -423,7 +427,7 @@ prepare_departments <- function(sampled_depts, questions, seed = NULL) {
            q15_medical_school_proximity = as.character(q15_medical_school_proximity))
   n_depts <- nrow(result)
   q_names <- c(questions$numerical, names(questions$categorical))
-
+  
   # Pre-compute question name masks (vectorized index lookup)
   geo_idx <- which(q_names %in% c("q1_geographic_setting","q2_region","q3_airport_proximity"))
   col_idx <- which(q_names == "q4_cost_of_living")
@@ -432,18 +436,18 @@ prepare_departments <- function(sampled_depts, questions, seed = NULL) {
   comp_idx <- which(q_names %in% c("q6_typical_salary_range","q7_typical_startup","q8_guaranteed_summer"))
   t1_idx <- which(q_names %in% c("q13_publication_venues","q12_research_culture"))
   t4_idx <- which(q_names %in% c("q1_geographic_setting","q4_cost_of_living"))
-
+  
   # Vectorized: sample all dept_types at once
   dept_types <- sample(1:4, n_depts, replace = TRUE, prob = c(0.25, 0.25, 0.30, 0.20))
   dept_tiers <- as.character(result$tier)
-
+  
   # Build weight matrix (n_depts x n_total_q) all at once
   weight_matrix <- matrix(1, nrow = n_depts, ncol = n_total_q)
-
+  
   # Type 1: uniform random weights
   mask1 <- dept_types == 1
   if (any(mask1)) weight_matrix[mask1, ] <- matrix(runif(sum(mask1) * n_total_q, 0.7, 1.3), nrow = sum(mask1))
-
+  
   # Type 2: geography-focused
   mask2 <- dept_types == 2
   n2 <- sum(mask2)
@@ -451,7 +455,7 @@ prepare_departments <- function(sampled_depts, questions, seed = NULL) {
     if (length(geo_idx) > 0) weight_matrix[mask2, geo_idx] <- matrix(runif(n2 * length(geo_idx), 2.0, 4.0), nrow = n2)
     if (length(col_idx) > 0) weight_matrix[mask2, col_idx] <- runif(n2, 1.5, 2.5)
   }
-
+  
   # Type 3: research-focused
   mask3 <- dept_types == 3
   n3 <- sum(mask3)
@@ -459,14 +463,14 @@ prepare_departments <- function(sampled_depts, questions, seed = NULL) {
     if (length(research_idx) > 0) weight_matrix[mask3, research_idx] <- matrix(runif(n3 * length(research_idx), 2.5, 4.5), nrow = n3)
     if (length(teaching_idx) > 0) weight_matrix[mask3, teaching_idx] <- matrix(runif(n3 * length(teaching_idx), 1.5, 2.5), nrow = n3)
   }
-
+  
   # Type 4: compensation-focused
   mask4 <- dept_types == 4
   n4 <- sum(mask4)
   if (n4 > 0 && length(comp_idx) > 0) {
     weight_matrix[mask4, comp_idx] <- matrix(runif(n4 * length(comp_idx), 2.0, 4.0), nrow = n4)
   }
-
+  
   # Tier-specific adjustments (vectorized)
   mask_t1 <- dept_tiers == "Tier 1"
   nt1 <- sum(mask_t1)
@@ -478,15 +482,15 @@ prepare_departments <- function(sampled_depts, questions, seed = NULL) {
   if (nt4 > 0 && length(t4_idx) > 0) {
     weight_matrix[mask_t4, t4_idx] <- weight_matrix[mask_t4, t4_idx] * matrix(runif(nt4 * length(t4_idx), 1.2, 1.6), nrow = nt4)
   }
-
+  
   # Normalize rows
   row_sums <- rowSums(weight_matrix)
   weight_matrix <- weight_matrix / row_sums
-
+  
   # Convert to list for storage
   weight_list <- lapply(seq_len(n_depts), function(j) weight_matrix[j, ])
   result$weight_vector <- weight_list
-
+  
   colnames(weight_matrix) <- q_names
   cat("\n=== DEPARTMENT WEIGHT SUMMARY ===\n")
   cat("Mean weights by question:\n"); print(round(colMeans(weight_matrix), 3))
@@ -711,9 +715,111 @@ train_department_model <- function(dept_model, train_data, n_epochs = 60,
 }
 
 # =============================================================================
+# train_department_model_from_tensors
+#
+# Same training logic as train_department_model, but accepts pre-computed
+# tensors + bootstrap indices instead of a dataframe. This eliminates the
+# repeated prepare_nn_data() call inside the bootstrap loop.
+#
+# Arguments:
+#   dept_model    - the department model (with $model, $optimizer, etc.)
+#   x_cont_all    - pre-computed continuous feature tensor for ALL hist_data rows
+#   x_cat_all     - pre-computed list of categorical index tensors for ALL hist_data rows
+#   y_all         - pre-computed target tensor (accepted) for ALL hist_data rows
+#   boot_indices  - integer vector of bootstrap row indices (1-based, with replacement)
+#   n_epochs      - number of training epochs
+#   seed          - optional seed
+#
+# Returns: dept_model with updated weights and is_trained = TRUE
+# =============================================================================
+train_department_model_from_tensors <- function(dept_model, x_cont_all, x_cat_all, y_all,
+                                                boot_indices, n_epochs = 5, seed = NULL) {
+  n_boot <- length(boot_indices)
+  if (n_boot < 1) return(dept_model)
+  if (!is.null(seed)) { set.seed(seed); torch::torch_manual_seed(seed) }
+  
+  # Subset tensors using bootstrap indices (cheap torch indexing, no R->tensor conversion)
+  idx_tensor <- torch::torch_tensor(as.integer(boot_indices), dtype = torch::torch_long())
+  x_cont  <- x_cont_all$index_select(1, idx_tensor)
+  x_cat   <- lapply(x_cat_all, function(t) t$index_select(1, idx_tensor))
+  y_tensor <- y_all$index_select(1, idx_tensor)
+  
+  n_train <- n_boot
+  use_validation <- n_train >= 40
+  
+  if (use_validation) {
+    val_idx   <- sample.int(n_train, size = ceiling(0.2 * n_train))
+    train_idx <- setdiff(seq_len(n_train), val_idx)
+    
+    # Convert to 1-indexed torch tensors for indexing
+    train_idx_t <- torch::torch_tensor(as.integer(train_idx), dtype = torch::torch_long())
+    val_idx_t   <- torch::torch_tensor(as.integer(val_idx), dtype = torch::torch_long())
+    
+    x_train     <- x_cont$index_select(1, train_idx_t)
+    y_train     <- y_tensor$index_select(1, train_idx_t)
+    x_val       <- x_cont$index_select(1, val_idx_t)
+    y_val       <- y_tensor$index_select(1, val_idx_t)
+    x_cat_train <- lapply(x_cat, function(t) t$index_select(1, train_idx_t))
+    x_cat_val   <- lapply(x_cat, function(t) t$index_select(1, val_idx_t))
+  } else {
+    x_train     <- x_cont
+    y_train     <- y_tensor
+    x_cat_train <- x_cat
+  }
+  
+  optimizer <- optim_adam(dept_model$model$parameters, lr = 0.002)
+  scheduler <- lr_multiplicative(optimizer, lr_lambda = function(epoch) 0.98)
+  best_val_loss <- Inf; patience <- 20; patience_counter <- 0; best_state <- NULL
+  
+  dept_model$model$train()
+  for (epoch in 1:n_epochs) {
+    log_odds <- dept_model$model(x_train, x_cat_train)
+    loss <- nn_bce_with_logits_loss()(log_odds, y_train)
+    
+    l2_loss <- 0
+    for (param in dept_model$model$parameters)
+      l2_loss <- l2_loss + torch_sum(param^2)
+    total_loss <- loss + 0.01 * l2_loss
+    
+    optimizer$zero_grad()
+    total_loss$backward()
+    nn_utils_clip_grad_norm_(dept_model$model$parameters, max_norm = 1.0)
+    optimizer$step()
+    scheduler$step()
+    
+    if (use_validation && epoch %% 5 == 0) {
+      dept_model$model$eval()
+      with_no_grad({
+        val_log_odds <- dept_model$model(x_val, x_cat_val)
+        val_loss <- as.numeric(nn_bce_with_logits_loss()(val_log_odds, y_val))
+      })
+      dept_model$model$train()
+      if (val_loss < best_val_loss) {
+        best_val_loss    <- val_loss
+        patience_counter <- 0
+        best_state <- lapply(dept_model$model$parameters,
+                             function(p) p$clone()$detach())
+      } else {
+        patience_counter <- patience_counter + 1
+        if (patience_counter >= patience) {
+          if (!is.null(best_state)) {
+            pl <- dept_model$model$parameters
+            for (i in seq_along(pl)) pl[[i]]$data <- best_state[[i]]$data
+          }
+          break
+        }
+      }
+    }
+  }
+  
+  dept_model$is_trained <- TRUE
+  dept_model
+}
+
+# =============================================================================
 # predict_acceptance_probability (unchanged logic, already efficient)
 # =============================================================================
-predict_acceptance_probability <- function(dept_model, applicant_data, n_bootstrap = 200,
+predict_acceptance_probability <- function(dept_model, applicant_data, n_bootstrap = 50,
                                            include_fit = dept_model$include_fit,
                                            include_questions = dept_model$include_questions,
                                            seed = NULL, participation_rate = NULL) {
@@ -746,7 +852,8 @@ predict_acceptance_probability <- function(dept_model, applicant_data, n_bootstr
     attr(res,"pi_draws") <- matrix(pi_mean, nrow=1); return(res)
   }
   n_hist <- nrow(hist_data); pi_draws_matrix <- matrix(NA_real_, nrow=n_bootstrap, ncol=nrow(applicant_data))
-  # Cache inference data ONCE (same applicant_data & questions every bootstrap iteration)
+  
+  # ── Cache INFERENCE data (same applicant_data every bootstrap iteration) ──
   nn_data_cached <- tryCatch(prepare_nn_data(applicant_data, dept_model$questions, include_fit=include_fit, include_questions=include_questions), error=function(e) NULL)
   if (is.null(nn_data_cached)) {
     tg <- pmax(0, applicant_data$dept_tier-applicant_data$cand_tier)
@@ -754,18 +861,48 @@ predict_acceptance_probability <- function(dept_model, applicant_data, n_bootstr
     res <- applicant_data %>% mutate(pi_pred=mu, pi_var=0)
     attr(res,"pi_draws") <- matrix(mu, nrow=1); return(res)
   }
+  
+  # ── Cache TRAINING data ONCE (tensorize hist_data, then index per bootstrap) ──
+  nn_data_train_all <- tryCatch(
+    prepare_nn_data(hist_data, dept_model$questions,
+                    include_fit = include_fit, include_questions = include_questions),
+    error = function(e) NULL)
+  y_all <- torch::torch_tensor(hist_data$accepted, dtype = torch::torch_float())$unsqueeze(2)
+  
   # Save trained model state for warm-start bootstrap
   trained_state <- if (dept_model$is_trained) lapply(dept_model$model$parameters, function(p) p$clone()$detach()) else NULL
+  
+  # Allocate temp model ONCE outside the loop
+  temp_model <- initialize_department_model(dept_model$questions, include_fit=include_fit, include_questions=include_questions)
+  
   for (b in 1:n_bootstrap) {
-    boot_data <- hist_data[sample.int(n_hist,n_hist,replace=TRUE),]
-    temp_model <- initialize_department_model(dept_model$questions, include_fit=include_fit, include_questions=include_questions)
-    # Warm-start: copy trained weights instead of random init
+    boot_indices <- sample.int(n_hist, n_hist, replace = TRUE)
+    
+    # Reset weights to trained state (cheap copy, no allocation)
     if (!is.null(trained_state)) {
       tp <- temp_model$model$parameters
       with_no_grad({ for (i in seq_along(tp)) tp[[i]]$copy_(trained_state[[i]]) })
     }
-    temp_model$historical_data <- boot_data
-    temp_model <- tryCatch(train_department_model(temp_model, boot_data, n_epochs=5, include_fit=include_fit, include_questions=include_questions, seed=seed+b), error=function(e) temp_model)
+    temp_model$is_trained <- FALSE
+    
+    # Train from cached tensors (no prepare_nn_data call inside loop)
+    if (!is.null(nn_data_train_all)) {
+      temp_model <- tryCatch(
+        train_department_model_from_tensors(
+          temp_model, nn_data_train_all$x_cont, nn_data_train_all$x_cat, y_all,
+          boot_indices, n_epochs = 5, seed = seed + b),
+        error = function(e) temp_model)
+    } else {
+      # Fallback: dataframe path if tensor caching failed
+      boot_data <- hist_data[boot_indices, ]
+      temp_model$historical_data <- boot_data
+      temp_model <- tryCatch(
+        train_department_model(temp_model, boot_data, n_epochs = 5,
+                               include_fit = include_fit, include_questions = include_questions,
+                               seed = seed + b),
+        error = function(e) temp_model)
+    }
+    
     if (!temp_model$is_trained) {
       tg <- pmax(0, applicant_data$dept_tier-applicant_data$cand_tier)
       pi_draws_matrix[b,] <- pmin(pmax(case_when(tg==0~0.6,tg==1~0.3,tg==2~0.12,TRUE~0.05)+rnorm(nrow(applicant_data),0,0.05),1e-5),1-1e-5); next
@@ -779,7 +916,6 @@ predict_acceptance_probability <- function(dept_model, applicant_data, n_bootstr
   res <- applicant_data %>% mutate(pi_pred = pi_means, pi_var = pi_vars)
   attr(res,"pi_draws") <- pi_draws_matrix; res
 }
-
 
 # =============================================================================
 # *** OPTIMIZATION #2: VECTORIZED make_repeated_rank_draws ***
@@ -877,7 +1013,7 @@ compute_c_alpha_from_draws <- function(U_hat, U_draws, alpha = 0.05, ridge = 0.0
 # *** OPTIMIZATION #4: VECTORIZED compute_pairwise_lower_ranks ***
 # Matrix comparison instead of O(n^2) loop
 # =============================================================================
-compute_pairwise_lower_ranks <- function(applicant_data, L_repeats=200, tuple_size=NULL,
+compute_pairwise_lower_ranks <- function(applicant_data, L_repeats=20, tuple_size=NULL,
                                          noise_method=c("bootstrap","gumbel","gaussian"),
                                          noise_scale=0.15, alpha=0.05, seed=NULL,
                                          pi_draws=NULL) {
@@ -885,18 +1021,18 @@ compute_pairwise_lower_ranks <- function(applicant_data, L_repeats=200, tuple_si
   if (!"U_det" %in% names(applicant_data) || !"U_hat" %in% names(applicant_data))
     applicant_data <- applicant_data %>% mutate(U_det=exp(s_j*log(v_i_bar+1e-8)+(1-s_j)*log(f_j+1e-8)),
                                                 U_hat=U_det*pmin(pmax(pi_pred,1e-5),1-1e-5))
-
+  
   # Resolve pi_draws: explicit argument > attribute > fallback to legacy
-
+  
   if (is.null(pi_draws)) pi_draws <- attr(applicant_data, "pi_draws")
-
+  
   n <- nrow(applicant_data)
   Uhat_full <- applicant_data$U_hat
   if (is.null(tuple_size)) idx <- seq_len(n) else {
     M_use <- min(tuple_size, n); idx <- order(Uhat_full, decreasing=TRUE)[seq_len(M_use)]
   }
   U_hat <- Uhat_full[idx]
-
+  
   if (!is.null(pi_draws) && is.matrix(pi_draws) && nrow(pi_draws) > 1) {
     # Paper-aligned path: U_draws[b,i] = U_det[i] * pi_draws[b,i]  (eq 4)
     U_det_sub <- applicant_data$U_det[idx]
@@ -935,7 +1071,7 @@ compute_pairwise_lower_ranks <- function(applicant_data, L_repeats=200, tuple_si
 }
 
 
-select_interviews_sure_screening <- function(applicant_data, k_j, h_j, alpha=0.05, L_repeats=200,
+select_interviews_sure_screening <- function(applicant_data, k_j, h_j, alpha=0.05, L_repeats=20,
                                              tuple_size=NULL, noise_method=c("bootstrap","gumbel","gaussian"),
                                              noise_scale=0.15, seed=NULL, tier_width=0.1, pi_draws=NULL) {
   noise_method <- match.arg(noise_method); n <- nrow(applicant_data)
@@ -961,8 +1097,10 @@ select_interviews_sure_screening <- function(applicant_data, k_j, h_j, alpha=0.0
         tier_threshold <- min(sure_U_hat, na.rm=TRUE) - tier_width
         tier_candidates <- remaining_pool %>% dplyr::filter(U_hat >= tier_threshold)
         if (nrow(tier_candidates) > 0) {
-          weights <- exp((tier_candidates$U_hat - mean(tier_candidates$U_hat,na.rm=TRUE))/0.1); weights <- weights/sum(weights)
-          additional_ids <- sample(tier_candidates$cand_id, size=min(remaining_slots,nrow(tier_candidates)), prob=weights, replace=FALSE)
+          additional_ids <- tier_candidates %>%
+            dplyr::arrange(dplyr::desc(U_hat), cand_id) %>%
+            dplyr::slice_head(n=remaining_slots) %>%
+            dplyr::pull(cand_id)
         } else additional_ids <- remaining_pool %>% dplyr::arrange(dplyr::desc(U_hat)) %>% dplyr::slice_head(n=remaining_slots) %>% dplyr::pull(cand_id)
       } else additional_ids <- remaining_pool %>% dplyr::arrange(dplyr::desc(U_hat)) %>% dplyr::slice_head(n=remaining_slots) %>% dplyr::pull(cand_id)
       selected_ids <- c(sure_ids, additional_ids)
@@ -975,17 +1113,170 @@ select_interviews_sure_screening <- function(applicant_data, k_j, h_j, alpha=0.0
 generate_applications <- function(candidates, departments, questions, ...)
   tibble(cand_id=candidates$cand_id) %>% tidyr::crossing(tibble(dept_id=departments$dept_id))
 
-generate_nested_participation_assignments <- function(n_candidates, participation_rates=c(0.05,0.20,0.50,0.90), seed=123) {
-  set.seed(seed); propensities <- runif(n_candidates); cand_ids <- 1:n_candidates
-  participation_sets <- list(); participation_sets[["0"]] <- integer(0)
-  sorted_idx <- order(propensities)
-  for (rate in participation_rates) participation_sets[[as.character(rate)]] <- cand_ids[sorted_idx[1:floor(n_candidates*rate)]]
-  participation_sets[["1"]] <- cand_ids; participation_sets
+deterministic_u01 <- function(x, salt = 0) {
+  y <- sin((as.numeric(x) + 1) * 12.9898 + (as.numeric(salt) + 1) * 78.233) * 43758.5453
+  y - floor(y)
 }
 
-# NOTE: generate_department_strategies_adaptive() has been REMOVED.
-# Non-participant f_j is now deterministically set to min(f_j) among
-# participating candidates in the department's considered pool.
+add_participation_signals <- function(candidates, departments, questions,
+                                      dept_weights = NULL,
+                                      nonparticipant_penalty = 0.03) {
+  n_candidates <- nrow(candidates)
+  n_departments <- nrow(departments)
+  if (n_candidates == 0L) {
+    return(candidates %>%
+             mutate(
+               pool_alignment = numeric(0),
+               pool_alignment_norm = numeric(0),
+               v_pctl = numeric(0),
+               participation_score = numeric(0),
+               nonparticipant_fit_proxy = numeric(0)
+             ))
+  }
+  if (n_departments == 0L) {
+    v_pctl <- if (n_candidates > 1L)
+      (rank(candidates$v_i_bar, ties.method = "average") - 1) / (n_candidates - 1)
+    else rep(0.5, n_candidates)
+    return(candidates %>%
+             mutate(
+               pool_alignment = 0.5,
+               pool_alignment_norm = 0.5,
+               v_pctl = v_pctl,
+               participation_score = 0.5 * v_pctl,
+               nonparticipant_fit_proxy = pmin(0.95, pmax(0.05, 0.5 - nonparticipant_penalty))
+             ))
+  }
+  
+  if (is.null(dept_weights) || length(dept_weights) != n_departments) {
+    dept_weights <- rep(1, n_departments)
+  }
+  dept_weights <- as.numeric(dept_weights)
+  dept_weights[!is.finite(dept_weights) | dept_weights < 0] <- 0
+  if (sum(dept_weights) <= 0) dept_weights <- rep(1, n_departments)
+  dept_weights <- dept_weights / sum(dept_weights)
+  
+  fit_mat <- matrix(NA_real_, nrow = n_candidates, ncol = n_departments)
+  for (j in seq_len(n_departments)) {
+    fit_mat[, j] <- calculate_f_j_batch(candidates, departments[j, , drop = FALSE], questions)
+  }
+  
+  pool_alignment <- as.vector(fit_mat %*% dept_weights)
+  pool_alignment_norm <- norm01(pool_alignment)
+  v_pctl <- if (n_candidates > 1L)
+    (rank(candidates$v_i_bar, ties.method = "average") - 1) / (n_candidates - 1)
+  else rep(0.5, n_candidates)
+  
+  # Strategic opt-out: high-quality candidates with below-median pool alignment
+  # can have some incentive to avoid revealing weak fit.
+  align_mid <- stats::median(pool_alignment_norm, na.rm = TRUE)
+  misalignment <- pmax(0, align_mid - pool_alignment_norm)
+  opt_out_value <- misalignment * v_pctl
+  
+  participation_score <- 0.70 * pool_alignment_norm + 0.30 * v_pctl - 0.35 * opt_out_value
+  nonparticipant_fit_proxy <- pmin(0.95, pmax(0.05, pool_alignment - nonparticipant_penalty))
+  
+  candidates %>%
+    mutate(
+      pool_alignment = pool_alignment,
+      pool_alignment_norm = pool_alignment_norm,
+      v_pctl = v_pctl,
+      participation_score = participation_score,
+      nonparticipant_fit_proxy = nonparticipant_fit_proxy
+    )
+}
+
+generate_nested_participation_assignments <- function(n_candidates = NULL,
+                                                      participation_rates = c(0.05,0.20,0.50,0.90),
+                                                      seed = 123,
+                                                      candidates = NULL,
+                                                      departments = NULL,
+                                                      questions = NULL,
+                                                      dept_weights = NULL) {
+  rates <- sort(unique(participation_rates))
+  rates <- rates[is.finite(rates) & rates >= 0 & rates <= 1]
+  participation_sets <- list()
+  participation_sets[["0"]] <- integer(0)
+  
+  if (!is.null(candidates)) {
+    if (!"cand_id" %in% names(candidates)) candidates$cand_id <- seq_len(nrow(candidates))
+    
+    if (!"participation_score" %in% names(candidates)) {
+      if (!is.null(departments) && !is.null(questions)) {
+        candidates <- add_participation_signals(
+          candidates = candidates,
+          departments = departments,
+          questions = questions,
+          dept_weights = dept_weights
+        )
+      } else if ("v_i_bar" %in% names(candidates)) {
+        n_local <- nrow(candidates)
+        v_pctl <- if (n_local > 1L)
+          (rank(candidates$v_i_bar, ties.method = "average") - 1) / (n_local - 1)
+        else rep(0.5, n_local)
+        candidates <- candidates %>%
+          mutate(
+            pool_alignment = v_pctl,
+            pool_alignment_norm = v_pctl,
+            v_pctl = v_pctl,
+            participation_score = v_pctl,
+            nonparticipant_fit_proxy = pmin(0.95, pmax(0.05, 0.5 + 0.25 * v_pctl))
+          )
+      } else {
+        set.seed(seed)
+        candidates <- candidates %>% mutate(participation_score = runif(nrow(candidates)))
+      }
+    }
+    
+    if (!"v_i_bar" %in% names(candidates)) candidates$v_i_bar <- 0
+    ordered_ids <- candidates %>%
+      arrange(desc(participation_score), desc(v_i_bar), cand_id) %>%
+      pull(cand_id)
+    
+    n_local <- length(ordered_ids)
+    for (rate in rates[rates > 0 & rates < 1]) {
+      take_n <- floor(n_local * rate)
+      participation_sets[[as.character(rate)]] <- if (take_n > 0L) ordered_ids[seq_len(take_n)] else integer(0)
+    }
+    participation_sets[["1"]] <- ordered_ids
+    
+    attr(participation_sets, "candidate_scores") <- candidates %>%
+      dplyr::select(cand_id, participation_score, pool_alignment, v_pctl, nonparticipant_fit_proxy)
+    return(participation_sets)
+  }
+  
+  if (is.null(n_candidates))
+    stop("Either n_candidates or candidates must be supplied.")
+  
+  set.seed(seed)
+  propensities <- runif(n_candidates)
+  cand_ids <- seq_len(n_candidates)
+  sorted_idx <- order(propensities, decreasing = TRUE)
+  
+  for (rate in rates[rates > 0 & rates < 1]) {
+    take_n <- floor(n_candidates * rate)
+    participation_sets[[as.character(rate)]] <- if (take_n > 0L) cand_ids[sorted_idx[seq_len(take_n)]] else integer(0)
+  }
+  participation_sets[["1"]] <- cand_ids
+  participation_sets
+}
+
+compute_nonparticipant_fj <- function(applicant_data,
+                                      participation_rate = 0,
+                                      proxy_col = "nonparticipant_fit_proxy",
+                                      fallback_value = 0.5) {
+  n_part <- sum(applicant_data$participates, na.rm = TRUE)
+  if (participation_rate == 0 || n_part == 0) {
+    min_f_j_part <- NA_real_
+  } else {
+    min_f_j_part <- min(applicant_data$f_j[applicant_data$participates], na.rm = TRUE)
+  }
+  
+  dplyr::case_when(
+    !applicant_data$participates & !is.na(min_f_j_part) ~ min_f_j_part,
+    !applicant_data$participates & is.na(min_f_j_part)  ~ fallback_value,
+    TRUE ~ applicant_data$f_j
+  )
+}
 
 print_hiring_allocation <- function(all_results, year, participation_rate) {
   if (nrow(all_results)==0) { cat("\
@@ -1051,9 +1342,10 @@ add_dept_info_to_learning_data <- function(ld_selected, dept_info) {
 # =============================================================================
 simulate_market_year_adaptive_sequential <- function(candidates, departments, questions, year,
                                                      dept_models_pairwise, participants_this_year, yearly_hiring_schedule,
-                                                     participation_rate=0, alpha=0.05, L_repeats=200, tuple_size=NULL,
+                                                     participation_rate=0, alpha=0.05, L_repeats=20, tuple_size=NULL,
                                                      noise_method="bootstrap", noise_scale=0.15, shortlist_enabled=TRUE,
-                                                     collect_ranking_panel=TRUE, cand_tier_col="quality_tier", max_offer_rounds=5, seed=NULL) {
+                                                     collect_ranking_panel=TRUE, cand_tier_col="quality_tier", max_offer_rounds=5, seed=NULL,
+                                                     verbose=TRUE) {
   if (!is.null(seed)) set.seed(seed)
   candidates <- candidates %>% mutate(participates = cand_id %in% participants_this_year)
   tier_to_int <- function(x) as.integer(factor(as.character(x), levels=c("Tier 1","Tier 2","Tier 3","Tier 4")))
@@ -1063,7 +1355,7 @@ simulate_market_year_adaptive_sequential <- function(candidates, departments, qu
   diag_list <- vector("list", n_departments)
   interviewed_chunks <- vector("list", n_departments)
   rank_panel_chunks <- if (collect_ranking_panel) vector("list", n_departments) else NULL
-  cat(sprintf("\
+  if (verbose) cat(sprintf("\
 === YEAR %d: Interview Selection Phase ===\
 ", year))
   for (j in 1:n_departments) {
@@ -1089,17 +1381,10 @@ simulate_market_year_adaptive_sequential <- function(candidates, departments, qu
     applicant_data <- apps_all[considered_mask, , drop=FALSE]
     if (nrow(applicant_data)==0) { diag_list[[j]] <- apps_all %>% mutate(year=year,dept_id=dept$dept_id,strategy="pairwise",pi_pred=NA_real_,U_true=NA_real_,U_hat=NA_real_,r_true=NA_real_,r_hat=NA_real_,interviewed=0L,considered=0L,h_j=h_j_this_year,k_j=k_j_this_year); next }
     applicant_data <- applicant_data %>% mutate(row_id=row_number())
-    n_part <- sum(applicant_data$participates)
-    if (participation_rate==0 || n_part==0) {
-      min_f_j_part <- NA_real_
-    } else {
-      min_f_j_part <- min(applicant_data$f_j[applicant_data$participates], na.rm=TRUE)
-    }
     applicant_data_pw <- applicant_data %>% mutate(
-      f_j_used = case_when(
-        !participates & !is.na(min_f_j_part) ~ min_f_j_part,
-        !participates & is.na(min_f_j_part)  ~ 0.5,
-        TRUE ~ f_j
+      f_j_used = compute_nonparticipant_fj(
+        applicant_data = applicant_data,
+        participation_rate = participation_rate
       ))
     actual_f_j <- applicant_data_pw$f_j; ad_tmp <- applicant_data_pw; ad_tmp$f_j <- applicant_data_pw$f_j_used
     for (q in questions$numerical) ad_tmp[[q]] <- dept[[q]]
@@ -1129,14 +1414,14 @@ simulate_market_year_adaptive_sequential <- function(candidates, departments, qu
       dplyr::left_join(applicant_data_pw %>% dplyr::select(cand_id,pi_pred,U_true,U_hat,r_true), by="cand_id") %>%
       dplyr::transmute(year=year,dept_id=dept$dept_id,strategy="pairwise",cand_id,s_j,v_i_bar,f_j,pi_pred,U_true,U_hat,r_true,interviewed,considered,participates,h_j,k_j)
   }
-  cat(sprintf("\
+  if (verbose) cat(sprintf("\
 === YEAR %d: Sequential Offer Resolution ===\
 ", year))
   all_interviewed <- bind_rows(interviewed_chunks)
   rank_panel <- if (collect_ranking_panel) bind_rows(rank_panel_chunks) else tibble()
   if (nrow(all_interviewed)>0) {
-    all_results <- resolve_offers_sequential(interviewed_data=all_interviewed, departments=departments, questions=questions, max_rounds=max_offer_rounds, seed=year, temperature=0.05, noise_sd=0.01, shortlist_enabled=shortlist_enabled, year=year)
-    print_hiring_allocation(all_results, year, participation_rate)
+    all_results <- resolve_offers_sequential(interviewed_data=all_interviewed, departments=departments, questions=questions, max_rounds=max_offer_rounds, seed=year, temperature=0.05, noise_sd=0.01, shortlist_enabled=shortlist_enabled, year=year, verbose=verbose)
+    if (verbose) print_hiring_allocation(all_results, year, participation_rate)
   } else all_results <- tibble()
   for (j in 1:nrow(departments)) {
     ld_pw <- all_results %>% dplyr::filter(dept_id==departments$dept_id[j], strategy=="pairwise", interviewed==1L)
@@ -1151,18 +1436,353 @@ simulate_market_year_adaptive_sequential <- function(candidates, departments, qu
 # resolve_offers_sequential - WITH SCRAMBLE (batch f_j for scramble round)
 # =============================================================================
 # =============================================================================
-# resolve_offers_sequential - REVISED WITH HOLD/REJECT MECHANISM
+# resolve_offers_sequential - REVISED WITH IMMEDIATE ACCEPT/REJECT
 # 
-# Key change: Candidates HOLD their best offer and can SWITCH if a better
-# offer arrives in a later round. Departments whose held candidates switch
-# away get their slot back and can re-propose in the next round.
+# Key change: candidates do not hold offers across rounds. In each round,
+# a candidate either accepts one desirable offer immediately (final match)
+# or rejects all offers from that round.
 # This is a truncated DA-like process (not full DA since it stops after
-# max_rounds - 1 regular rounds rather than running to convergence).
+# max_rounds regular rounds rather than running to convergence).
 # =============================================================================
+# resolve_offers_sequential <- function(interviewed_data, departments, questions,
+#                                       all_candidates = NULL, max_rounds = 3, seed = NULL,
+#                                       temperature = 0.3, noise_sd = 0.4,
+#                                       shortlist_enabled = TRUE, year = NA_integer_) {
+#   if (!is.null(seed)) set.seed(seed)
+#   if (nrow(interviewed_data) == 0)
+#     return(interviewed_data %>% dplyr::mutate(offered = 0L, accepted = 0L, offer_round = NA_integer_))
+#   
+#   interviewed_data <- interviewed_data %>%
+#     dplyr::mutate(offered = 0L, accepted = 0L, offer_round = NA_integer_)
+#   
+#   # ── Candidate utilities (deterministic for immediate accept/reject comparisons) ──
+#   cat("  Calculating candidate utilities with unified f_j...\n")
+#   if ("prestige_sensitivity" %in% names(interviewed_data)) {
+#     interviewed_data <- interviewed_data %>%
+#       dplyr::mutate(cand_util = candidate_utility(v_i_bar, s_j, f_j,
+#                                                   cand_tier  = cand_tier,
+#                                                   prestige_sensitivity = prestige_sensitivity))
+#   } else {
+#     interviewed_data <- interviewed_data %>%
+#       dplyr::mutate(cand_util = candidate_utility(v_i_bar, s_j, f_j,
+#                                                   cand_tier = cand_tier))
+#   }
+#   
+#   # ── State tracking ──
+#   # candidate_final: named list cand_id -> final accepted dept/util/round
+#   candidate_final <- list()
+#   accepted_candidates <- integer(0)
+#   
+#   # dept_accepted_cands: named list dept_id -> vector of candidates finally accepted
+#   unique_depts <- as.character(unique(interviewed_data$dept_id))
+#   dept_accepted_cands <- setNames(replicate(length(unique_depts), integer(0), simplify = FALSE), unique_depts)
+#   
+#   # dept_rejected_by: tracks which candidates have rejected each dept
+#   dept_rejected_by <- setNames(replicate(length(unique_depts), integer(0), simplify = FALSE), unique_depts)
+#   
+#   # Department quotas
+#   dept_quota <- interviewed_data %>%
+#     dplyr::distinct(dept_id, h_j) %>%
+#     tibble::deframe()  # named vector: dept_id -> h_j
+#   
+#   # ── Regular offer rounds (hold/reject) ──
+#   # Use all max_rounds as regular rounds; scramble starts only after these.
+#   n_regular_rounds <- max(1, max_rounds)
+#   
+#   for (round in 1:n_regular_rounds) {
+#     cat(sprintf("  Offer Round %d...\n", round))
+#     offers_this_round <- tibble()
+#     
+#     # --- Each department proposes to fill open slots (base R, no dplyr in loop) ---
+#     # Pre-sort interviewed_data by dept_id then desc(U_hat) for fast slicing
+#     dept_ids_data <- interviewed_data$dept_id
+#     cand_ids_data <- interviewed_data$cand_id
+#     u_hat_data <- interviewed_data$U_hat
+#     dept_row_groups <- split(seq_len(nrow(interviewed_data)), dept_ids_data)
+#     
+#     offer_dept_list <- vector("list", length(unique(dept_ids_data)))
+#     offer_cand_list <- vector("list", length(unique(dept_ids_data)))
+#     ol <- 0L
+#     for (d in unique(dept_ids_data)) {
+#       d_char <- as.character(d)
+#       h_j <- dept_quota[[d_char]]
+#       n_accepted <- length(dept_accepted_cands[[d_char]])
+#       positions_remaining <- h_j - n_accepted
+#       if (positions_remaining <= 0) next
+#       
+#       excluded <- unique(c(dept_accepted_cands[[d_char]], dept_rejected_by[[d_char]], accepted_candidates))
+#       rows_d <- dept_row_groups[[d_char]]
+#       if (length(rows_d) == 0) next
+#       
+#       keep <- !(cand_ids_data[rows_d] %in% excluded)
+#       eligible_rows <- rows_d[keep]
+#       if (length(eligible_rows) == 0) next
+#       
+#       # Sort by U_hat descending and take top positions_remaining
+#       ord <- order(u_hat_data[eligible_rows], decreasing = TRUE)
+#       top_n <- min(positions_remaining, length(eligible_rows))
+#       selected_rows <- eligible_rows[ord[1:top_n]]
+#       
+#       ol <- ol + 1L
+#       offer_dept_list[[ol]] <- dept_ids_data[selected_rows]
+#       offer_cand_list[[ol]] <- cand_ids_data[selected_rows]
+#     }
+#     if (ol > 0) {
+#       offers_this_round <- tibble(dept_id = unlist(offer_dept_list[1:ol]),
+#                                   cand_id = unlist(offer_cand_list[1:ol]),
+#                                   round = round)
+#     }
+#     
+#     if (nrow(offers_this_round) == 0) {
+#       cat(sprintf("  No new offers in round %d, moving to scramble.\n", round))
+#       break
+#     }
+#     cat(sprintf("  %d new offers extended in round %d\n", nrow(offers_this_round), round))
+#     
+#     # Mark offers in the data (vectorized via composite key match)
+#     offer_keys <- paste(offers_this_round$dept_id, offers_this_round$cand_id, sep = "_")
+#     data_keys <- paste(interviewed_data$dept_id, interviewed_data$cand_id, sep = "_")
+#     match_idx <- match(offer_keys, data_keys)
+#     valid_matches <- !is.na(match_idx)
+#     if (any(valid_matches)) {
+#       interviewed_data$offered[match_idx[valid_matches]] <- 1L
+#       interviewed_data$offer_round[match_idx[valid_matches]] <- round
+#     }
+#     
+#     # --- Each candidate with a new offer evaluates: immediate accept/reject ---
+#     # Pre-build lookup: for each candidate with a new offer, get their new depts and utils
+#     # using base R vector ops instead of per-candidate dplyr calls
+#     offer_cands <- unique(offers_this_round$cand_id)
+#     offer_cand_depts <- split(offers_this_round$dept_id, offers_this_round$cand_id)
+#     
+#     # Pre-build cand_util lookup from interviewed_data (vectorized)
+#     id_util_lookup <- setNames(interviewed_data$cand_util,
+#                                paste(interviewed_data$cand_id, interviewed_data$dept_id, sep = "_"))
+#     
+#     for (cand in offer_cands) {
+#       cand_char <- as.character(cand)
+#       if (cand %in% accepted_candidates) next
+#       new_depts <- offer_cand_depts[[cand_char]]
+#       
+#       # Get utilities via lookup (base R, no dplyr)
+#       new_keys <- paste(cand, new_depts, sep = "_")
+#       new_utils_vec <- id_util_lookup[new_keys]
+#       offer_utils <- as.numeric(new_utils_vec)
+#       
+#       # Candidate accepts immediately only if at least one offer is desirable.
+#       # Desirability threshold is intentionally conservative and deterministic.
+#       desirable_mask <- is.finite(offer_utils) #& (offer_utils >= 0.50)
+#       
+#       if (any(desirable_mask)) {
+#         desirable_depts <- new_depts[desirable_mask]
+#         desirable_utils <- offer_utils[desirable_mask]
+#         noisy <- desirable_utils + rnorm(length(desirable_utils), 0, noise_sd * 0.1)
+#         best_i <- which.max(noisy)
+#         best_dept <- desirable_depts[best_i]
+#         best_util <- desirable_utils[best_i]
+#         
+#         candidate_final[[cand_char]] <- list(dept_id = best_dept, util = best_util, round = round)
+#         accepted_candidates <- c(accepted_candidates, cand)
+#         
+#         best_d_char <- as.character(best_dept)
+#         if (!(cand %in% dept_accepted_cands[[best_d_char]])) {
+#           dept_accepted_cands[[best_d_char]] <- c(dept_accepted_cands[[best_d_char]], cand)
+#         }
+#         
+#         # Reject all other offers in this round.
+#         rejected_depts <- setdiff(new_depts, best_dept)
+#         for (rd in rejected_depts) {
+#           rd_char <- as.character(rd)
+#           dept_rejected_by[[rd_char]] <- c(dept_rejected_by[[rd_char]], cand)
+#         }
+#       } else {
+#         # Reject all offers if none are desirable.
+#         for (rd in new_depts) {
+#           rd_char <- as.character(rd)
+#           dept_rejected_by[[rd_char]] <- c(dept_rejected_by[[rd_char]], cand)
+#         }
+#       }
+#     }
+#     
+#     # --- Summary ---
+#     total_accepted <- length(unique(accepted_candidates))
+#     total_positions <- sum(dept_quota)
+#     total_unfilled <- total_positions - total_accepted
+#     cat(sprintf("  After round %d: %d offers accepted, %d positions still unfilled\n",
+#                 round, total_accepted, total_unfilled))
+#     if (total_unfilled == 0) {
+#       cat("  All positions filled!\n")
+#       break
+#     }
+#   }
+#   
+#   # ── Finalize accepted offers (vectorized) ──
+#   if (length(candidate_final) > 0) {
+#     accepted_cands <- as.integer(names(candidate_final))
+#     accepted_depts <- vapply(candidate_final, function(h) h$dept_id, integer(1))
+#     accepted_keys <- paste(accepted_depts, accepted_cands, sep = "_")
+#     data_keys_final <- paste(interviewed_data$dept_id, interviewed_data$cand_id, sep = "_")
+#     accept_idx <- match(accepted_keys, data_keys_final)
+#     valid_accept <- !is.na(accept_idx)
+#     if (any(valid_accept)) {
+#       interviewed_data$accepted[accept_idx[valid_accept]] <- 1L
+#     }
+#     candidates_with_accepted_offer <- accepted_cands[valid_accept]
+#   } else {
+#     candidates_with_accepted_offer <- integer(0)
+#   }
+#   
+#   # Build dept_positions_filled (vectorized via table)
+#   dept_id_vec <- as.integer(names(dept_quota))
+#   accepted_counts <- table(interviewed_data$dept_id[interviewed_data$accepted == 1L])
+#   dept_positions_filled <- tibble::tibble(
+#     dept_id = dept_id_vec,
+#     h_j     = as.integer(dept_quota[as.character(dept_id_vec)]),
+#     filled  = as.integer(accepted_counts[as.character(dept_id_vec)])
+#   )
+#   dept_positions_filled$filled[is.na(dept_positions_filled$filled)] <- 0L
+#   
+#   # === SCRAMBLE ROUND with batch f_j + SHORTLIST ENFORCEMENT ===
+#   total_remaining <- sum(dept_positions_filled$h_j - dept_positions_filled$filled)
+#   if (total_remaining > 0 && !is.null(all_candidates)) {
+#     cat(sprintf("\n  === SCRAMBLE ROUND === (%d positions still unfilled)\n", total_remaining))
+#     unmatched_candidates <- all_candidates %>%
+#       dplyr::filter(!(cand_id %in% candidates_with_accepted_offer))
+#     
+#     if (nrow(unmatched_candidates) == 0) {
+#       cat("  No unmatched candidates available for scramble.\n")
+#     } else {
+#       cat(sprintf("  %d unmatched candidates entering scramble\n", nrow(unmatched_candidates)))
+#       unfilled_depts <- dept_positions_filled %>%
+#         dplyr::filter(filled < h_j) %>%
+#         dplyr::mutate(positions_needed = h_j - filled) %>%
+#         dplyr::left_join(departments %>% dplyr::select(dept_id, s_j, prestige_tier),
+#                          by = "dept_id") %>%
+#         dplyr::arrange(dplyr::desc(s_j))
+#       
+#       scramble_round <- max_rounds + 1L
+#       scramble_matches <- tibble()
+#       
+#       allow_map <- list("Tier 1" = c("Tier 1"), "Tier 2" = c("Tier 1", "Tier 2"),
+#                         "Tier 3" = c("Tier 1", "Tier 2", "Tier 3"),
+#                         "Tier 4" = c("Tier 1", "Tier 2", "Tier 3", "Tier 4"))
+#       tti <- function(x) as.integer(factor(as.character(x),
+#                                            levels = c("Tier 1", "Tier 2", "Tier 3", "Tier 4")))
+#       
+#       for (row_idx in 1:nrow(unfilled_depts)) {
+#         d  <- unfilled_depts$dept_id[row_idx]
+#         pn <- unfilled_depts$positions_needed[row_idx]
+#         dept_info <- departments %>% dplyr::filter(dept_id == d)
+#         if (nrow(dept_info) == 0) next
+#         
+#         still_available <- unmatched_candidates %>%
+#           dplyr::filter(!(cand_id %in% candidates_with_accepted_offer))
+#         if (nrow(still_available) == 0) next
+#         
+#         # Shortlist enforcement
+#         if (shortlist_enabled && "quality_tier" %in% names(still_available)) {
+#           pt <- as.character(dept_info$prestige_tier[1] %||% "Tier 4")
+#           allowed_tiers <- allow_map[[pt]] %||% allow_map[["Tier 4"]]
+#           still_available <- still_available %>%
+#             dplyr::filter(as.character(quality_tier) %in% allowed_tiers)
+#           if (nrow(still_available) == 0) next
+#         }
+#         
+#         # Batch f_j
+#         f_j_values <- calculate_f_j_batch(still_available, dept_info, questions)
+#         vbn <- if (diff(range(still_available$v_i_bar, na.rm = TRUE)) > 0)
+#           (still_available$v_i_bar - min(still_available$v_i_bar, na.rm = TRUE)) /
+#           diff(range(still_available$v_i_bar, na.rm = TRUE))
+#         else rep(0.5, nrow(still_available))
+#         
+#         scramble_priority <- 0.85 * vbn + 0.15 * f_j_values
+#         top_indices <- order(scramble_priority, decreasing = TRUE)[1:min(pn, nrow(still_available))]
+#         
+#         # Vectorize scramble candidate processing
+#         top_cands <- still_available$cand_id[top_indices]
+#         top_not_taken <- !(top_cands %in% candidates_with_accepted_offer)
+#         top_indices <- top_indices[top_not_taken]
+#         top_cands <- top_cands[top_not_taken]
+#         if (length(top_indices) == 0) next
+#         
+#         sjv <- dept_info$s_j[1]
+#         top_fj <- f_j_values[top_indices]
+#         top_vbar <- still_available$v_i_bar[top_indices]
+#         
+#         # Vectorized acceptance probabilities
+#         accept_probs <- ifelse(top_fj < 0.60, 0.3, 0.95)
+#         accept_draws <- runif(length(top_indices))
+#         accept_mask <- accept_draws < accept_probs
+#         
+#         # Vectorized candidate utilities
+#         if ("prestige_sensitivity" %in% names(still_available)) {
+#           top_ps <- still_available$prestige_sensitivity[top_indices]
+#           top_cuv <- candidate_utility(top_vbar, sjv, top_fj, prestige_sensitivity = top_ps)
+#         } else {
+#           top_cuv <- candidate_utility(top_vbar, sjv, top_fj)
+#         }
+#         
+#         di <- which(dept_positions_filled$dept_id == d)
+#         dept_max <- dept_positions_filled$h_j[di]
+#         has_qt <- "quality_tier" %in% names(still_available)
+#         has_part <- "participates" %in% names(still_available)
+#         
+#         # Collect matches (limited by positions needed)
+#         scramble_match_list <- vector("list", sum(accept_mask))
+#         sm_count <- 0L
+#         for (ii in which(accept_mask)) {
+#           if (top_cands[ii] %in% candidates_with_accepted_offer) next
+#           if (dept_positions_filled$filled[di] >= dept_max) break
+#           sm_count <- sm_count + 1L
+#           sm <- tibble(
+#             dept_id = d, cand_id = top_cands[ii], s_j = sjv,
+#             v_i_bar = top_vbar[ii], f_j = top_fj[ii],
+#             cand_tier = tti(still_available$quality_tier[top_indices[ii]]),
+#             dept_tier = tti(dept_info$prestige_tier),
+#             offered = 1L, accepted = 1L, offer_round = scramble_round,
+#             cand_util = top_cuv[ii],
+#             h_j = dept_max, strategy = "pairwise",
+#             interviewed = 0L, year = year,
+#             participates = if (has_part) still_available$participates[top_indices[ii]] else NA
+#           )
+#           if (has_qt) sm$quality_tier <- as.character(still_available$quality_tier[top_indices[ii]])
+#           scramble_match_list[[sm_count]] <- sm
+#           candidates_with_accepted_offer <- c(candidates_with_accepted_offer, top_cands[ii])
+#           dept_positions_filled$filled[di] <- dept_positions_filled$filled[di] + 1L
+#         }
+#         if (sm_count > 0)
+#           scramble_matches <- dplyr::bind_rows(scramble_matches, dplyr::bind_rows(scramble_match_list[1:sm_count]))
+#       }
+#       
+#       if (nrow(scramble_matches) > 0) {
+#         cat(sprintf("  Scramble produced %d new matches\n", nrow(scramble_matches)))
+#         for (col in setdiff(names(interviewed_data), names(scramble_matches)))
+#           scramble_matches[[col]] <- NA
+#         scramble_matches <- scramble_matches[, names(interviewed_data), drop = FALSE]
+#         interviewed_data <- dplyr::bind_rows(interviewed_data, scramble_matches)
+#       } else {
+#         cat("  Scramble produced no new matches\n")
+#       }
+#     }
+#   } else if (total_remaining > 0) {
+#     cat(sprintf("\n  WARNING: %d positions unfilled but no candidate pool for scramble.\n",
+#                 total_remaining))
+#   }
+#   
+#   # ── Final summary ──
+#   fs <- dept_positions_filled %>% dplyr::mutate(unfilled = h_j - filled)
+#   cat("\n  Final hiring summary:\n")
+#   cat(sprintf("    Total positions: %d\n", sum(fs$h_j)))
+#   cat(sprintf("    Positions filled: %d\n", sum(fs$filled)))
+#   cat(sprintf("    Positions unfilled: %d\n", sum(fs$unfilled)))
+#   
+#   interviewed_data
+# }
 resolve_offers_sequential <- function(interviewed_data, departments, questions,
                                       all_candidates = NULL, max_rounds = 3, seed = NULL,
                                       temperature = 0.3, noise_sd = 0.4,
-                                      shortlist_enabled = TRUE, year = NA_integer_) {
+                                      shortlist_enabled = TRUE, year = NA_integer_,
+                                      verbose = TRUE) {
   if (!is.null(seed)) set.seed(seed)
   if (nrow(interviewed_data) == 0)
     return(interviewed_data %>% dplyr::mutate(offered = 0L, accepted = 0L, offer_round = NA_integer_))
@@ -1170,8 +1790,8 @@ resolve_offers_sequential <- function(interviewed_data, departments, questions,
   interviewed_data <- interviewed_data %>%
     dplyr::mutate(offered = 0L, accepted = 0L, offer_round = NA_integer_)
   
-  # ── Candidate utilities (deterministic for hold/reject comparisons) ──
-  cat("  Calculating candidate utilities with unified f_j...\n")
+  # ── Candidate utilities (deterministic for offer-choice comparisons) ──
+  if (verbose) cat("  Calculating candidate utilities with unified f_j...\n")
   if ("prestige_sensitivity" %in% names(interviewed_data)) {
     interviewed_data <- interviewed_data %>%
       dplyr::mutate(cand_util = candidate_utility(v_i_bar, s_j, f_j,
@@ -1183,319 +1803,180 @@ resolve_offers_sequential <- function(interviewed_data, departments, questions,
                                                   cand_tier = cand_tier))
   }
   
-  # ── State tracking ──
-  # candidate_held: named list  cand_id (char) -> list(dept_id, util, round)
-  # Tracks the ONE offer each candidate is currently holding.
-  candidate_held <- list()
-  
-  # dept_held_cands: named list  dept_id (char) -> vector of cand_ids currently held
-  unique_depts <- as.character(unique(interviewed_data$dept_id))
-  dept_held_cands <- setNames(replicate(length(unique_depts), integer(0), simplify = FALSE), unique_depts)
-
-  # dept_rejected_by: tracks which candidates have rejected each dept
-  dept_rejected_by <- setNames(replicate(length(unique_depts), integer(0), simplify = FALSE), unique_depts)
-  
-  # Department quotas
+  # Department quotas and indexed vectors
   dept_quota <- interviewed_data %>%
     dplyr::distinct(dept_id, h_j) %>%
-    tibble::deframe()  # named vector: dept_id -> h_j
+    tibble::deframe()
+  dept_names <- names(dept_quota)
+  dept_ids_data <- interviewed_data$dept_id
+  cand_ids_data <- interviewed_data$cand_id
+  u_hat_data <- interviewed_data$U_hat
+  dept_row_groups <- split(seq_len(nrow(interviewed_data)), as.character(dept_ids_data))
+  data_keys <- paste(interviewed_data$dept_id, interviewed_data$cand_id, sep = "_")
+  id_util_lookup <- setNames(interviewed_data$cand_util,
+                             paste(interviewed_data$cand_id, interviewed_data$dept_id, sep = "_"))
   
-  # ── Regular offer rounds (hold/reject) ──
-  n_regular_rounds <- max(1, max_rounds - 1)
+  # Helper: candidates choose best offer in a given round (no holding across rounds)
+  choose_best_offers <- function(offers_this_round) {
+    if (nrow(offers_this_round) == 0) return(tibble())
+    offer_cands <- unique(offers_this_round$cand_id)
+    offer_cand_depts <- split(offers_this_round$dept_id, offers_this_round$cand_id)
+    accepted_list <- vector("list", length(offer_cands))
+    n_acc <- 0L
+    for (cand in offer_cands) {
+      cand_char <- as.character(cand)
+      depts <- offer_cand_depts[[cand_char]]
+      keys <- paste(cand, depts, sep = "_")
+      utils <- as.numeric(id_util_lookup[keys])
+      if (length(utils) == 0 || all(!is.finite(utils))) next
+      best_i <- which.max(utils)  # deterministic tie break: first max
+      n_acc <- n_acc + 1L
+      accepted_list[[n_acc]] <- tibble(
+        cand_id = cand,
+        dept_id = depts[best_i],
+        round = offers_this_round$round[1]
+      )
+    }
+    if (n_acc == 0L) return(tibble())
+    dplyr::bind_rows(accepted_list[1:n_acc])
+  }
+
+  # ── Round 1: each department offers up to h_j interviewed candidates; candidates accept best offer ──
+  if (verbose) cat("  Offer Round 1 (initial interviewed offers)...\n")
+  offer_dept_list <- vector("list", length(dept_names))
+  offer_cand_list <- vector("list", length(dept_names))
+  ol <- 0L
+  for (d_char in dept_names) {
+    h_j <- as.integer(dept_quota[[d_char]])
+    if (is.na(h_j) || h_j <= 0L) next
+    rows_d <- dept_row_groups[[d_char]]
+    if (length(rows_d) == 0) next
+    ord <- order(u_hat_data[rows_d], decreasing = TRUE)
+    top_n <- min(h_j, length(rows_d))
+    selected_rows <- rows_d[ord[seq_len(top_n)]]
+    ol <- ol + 1L
+    offer_dept_list[[ol]] <- dept_ids_data[selected_rows]
+    offer_cand_list[[ol]] <- cand_ids_data[selected_rows]
+  }
+  offers_round1 <- if (ol > 0) {
+    tibble(
+      dept_id = unlist(offer_dept_list[1:ol], use.names = FALSE),
+      cand_id = unlist(offer_cand_list[1:ol], use.names = FALSE),
+      round = 1L
+    )
+  } else tibble()
   
-  for (round in 1:n_regular_rounds) {
-    cat(sprintf("  Offer Round %d...\n", round))
-    offers_this_round <- tibble()
-    
-    # --- Each department proposes to fill open slots (base R, no dplyr in loop) ---
-    # Pre-sort interviewed_data by dept_id then desc(U_hat) for fast slicing
-    dept_ids_data <- interviewed_data$dept_id
-    cand_ids_data <- interviewed_data$cand_id
-    u_hat_data <- interviewed_data$U_hat
-    dept_row_groups <- split(seq_len(nrow(interviewed_data)), dept_ids_data)
-
-    offer_dept_list <- vector("list", length(unique(dept_ids_data)))
-    offer_cand_list <- vector("list", length(unique(dept_ids_data)))
-    ol <- 0L
-    for (d in unique(dept_ids_data)) {
-      d_char <- as.character(d)
-      h_j <- dept_quota[[d_char]]
-      n_held <- length(dept_held_cands[[d_char]])
-      positions_remaining <- h_j - n_held
-      if (positions_remaining <= 0) next
-
-      excluded <- c(dept_held_cands[[d_char]], dept_rejected_by[[d_char]])
-      rows_d <- dept_row_groups[[d_char]]
-      if (length(rows_d) == 0) next
-
-      keep <- !(cand_ids_data[rows_d] %in% excluded)
-      eligible_rows <- rows_d[keep]
-      if (length(eligible_rows) == 0) next
-
-      # Sort by U_hat descending and take top positions_remaining
-      ord <- order(u_hat_data[eligible_rows], decreasing = TRUE)
-      top_n <- min(positions_remaining, length(eligible_rows))
-      selected_rows <- eligible_rows[ord[1:top_n]]
-
-      ol <- ol + 1L
-      offer_dept_list[[ol]] <- dept_ids_data[selected_rows]
-      offer_cand_list[[ol]] <- cand_ids_data[selected_rows]
-    }
-    if (ol > 0) {
-      offers_this_round <- tibble(dept_id = unlist(offer_dept_list[1:ol]),
-                                  cand_id = unlist(offer_cand_list[1:ol]),
-                                  round = round)
-    }
-    
-    if (nrow(offers_this_round) == 0) {
-      cat(sprintf("  No new offers in round %d, moving to scramble.\n", round))
-      break
-    }
-    cat(sprintf("  %d new offers extended in round %d\n", nrow(offers_this_round), round))
-    
-    # Mark offers in the data (vectorized via composite key match)
-    offer_keys <- paste(offers_this_round$dept_id, offers_this_round$cand_id, sep = "_")
-    data_keys <- paste(interviewed_data$dept_id, interviewed_data$cand_id, sep = "_")
+  if (nrow(offers_round1) > 0) {
+    offer_keys <- paste(offers_round1$dept_id, offers_round1$cand_id, sep = "_")
     match_idx <- match(offer_keys, data_keys)
     valid_matches <- !is.na(match_idx)
     if (any(valid_matches)) {
       interviewed_data$offered[match_idx[valid_matches]] <- 1L
-      interviewed_data$offer_round[match_idx[valid_matches]] <- round
+      interviewed_data$offer_round[match_idx[valid_matches]] <- 1L
     }
-    
-    # --- Each candidate with a new offer evaluates: hold best, reject rest ---
-    # Pre-build lookup: for each candidate with a new offer, get their new depts and utils
-    # using base R vector ops instead of per-candidate dplyr calls
-    offer_cands <- unique(offers_this_round$cand_id)
-    offer_cand_depts <- split(offers_this_round$dept_id, offers_this_round$cand_id)
-
-    # Pre-build cand_util lookup from interviewed_data (vectorized)
-    id_util_lookup <- setNames(interviewed_data$cand_util,
-                               paste(interviewed_data$cand_id, interviewed_data$dept_id, sep = "_"))
-
-    for (cand in offer_cands) {
-      cand_char <- as.character(cand)
-      new_depts <- offer_cand_depts[[cand_char]]
-
-      # Get utilities via lookup (base R, no dplyr)
-      new_keys <- paste(cand, new_depts, sep = "_")
-      new_utils_vec <- id_util_lookup[new_keys]
-      opt_depts <- new_depts
-      opt_utils <- as.numeric(new_utils_vec)
-
-      # Add current hold if any
-      current_hold <- candidate_held[[cand_char]]
-      if (!is.null(current_hold)) {
-        opt_depts <- c(opt_depts, current_hold$dept_id)
-        opt_utils <- c(opt_utils, current_hold$util)
-      }
-
-      # Pick best with small noise for tie-breaking
-      noisy <- opt_utils + rnorm(length(opt_utils), 0, noise_sd * 0.1)
-      best_i <- which.max(noisy)
-      best_dept <- opt_depts[best_i]
-      best_util <- opt_utils[best_i]
-      rejected_depts <- opt_depts[-best_i]
-
-      # If switching away from current hold, free that dept's slot
-      if (!is.null(current_hold) && current_hold$dept_id != best_dept) {
-        old_d_char <- as.character(current_hold$dept_id)
-        dept_held_cands[[old_d_char]] <- setdiff(dept_held_cands[[old_d_char]], cand)
-        dept_rejected_by[[old_d_char]] <- c(dept_rejected_by[[old_d_char]], cand)
-      }
-
-      # Record rejections for new offers that weren't chosen
-      rej_new <- intersect(rejected_depts, new_depts)
-      for (rd in rej_new) {
-        rd_char <- as.character(rd)
-        dept_rejected_by[[rd_char]] <- c(dept_rejected_by[[rd_char]], cand)
-      }
-
-      # Update hold
-      candidate_held[[cand_char]] <- list(dept_id = best_dept, util = best_util, round = round)
-
-      # Add candidate to held list for the chosen dept
-      best_d_char <- as.character(best_dept)
-      if (!(cand %in% dept_held_cands[[best_d_char]])) {
-        dept_held_cands[[best_d_char]] <- c(dept_held_cands[[best_d_char]], cand)
-      }
+    accepted_round1 <- choose_best_offers(offers_round1)
+    if (nrow(accepted_round1) > 0) {
+      accept_keys <- paste(accepted_round1$dept_id, accepted_round1$cand_id, sep = "_")
+      accept_idx <- match(accept_keys, data_keys)
+      valid_accept <- !is.na(accept_idx)
+      if (any(valid_accept))
+        interviewed_data$accepted[accept_idx[valid_accept]] <- 1L
     }
-    
-    # --- Summary ---
-    total_held <- sum(lengths(dept_held_cands))
-    total_positions <- sum(dept_quota)
-    total_unfilled <- total_positions - total_held
-    cat(sprintf("  After round %d: %d offers held, %d positions still unfilled\n",
-                round, total_held, total_unfilled))
-    if (total_unfilled == 0) {
-      cat("  All positions filled!\n")
-      break
-    }
-  }
-  
-  # ── Finalize held offers as acceptances (vectorized) ──
-  if (length(candidate_held) > 0) {
-    held_cands <- as.integer(names(candidate_held))
-    held_depts <- vapply(candidate_held, function(h) h$dept_id, integer(1))
-    held_keys <- paste(held_depts, held_cands, sep = "_")
-    data_keys_final <- paste(interviewed_data$dept_id, interviewed_data$cand_id, sep = "_")
-    accept_idx <- match(held_keys, data_keys_final)
-    valid_accept <- !is.na(accept_idx)
-    if (any(valid_accept)) {
-      interviewed_data$accepted[accept_idx[valid_accept]] <- 1L
-    }
-    candidates_with_accepted_offer <- held_cands[valid_accept]
   } else {
-    candidates_with_accepted_offer <- integer(0)
+    accepted_round1 <- tibble()
   }
-
-  # Build dept_positions_filled (vectorized via table)
-  dept_id_vec <- as.integer(names(dept_quota))
+  
+  # Build positions filled after round 1
   accepted_counts <- table(interviewed_data$dept_id[interviewed_data$accepted == 1L])
+  filled_vec <- as.integer(accepted_counts[dept_names])
+  filled_vec[is.na(filled_vec)] <- 0L
   dept_positions_filled <- tibble::tibble(
-    dept_id = dept_id_vec,
-    h_j     = as.integer(dept_quota[as.character(dept_id_vec)]),
-    filled  = as.integer(accepted_counts[as.character(dept_id_vec)])
+    dept_id = type.convert(dept_names, as.is = TRUE),
+    h_j = as.integer(dept_quota[dept_names]),
+    filled = filled_vec
   )
-  dept_positions_filled$filled[is.na(dept_positions_filled$filled)] <- 0L
-  
-  # === SCRAMBLE ROUND with batch f_j + SHORTLIST ENFORCEMENT ===
-  total_remaining <- sum(dept_positions_filled$h_j - dept_positions_filled$filled)
-  if (total_remaining > 0 && !is.null(all_candidates)) {
-    cat(sprintf("\n  === SCRAMBLE ROUND === (%d positions still unfilled)\n", total_remaining))
-    unmatched_candidates <- all_candidates %>%
-      dplyr::filter(!(cand_id %in% candidates_with_accepted_offer))
-    
-    if (nrow(unmatched_candidates) == 0) {
-      cat("  No unmatched candidates available for scramble.\n")
-    } else {
-      cat(sprintf("  %d unmatched candidates entering scramble\n", nrow(unmatched_candidates)))
-      unfilled_depts <- dept_positions_filled %>%
-        dplyr::filter(filled < h_j) %>%
-        dplyr::mutate(positions_needed = h_j - filled) %>%
-        dplyr::left_join(departments %>% dplyr::select(dept_id, s_j, prestige_tier),
-                         by = "dept_id") %>%
-        dplyr::arrange(dplyr::desc(s_j))
-      
-      scramble_round <- max_rounds
-      scramble_matches <- tibble()
-      
-      allow_map <- list("Tier 1" = c("Tier 1"), "Tier 2" = c("Tier 1", "Tier 2"),
-                        "Tier 3" = c("Tier 1", "Tier 2", "Tier 3"),
-                        "Tier 4" = c("Tier 1", "Tier 2", "Tier 3", "Tier 4"))
-      tti <- function(x) as.integer(factor(as.character(x),
-                                           levels = c("Tier 1", "Tier 2", "Tier 3", "Tier 4")))
-      
-      for (row_idx in 1:nrow(unfilled_depts)) {
-        d  <- unfilled_depts$dept_id[row_idx]
-        pn <- unfilled_depts$positions_needed[row_idx]
-        dept_info <- departments %>% dplyr::filter(dept_id == d)
-        if (nrow(dept_info) == 0) next
-        
-        still_available <- unmatched_candidates %>%
-          dplyr::filter(!(cand_id %in% candidates_with_accepted_offer))
-        if (nrow(still_available) == 0) next
-        
-        # Shortlist enforcement
-        if (shortlist_enabled && "quality_tier" %in% names(still_available)) {
-          pt <- as.character(dept_info$prestige_tier[1] %||% "Tier 4")
-          allowed_tiers <- allow_map[[pt]] %||% allow_map[["Tier 4"]]
-          still_available <- still_available %>%
-            dplyr::filter(as.character(quality_tier) %in% allowed_tiers)
-          if (nrow(still_available) == 0) next
-        }
-        
-        # Batch f_j
-        f_j_values <- calculate_f_j_batch(still_available, dept_info, questions)
-        vbn <- if (diff(range(still_available$v_i_bar, na.rm = TRUE)) > 0)
-          (still_available$v_i_bar - min(still_available$v_i_bar, na.rm = TRUE)) /
-          diff(range(still_available$v_i_bar, na.rm = TRUE))
-        else rep(0.5, nrow(still_available))
-        
-        scramble_priority <- 0.85 * vbn + 0.15 * f_j_values
-        top_indices <- order(scramble_priority, decreasing = TRUE)[1:min(pn, nrow(still_available))]
+  total_positions <- sum(dept_positions_filled$h_j)
+  total_filled_r1 <- sum(dept_positions_filled$filled)
+  total_remaining <- total_positions - total_filled_r1
+  if (verbose) cat(sprintf("  After round 1: %d positions filled, %d positions unfilled\n",
+                           total_filled_r1, total_remaining))
 
-        # Vectorize scramble candidate processing
-        top_cands <- still_available$cand_id[top_indices]
-        top_not_taken <- !(top_cands %in% candidates_with_accepted_offer)
-        top_indices <- top_indices[top_not_taken]
-        top_cands <- top_cands[top_not_taken]
-        if (length(top_indices) == 0) next
-
-        sjv <- dept_info$s_j[1]
-        top_fj <- f_j_values[top_indices]
-        top_vbar <- still_available$v_i_bar[top_indices]
-
-        # Vectorized acceptance probabilities
-        accept_probs <- ifelse(top_fj < 0.60, 0.3, 0.95)
-        accept_draws <- runif(length(top_indices))
-        accept_mask <- accept_draws < accept_probs
-
-        # Vectorized candidate utilities
-        if ("prestige_sensitivity" %in% names(still_available)) {
-          top_ps <- still_available$prestige_sensitivity[top_indices]
-          top_cuv <- candidate_utility(top_vbar, sjv, top_fj, prestige_sensitivity = top_ps)
-        } else {
-          top_cuv <- candidate_utility(top_vbar, sjv, top_fj)
-        }
-
-        di <- which(dept_positions_filled$dept_id == d)
-        dept_max <- dept_positions_filled$h_j[di]
-        has_qt <- "quality_tier" %in% names(still_available)
-        has_part <- "participates" %in% names(still_available)
-
-        # Collect matches (limited by positions needed)
-        scramble_match_list <- vector("list", sum(accept_mask))
-        sm_count <- 0L
-        for (ii in which(accept_mask)) {
-          if (top_cands[ii] %in% candidates_with_accepted_offer) next
-          if (dept_positions_filled$filled[di] >= dept_max) break
-          sm_count <- sm_count + 1L
-          sm <- tibble(
-            dept_id = d, cand_id = top_cands[ii], s_j = sjv,
-            v_i_bar = top_vbar[ii], f_j = top_fj[ii],
-            cand_tier = tti(still_available$quality_tier[top_indices[ii]]),
-            dept_tier = tti(dept_info$prestige_tier),
-            offered = 1L, accepted = 1L, offer_round = scramble_round,
-            cand_util = top_cuv[ii],
-            h_j = dept_max, strategy = "pairwise",
-            interviewed = 0L, year = year,
-            participates = if (has_part) still_available$participates[top_indices[ii]] else NA
-          )
-          if (has_qt) sm$quality_tier <- as.character(still_available$quality_tier[top_indices[ii]])
-          scramble_match_list[[sm_count]] <- sm
-          candidates_with_accepted_offer <- c(candidates_with_accepted_offer, top_cands[ii])
-          dept_positions_filled$filled[di] <- dept_positions_filled$filled[di] + 1L
-        }
-        if (sm_count > 0)
-          scramble_matches <- dplyr::bind_rows(scramble_matches, dplyr::bind_rows(scramble_match_list[1:sm_count]))
-      }
-      
-      if (nrow(scramble_matches) > 0) {
-        cat(sprintf("  Scramble produced %d new matches\n", nrow(scramble_matches)))
-        for (col in setdiff(names(interviewed_data), names(scramble_matches)))
-          scramble_matches[[col]] <- NA
-        scramble_matches <- scramble_matches[, names(interviewed_data), drop = FALSE]
-        interviewed_data <- dplyr::bind_rows(interviewed_data, scramble_matches)
-      } else {
-        cat("  Scramble produced no new matches\n")
-      }
+  # ── Round 2 scramble: each unfilled department offers ONE top remaining interviewed candidate ──
+  # all_candidates is intentionally not used here; scramble is restricted to interviewed candidates.
+  if (total_remaining > 0 && max_rounds >= 2L) {
+    if (verbose) cat(sprintf("\n  Offer Round 2 (scramble): %d departments/positions still unfilled\n", total_remaining))
+    accepted_candidates <- interviewed_data$cand_id[interviewed_data$accepted == 1L]
+    offer2_dept <- vector("list", length(dept_names))
+    offer2_cand <- vector("list", length(dept_names))
+    o2 <- 0L
+    for (d_char in dept_names) {
+      h_j <- as.integer(dept_quota[[d_char]])
+      if (is.na(h_j) || h_j <= 0L) next
+      filled_d <- dept_positions_filled$filled[match(type.convert(d_char, as.is = TRUE), dept_positions_filled$dept_id)]
+      filled_d <- ifelse(length(filled_d) == 0 || is.na(filled_d), 0L, filled_d)
+      if (filled_d >= h_j) next
+      rows_d <- dept_row_groups[[d_char]]
+      if (length(rows_d) == 0) next
+      is_available <- !(cand_ids_data[rows_d] %in% accepted_candidates) &
+        interviewed_data$offered[rows_d] == 0L
+      eligible_rows <- rows_d[is_available]
+      if (length(eligible_rows) == 0) next
+      best_row <- eligible_rows[which.max(u_hat_data[eligible_rows])]
+      o2 <- o2 + 1L
+      offer2_dept[[o2]] <- dept_ids_data[best_row]
+      offer2_cand[[o2]] <- cand_ids_data[best_row]
     }
-  } else if (total_remaining > 0) {
-    cat(sprintf("\n  WARNING: %d positions unfilled but no candidate pool for scramble.\n",
-                total_remaining))
+    
+    offers_round2 <- if (o2 > 0) {
+      tibble(
+        dept_id = unlist(offer2_dept[1:o2], use.names = FALSE),
+        cand_id = unlist(offer2_cand[1:o2], use.names = FALSE),
+        round = 2L
+      )
+    } else tibble()
+    
+    if (nrow(offers_round2) > 0) {
+      offer2_keys <- paste(offers_round2$dept_id, offers_round2$cand_id, sep = "_")
+      offer2_idx <- match(offer2_keys, data_keys)
+      valid_offer2 <- !is.na(offer2_idx)
+      if (any(valid_offer2)) {
+        interviewed_data$offered[offer2_idx[valid_offer2]] <- 1L
+        interviewed_data$offer_round[offer2_idx[valid_offer2]] <- 2L
+      }
+      accepted_round2 <- choose_best_offers(offers_round2)
+      if (nrow(accepted_round2) > 0) {
+        accept2_keys <- paste(accepted_round2$dept_id, accepted_round2$cand_id, sep = "_")
+        accept2_idx <- match(accept2_keys, data_keys)
+        valid_accept2 <- !is.na(accept2_idx)
+        if (any(valid_accept2))
+          interviewed_data$accepted[accept2_idx[valid_accept2]] <- 1L
+      }
+      if (verbose) cat(sprintf("  Round 2 issued %d offers\n", nrow(offers_round2)))
+    } else if (verbose) {
+      cat("  Round 2 issued 0 offers (no remaining interviewed candidates available).\n")
+    }
+  } else if (total_remaining > 0 && max_rounds < 2L && verbose) {
+    cat(sprintf("  Round 2 scramble skipped because max_rounds=%d\n", max_rounds))
   }
-  
+
   # ── Final summary ──
-  fs <- dept_positions_filled %>% dplyr::mutate(unfilled = h_j - filled)
-  cat("\n  Final hiring summary:\n")
-  cat(sprintf("    Total positions: %d\n", sum(fs$h_j)))
-  cat(sprintf("    Positions filled: %d\n", sum(fs$filled)))
-  cat(sprintf("    Positions unfilled: %d\n", sum(fs$unfilled)))
-  
+  accepted_counts_final <- table(interviewed_data$dept_id[interviewed_data$accepted == 1L])
+  filled_final <- as.integer(accepted_counts_final[dept_names])
+  filled_final[is.na(filled_final)] <- 0L
+  fs <- tibble::tibble(
+    dept_id = type.convert(dept_names, as.is = TRUE),
+    h_j = as.integer(dept_quota[dept_names]),
+    filled = filled_final
+  ) %>% dplyr::mutate(unfilled = h_j - filled)
+  if (verbose) {
+    cat("\n  Final hiring summary:\n")
+    cat(sprintf("    Total positions: %d\n", sum(fs$h_j)))
+    cat(sprintf("    Positions filled: %d\n", sum(fs$filled)))
+    cat(sprintf("    Positions unfilled: %d\n", sum(fs$unfilled)))
+  }
+
   interviewed_data
 }
-
 # =============================================================================
 # BURN-IN PHASE
 # =============================================================================
@@ -1509,7 +1990,7 @@ resolve_offers_sequential <- function(interviewed_data, departments, questions,
 # =============================================================================
 run_burn_in_phase <- function(departments, questions, n_candidates = 500, burn_in_years = 10,
                               yearly_candidate_cohorts = NULL, yearly_hiring_schedule = NULL, seed = 123,
-                              alpha = 0.05, L_repeats = 200, tuple_size = NULL,
+                              alpha = 0.05, L_repeats = 20, tuple_size = NULL,
                               noise_method = "bootstrap", noise_scale = 0.15,
                               cand_tier_cutpoints = c(0.10, 0.25, 0.50),
                               max_offer_rounds = 5, print_diagnostics = TRUE,
@@ -1601,7 +2082,7 @@ run_burn_in_phase <- function(departments, questions, n_candidates = 500, burn_i
 # =============================================================================
 predict_acceptance_probability_with_learned_prior <- function(dept_model, applicant_data,
                                                               learned_prior_model = NULL,
-                                                              n_bootstrap = 200,
+                                                              n_bootstrap = 50,
                                                               include_fit = dept_model$include_fit,
                                                               include_questions = dept_model$include_questions,
                                                               seed = NULL,
@@ -1647,7 +2128,6 @@ predict_acceptance_probability_with_learned_prior <- function(dept_model, applic
   n_hist <- nrow(hist_data)
   
   # ── Step 3: Trained but insufficient data for bootstrap (< 10 obs) ──
-  #    Single forward pass, blend with prior, no bootstrap.
   if (n_hist < 10) {
     nn_data <- tryCatch(
       prepare_nn_data(applicant_data, dept_model$questions,
@@ -1672,12 +2152,10 @@ predict_acceptance_probability_with_learned_prior <- function(dept_model, applic
   }
   
   # ── Step 4: Full bootstrap (>= 10 obs) ──
-  #    Warm-start bootstrap: clone trained weights, fine-tune on resampled data.
-  #    Inference prepare_nn_data cached outside loop (same applicant_data every iteration).
   mw <- pmin(1, n_hist / 40)
   pi_draws_matrix <- matrix(NA_real_, nrow = n_bootstrap, ncol = n_applicants)
-
-  # Cache inference data ONCE
+  
+  # ── Cache INFERENCE data ONCE ──
   nn_data_cached <- tryCatch(
     prepare_nn_data(applicant_data, dept_model$questions,
                     include_fit = include_fit,
@@ -1689,43 +2167,66 @@ predict_acceptance_probability_with_learned_prior <- function(dept_model, applic
     attr(res, "pi_draws") <- matrix(pi_point, nrow = 1)
     return(res)
   }
-
+  
+  # ── Cache TRAINING data ONCE (tensorize hist_data, then index per bootstrap) ──
+  nn_data_train_all <- tryCatch(
+    prepare_nn_data(hist_data, dept_model$questions,
+                    include_fit = include_fit,
+                    include_questions = include_questions),
+    error = function(e) NULL)
+  y_all <- torch::torch_tensor(hist_data$accepted, dtype = torch::torch_float())$unsqueeze(2)
+  
   # Save trained model state for warm-start bootstrap
   trained_state <- if (dept_model$is_trained) lapply(dept_model$model$parameters, function(p) p$clone()$detach()) else NULL
-
+  
+  # Allocate temp model ONCE outside the loop
+  temp_model <- initialize_department_model(dept_model$questions,
+                                            include_fit = include_fit,
+                                            include_questions = include_questions)
+  
   for (b in 1:n_bootstrap) {
-    boot_data <- hist_data[sample.int(n_hist, n_hist, replace = TRUE), ]
-
-    # Warm-start: copy trained weights instead of random init
-    temp_model <- initialize_department_model(dept_model$questions,
-                                              include_fit = include_fit,
-                                              include_questions = include_questions)
+    boot_indices <- sample.int(n_hist, n_hist, replace = TRUE)
+    
+    # Reset weights to trained state (cheap copy, no allocation)
     if (!is.null(trained_state)) {
       tp <- temp_model$model$parameters
       with_no_grad({ for (i in seq_along(tp)) tp[[i]]$copy_(trained_state[[i]]) })
     }
-    temp_model$historical_data <- boot_data
-    temp_model <- tryCatch(
-      train_department_model(temp_model, boot_data, n_epochs = 5,
-                             include_fit = include_fit,
-                             include_questions = include_questions,
-                             seed = seed + b),
-      error = function(e) temp_model)
-
+    temp_model$is_trained <- FALSE
+    
+    # Train from cached tensors (no prepare_nn_data call inside loop)
+    if (!is.null(nn_data_train_all)) {
+      temp_model <- tryCatch(
+        train_department_model_from_tensors(
+          temp_model, nn_data_train_all$x_cont, nn_data_train_all$x_cat, y_all,
+          boot_indices, n_epochs = 5, seed = seed + b),
+        error = function(e) temp_model)
+    } else {
+      # Fallback: dataframe path if tensor caching failed
+      boot_data <- hist_data[boot_indices, ]
+      temp_model$historical_data <- boot_data
+      temp_model <- tryCatch(
+        train_department_model(temp_model, boot_data, n_epochs = 5,
+                               include_fit = include_fit,
+                               include_questions = include_questions,
+                               seed = seed + b),
+        error = function(e) temp_model)
+    }
+    
     if (!temp_model$is_trained) {
       pi_draws_matrix[b, ] <- pmin(pmax(
         pi_prior + rnorm(n_applicants, 0, 0.05), 1e-5), 1 - 1e-5)
       next
     }
-
+    
     temp_model$model$eval()
     with_no_grad({
       lo <- temp_model$model(nn_data_cached$x_cont, nn_data_cached$x_cat)
       pi_b <- as.numeric(torch_sigmoid(lo)$squeeze()$to(device = "cpu"))
     })
     pi_b <- pmin(pmax(pi_b, 1e-5), 1 - 1e-5)
-
-    # Blend with prior (same weight for all bootstrap draws)
+    
+    # Blend with prior
     pi_draws_matrix[b, ] <- mw * pi_b + (1 - mw) * pi_prior
   }
   
@@ -1738,8 +2239,6 @@ predict_acceptance_probability_with_learned_prior <- function(dept_model, applic
   attr(res, "pi_draws") <- pi_draws_matrix
   res
 }
-
-
 
 select_interviews_sure_screening_precomputed <- function(
     applicant_data, rank_tbl, k_j, h_j, tier_width = 0.1) {
@@ -1780,12 +2279,10 @@ select_interviews_sure_screening_precomputed <- function(
         tier_threshold <- min(sure_U_hat, na.rm = TRUE) - tier_width
         tier_candidates <- remaining_pool %>% dplyr::filter(U_hat >= tier_threshold)
         if (nrow(tier_candidates) > 0) {
-          weights <- exp((tier_candidates$U_hat -
-                            mean(tier_candidates$U_hat, na.rm = TRUE)) / 0.1)
-          weights <- weights / sum(weights)
-          additional_ids <- sample(tier_candidates$cand_id,
-                                   size = min(remaining_slots, nrow(tier_candidates)),
-                                   prob = weights, replace = FALSE)
+          additional_ids <- tier_candidates %>%
+            dplyr::arrange(dplyr::desc(U_hat), cand_id) %>%
+            dplyr::slice_head(n = remaining_slots) %>%
+            dplyr::pull(cand_id)
         } else {
           additional_ids <- remaining_pool %>%
             dplyr::arrange(dplyr::desc(U_hat)) %>%
@@ -1808,66 +2305,94 @@ select_interviews_sure_screening_precomputed <- function(
 # =============================================================================
 simulate_market_year_with_learned_prior <- function(candidates, departments, questions, year,
                                                     dept_models_pairwise, learned_prior_models, participants_this_year,
-                                                    yearly_hiring_schedule, participation_rate=0, alpha=0.05, L_repeats=200, tuple_size=NULL,
+                                                    yearly_hiring_schedule, participation_rate=0, alpha=0.05, L_repeats=20, tuple_size=NULL,
                                                     noise_method="bootstrap", noise_scale=0.15, shortlist_enabled=TRUE, collect_ranking_panel=TRUE,
-                                                    cand_tier_col="quality_tier", max_offer_rounds=5, seed=NULL) {
+                                                    cand_tier_col="quality_tier", max_offer_rounds=5, seed=NULL,
+                                                    verbose=TRUE, precomputed_fj=NULL) {
   if (!is.null(seed)) set.seed(seed)
-  candidates <- candidates %>% mutate(participates=cand_id %in% participants_this_year)
+  if (!"nonparticipant_fit_proxy" %in% names(candidates) ||
+      !"participation_score" %in% names(candidates)) {
+    dept_weights <- tryCatch(yearly_hiring_schedule[, year], error = function(e) NULL)
+    candidates <- add_participation_signals(
+      candidates = candidates,
+      departments = departments,
+      questions = questions,
+      dept_weights = dept_weights
+    )
+  }
+  candidates$participates <- candidates$cand_id %in% participants_this_year
   tier_to_int <- function(x) as.integer(factor(as.character(x), levels=c("Tier 1","Tier 2","Tier 3","Tier 4")))
-  #applications <- generate_applications(candidates, departments, questions)
   n_departments <- nrow(departments)
   learning_data_pairwise <- vector("list", n_departments)
   diag_list <- vector("list", n_departments)
   interviewed_chunks <- vector("list", n_departments)
   rank_panel_chunks <- if (collect_ranking_panel) vector("list", n_departments) else NULL
-  cat(sprintf("\
-=== YEAR %d: Interview Selection Phase ===\
-", year))
+
+  # Pre-compute tier info once (base R, avoids repeated factor/mutate per dept)
+  if (!cand_tier_col %in% names(candidates)) {
+    candidates[[cand_tier_col]] <- factor("Tier 4", levels=c("Tier 1","Tier 2","Tier 3","Tier 4"))
+  } else {
+    candidates[[cand_tier_col]] <- factor(as.character(candidates[[cand_tier_col]]),
+                                          levels=c("Tier 1","Tier 2","Tier 3","Tier 4"))
+  }
+  cand_tier_int <- tier_to_int(candidates[[cand_tier_col]])
+  cand_tier_char <- as.character(candidates[[cand_tier_col]])
+
+  # Shortlist allow map (computed once)
+  allow_map <- list("Tier 1"=c("Tier 1"),"Tier 2"=c("Tier 1","Tier 2"),
+                    "Tier 3"=c("Tier 1","Tier 2","Tier 3"),"Tier 4"=c("Tier 1","Tier 2","Tier 3","Tier 4"))
+
+  if (verbose) cat(sprintf("\n=== YEAR %d: Interview Selection Phase ===\n", year))
   for (j in 1:n_departments) {
     dept <- departments[j,]; h_j <- yearly_hiring_schedule[j,year]; k_j <- 5L*h_j
+    dept_s_j <- dept$s_j; dept_id_j <- dept$dept_id
+    dept_tier_int <- tier_to_int(dept$prestige_tier %||% "Tier 4")
+
     if (h_j==0L) {
-      diag_list[[j]] <- candidates %>%
-        mutate(s_j=dept$s_j, dept_id=dept$dept_id, year=year, strategy="pairwise",
-               pi_pred=NA_real_, U_true=NA_real_, U_hat=NA_real_, r_true=NA_real_, r_hat=NA_real_,
-               interviewed=0L, considered=0L, h_j=0L, k_j=0L)
+      d_j <- candidates
+      d_j$s_j <- dept_s_j; d_j$dept_id <- dept_id_j; d_j$year <- year
+      d_j$strategy <- "pairwise"; d_j$pi_pred <- NA_real_; d_j$U_true <- NA_real_
+      d_j$U_hat <- NA_real_; d_j$r_true <- NA_real_; d_j$r_hat <- NA_real_
+      d_j$interviewed <- 0L; d_j$considered <- 0L; d_j$h_j <- 0L; d_j$k_j <- 0L
+      diag_list[[j]] <- d_j
       next
     }
-    apps_all <- candidates %>% mutate(s_j=dept$s_j, dept_id=dept$dept_id)
-    if (!cand_tier_col %in% names(apps_all))
-      apps_all[[cand_tier_col]] <- factor("Tier 4", levels=c("Tier 1","Tier 2","Tier 3","Tier 4"))
-    else
-      apps_all[[cand_tier_col]] <- factor(as.character(apps_all[[cand_tier_col]]),
-                                          levels=c("Tier 1","Tier 2","Tier 3","Tier 4"))
-    apps_all <- apps_all %>% mutate(
-      dept_tier=tier_to_int(dept$prestige_tier%||%"Tier 4"),
-      cand_tier=tier_to_int(.data[[cand_tier_col]]))
-    apps_all$f_j <- calculate_f_j_batch(apps_all, dept, questions)
+
+    # Build apps_all using base R assignment (avoids dplyr::mutate per dept)
+    apps_all <- candidates
+    apps_all$s_j <- dept_s_j
+    apps_all$dept_id <- dept_id_j
+    apps_all$dept_tier <- dept_tier_int
+    apps_all$cand_tier <- cand_tier_int
+
+    # Use pre-computed f_j if available, otherwise compute
+    if (!is.null(precomputed_fj) && j <= ncol(precomputed_fj)) {
+      apps_all$f_j <- precomputed_fj[, j]
+    } else {
+      apps_all$f_j <- calculate_f_j_batch(apps_all, dept, questions)
+    }
+
     if (shortlist_enabled) {
-      allow_map <- list("Tier 1"=c("Tier 1"),"Tier 2"=c("Tier 1","Tier 2"),
-                        "Tier 3"=c("Tier 1","Tier 2","Tier 3"),"Tier 4"=c("Tier 1","Tier 2","Tier 3","Tier 4"))
-      pt <- as.character(dept$prestige_tier%||%"Tier 4")
-      allowed <- allow_map[[pt]]%||%allow_map[["Tier 4"]]
-      considered_mask <- as.character(apps_all[[cand_tier_col]]) %in% allowed
+      pt <- as.character(dept$prestige_tier %||% "Tier 4")
+      allowed <- allow_map[[pt]] %||% allow_map[["Tier 4"]]
+      considered_mask <- cand_tier_char %in% allowed
     } else considered_mask <- rep(TRUE, nrow(apps_all))
     applicant_data <- apps_all[considered_mask,,drop=FALSE]
     if (nrow(applicant_data)==0) {
-      diag_list[[j]] <- apps_all %>% mutate(year=year,dept_id=dept$dept_id,strategy="pairwise",
-                                            pi_pred=NA_real_,U_true=NA_real_,U_hat=NA_real_,r_true=NA_real_,r_hat=NA_real_,
-                                            interviewed=0L,considered=0L,h_j=h_j,k_j=k_j); next
+      d_j <- apps_all
+      d_j$year <- year; d_j$strategy <- "pairwise"
+      d_j$pi_pred <- NA_real_; d_j$U_true <- NA_real_; d_j$U_hat <- NA_real_
+      d_j$r_true <- NA_real_; d_j$r_hat <- NA_real_
+      d_j$interviewed <- 0L; d_j$considered <- 0L; d_j$h_j <- h_j; d_j$k_j <- k_j
+      diag_list[[j]] <- d_j
+      next
     }
-    applicant_data <- applicant_data %>% mutate(row_id=row_number())
-    n_part <- sum(applicant_data$participates)
-    if (participation_rate==0 || n_part==0) {
-      min_f_j_part <- NA_real_
-    } else {
-      min_f_j_part <- min(applicant_data$f_j[applicant_data$participates], na.rm=TRUE)
-    }
-    applicant_data_pw <- applicant_data %>% mutate(
-      f_j_used = case_when(
-        !participates & !is.na(min_f_j_part) ~ min_f_j_part,
-        !participates & is.na(min_f_j_part)  ~ 0.5,
-        TRUE ~ f_j
-      ))
+    applicant_data$row_id <- seq_len(nrow(applicant_data))
+    applicant_data_pw <- applicant_data
+    applicant_data_pw$f_j_used <- compute_nonparticipant_fj(
+      applicant_data = applicant_data,
+      participation_rate = participation_rate
+    )
     actual_f_j <- applicant_data_pw$f_j
     ad_tmp <- applicant_data_pw; ad_tmp$f_j <- applicant_data_pw$f_j_used
     for (q in questions$numerical) ad_tmp[[q]] <- dept[[q]]
@@ -1875,60 +2400,67 @@ simulate_market_year_with_learned_prior <- function(candidates, departments, que
     applicant_data_pw <- predict_acceptance_probability_with_learned_prior(
       dept_models_pairwise[[j]], ad_tmp, learned_prior_model=learned_prior_models[[j]],
       n_bootstrap=L_repeats, seed=j*1000+year, participation_rate=participation_rate)
-    # Save pi_draws before dplyr operations strip the attribute
     pi_draws_pw <- attr(applicant_data_pw, "pi_draws")
     applicant_data_pw$f_j <- actual_f_j
     U_det <- true_utility(applicant_data_pw$s_j, applicant_data_pw$v_i_bar,
                           applicant_data_pw$f_j_used, applicant_data_pw$dept_tier, applicant_data_pw$cand_tier)
-    applicant_data_pw <- applicant_data_pw %>% mutate(
-      f_j_used=applicant_data_pw$f_j_used,
-      U_det=U_det,
-      U_hat=U_det*pmin(pmax(pi_pred,1e-5),1-1e-5))
+    applicant_data_pw$f_j_used <- applicant_data_pw$f_j_used
+    applicant_data_pw$U_det <- U_det
+    applicant_data_pw$U_hat <- U_det * pmin(pmax(applicant_data_pw$pi_pred, 1e-5), 1 - 1e-5)
     U_true <- true_utility(applicant_data_pw$s_j, applicant_data_pw$v_i_bar,
                            applicant_data_pw$f_j, applicant_data_pw$dept_tier, applicant_data_pw$cand_tier)
     applicant_data_pw$U_true <- U_true
     applicant_data_pw$r_true <- rank(-U_true, ties.method="average")
     applicant_data_pw$r_point <- rank(-applicant_data_pw$U_hat, ties.method="average")
-    # Compute pairwise ranks ONCE (used for both ranking panel and interview selection)
-    # Paper-aligned: pi_draws propagated directly to U_draws (eq 4)
     rpair <- compute_pairwise_lower_ranks(applicant_data_pw, L_repeats, tuple_size,
                                           noise_method, noise_scale, alpha, pi_draws=pi_draws_pw)
-    applicant_data_pw <- applicant_data_pw %>%
-      left_join(rpair, by="cand_id") %>%
-      mutate(r_pair_lb=rank_lower) %>% dplyr::select(-rank_lower)
-    
-    # Use pre-computed ranks — no recomputation inside
+    # Merge rpair using base R match instead of dplyr::left_join
+    rpair_idx <- match(applicant_data_pw$cand_id, rpair$cand_id)
+    applicant_data_pw$r_pair_lb <- rpair$rank_lower[rpair_idx]
+    applicant_data_pw$pair_score <- rpair$pair_score[rpair_idx]
+    applicant_data_pw$mean_rank <- rpair$mean_rank[rpair_idx]
+
     interviewed_ids <- select_interviews_sure_screening_precomputed(
       applicant_data_pw, rpair, k_j=k_j, h_j=h_j)
     applicant_data_pw$interviewed_flag <- as.integer(applicant_data_pw$cand_id %in% interviewed_ids)
     if (collect_ranking_panel) {
       rank_panel_chunks[[j]] <- applicant_data_pw %>% transmute(
-        year, dept_id=dept$dept_id, strategy="pairwise", cand_id, s_j, v_i_bar, f_j,
+        year, dept_id=dept_id_j, strategy="pairwise", cand_id, s_j, v_i_bar, f_j,
         participates, U_true, U_hat, r_true, r_point,
         r_pair_lb=if_else(is.finite(r_pair_lb), r_pair_lb, NA_real_),
         interviewed=interviewed_flag, k_j=k_j, h_j=h_j)
     }
-    idpw <- applicant_data_pw %>% filter(cand_id %in% interviewed_ids) %>%
-      mutate(interviewed=1L, year=year, dept_id=dept$dept_id, strategy="pairwise", h_j=h_j, k_j=k_j)
-    if (nrow(idpw)>0) interviewed_chunks[[j]] <- idpw
-    diag_list[[j]] <- apps_all %>% mutate(
-      considered=as.integer(cand_id %in% applicant_data$cand_id),
-      interviewed=as.integer(cand_id %in% interviewed_ids), h_j=h_j, k_j=k_j) %>%
-      left_join(applicant_data_pw %>% dplyr::select(cand_id,pi_pred,U_true,U_hat,r_true), by="cand_id") %>%
-      transmute(year=year,dept_id=dept$dept_id,strategy="pairwise",cand_id,s_j,v_i_bar,f_j,
-                pi_pred,U_true,U_hat,r_true,interviewed,considered,participates,h_j,k_j)
+    interviewed_mask <- applicant_data_pw$cand_id %in% interviewed_ids
+    if (any(interviewed_mask)) {
+      idpw <- applicant_data_pw[interviewed_mask, , drop=FALSE]
+      idpw$interviewed <- 1L; idpw$year <- year; idpw$dept_id <- dept_id_j
+      idpw$strategy <- "pairwise"; idpw$h_j <- h_j; idpw$k_j <- k_j
+      interviewed_chunks[[j]] <- idpw
+    }
+    # Build diag using base R
+    d_j <- apps_all
+    d_j$considered <- as.integer(d_j$cand_id %in% applicant_data$cand_id)
+    d_j$interviewed <- as.integer(d_j$cand_id %in% interviewed_ids)
+    d_j$h_j <- h_j; d_j$k_j <- k_j
+    pw_idx <- match(d_j$cand_id, applicant_data_pw$cand_id)
+    d_j$pi_pred <- applicant_data_pw$pi_pred[pw_idx]
+    d_j$U_true <- applicant_data_pw$U_true[pw_idx]
+    d_j$U_hat <- applicant_data_pw$U_hat[pw_idx]
+    d_j$r_true <- applicant_data_pw$r_true[pw_idx]
+    d_j$year <- year; d_j$strategy <- "pairwise"
+    diag_list[[j]] <- d_j[, c("year","dept_id","strategy","cand_id","s_j","v_i_bar","f_j",
+                               "pi_pred","U_true","U_hat","r_true","interviewed","considered",
+                               "participates","h_j","k_j"), drop=FALSE]
   }
-  cat(sprintf("\
-=== YEAR %d: Sequential Offer Resolution ===\
-", year))
+  if (verbose) cat(sprintf("\n=== YEAR %d: Sequential Offer Resolution ===\n", year))
   all_interviewed <- bind_rows(interviewed_chunks)
   rank_panel <- if (collect_ranking_panel) bind_rows(rank_panel_chunks) else tibble()
   if (nrow(all_interviewed)>0) {
     all_results <- resolve_offers_sequential(interviewed_data=all_interviewed,
                                              departments=departments, questions=questions, all_candidates=candidates,
                                              max_rounds=max_offer_rounds, seed=year, temperature=0.05, noise_sd=0.01,
-                                             shortlist_enabled=shortlist_enabled, year=year)
-    print_hiring_allocation(all_results, year, participation_rate)
+                                             shortlist_enabled=shortlist_enabled, year=year, verbose=verbose)
+    if (verbose) print_hiring_allocation(all_results, year, participation_rate)
   } else all_results <- tibble()
   for (j in 1:nrow(departments)) {
     ld <- all_results %>% filter(dept_id==departments$dept_id[j], strategy=="pairwise", interviewed==1L)
@@ -1958,17 +2490,20 @@ run_job_market_sim_with_learned_prior <- function(departments, questions, n_cand
                                                   burn_in_years = 10, sim_years = 10, participation_rate,
                                                   yearly_candidate_cohorts_burn_in = NULL,
                                                   yearly_candidate_cohorts_sim = NULL, participation_sets = NULL,
+                                                  yearly_participation_sets_sim = NULL,
                                                   yearly_hiring_schedule_burn_in = NULL, yearly_hiring_schedule_sim = NULL,
                                                   learned_prior_models = NULL,
                                                   burn_in_historical = NULL,
-                                                  seed = 123, alpha = 0.05, L_repeats = 200, tuple_size = NULL,
+                                                  seed = 123, alpha = 0.05, L_repeats = 20, tuple_size = NULL,
                                                   noise_method = "bootstrap", noise_scale = 0.15,
                                                   cand_tier_cutpoints = c(0.10, 0.25, 0.50),
                                                   max_offer_rounds = 5, print_diagnostics = FALSE,
                                                   return_dept_models = FALSE,
                                                   return_yearly_results = FALSE,
                                                   collect_ranking_panel = FALSE,
-                                                  keep_diagnostics = FALSE) {
+                                                  keep_diagnostics = FALSE,
+                                                  verbose = TRUE,
+                                                  precomputed_fj_list = NULL) {
   
   set.seed(seed); torch::torch_manual_seed(seed); n_departments <- nrow(departments)
   is_baseline <- (participation_rate == 0)
@@ -2003,20 +2538,41 @@ run_job_market_sim_with_learned_prior <- function(departments, questions, n_cand
   res_all <- list(); dept_tier_info <- departments %>% dplyr::select(dept_id, tier)
   
   for (year in 1:sim_years) {
-    cat("\n", strrep("=", 70), "\n")
-    cat(sprintf("SIMULATING YEAR %d with participation rate %.0f%% [%s]\n",
-                year, participation_rate * 100, if (is_baseline) "BASELINE" else "QUESTIONNAIRE"))
-    cat(strrep("=", 70), "\n")
+    if (verbose) {
+      cat("\n", strrep("=", 70), "\n")
+      cat(sprintf("SIMULATING YEAR %d with participation rate %.0f%% [%s]\n",
+                  year, participation_rate * 100, if (is_baseline) "BASELINE" else "QUESTIONNAIRE"))
+      cat(strrep("=", 70), "\n")
+    }
     candidates <- yearly_candidate_cohorts_sim[[year]]
+    if (!"participation_score" %in% names(candidates) ||
+        !"nonparticipant_fit_proxy" %in% names(candidates)) {
+      candidates <- add_participation_signals(
+        candidates = candidates,
+        departments = departments,
+        questions = questions,
+        dept_weights = yearly_hiring_schedule_sim[, year]
+      )
+      yearly_candidate_cohorts_sim[[year]] <- candidates
+    }
     rate_key <- as.character(participation_rate)
-    participants <- if (!is.null(participation_sets) && rate_key %in% names(participation_sets))
-      participation_sets[[rate_key]] else integer(0)
+    participants <- integer(0)
+    if (!is.null(yearly_participation_sets_sim) && length(yearly_participation_sets_sim) >= year) {
+      year_sets <- yearly_participation_sets_sim[[year]]
+      if (!is.null(year_sets) && rate_key %in% names(year_sets)) {
+        participants <- year_sets[[rate_key]]
+      }
+    } else if (!is.null(participation_sets) && rate_key %in% names(participation_sets)) {
+      participants <- participation_sets[[rate_key]]
+    }
     candidates <- candidates %>% mutate(
       quality_tier = assign_tiers_from_quantiles(v_i_bar, cutpoints = cand_tier_cutpoints))
     cand_roster_all[[year]] <- candidates %>%
       mutate(participates = cand_id %in% participants) %>%
       transmute(year = !!year, cand_id, quality_tier, v_i_bar, participates)
     
+    # Use pre-computed f_j if available for this year
+    year_fj <- if (!is.null(precomputed_fj_list) && year <= length(precomputed_fj_list)) precomputed_fj_list[[year]] else NULL
     out <- simulate_market_year_with_learned_prior(candidates, departments, questions, year,
                                                    dept_models_pairwise = mdl, learned_prior_models = learned_prior_models,
                                                    participants_this_year = participants,
@@ -2024,7 +2580,8 @@ run_job_market_sim_with_learned_prior <- function(departments, questions, n_cand
                                                    participation_rate = participation_rate, alpha = alpha, L_repeats = L_repeats,
                                                    tuple_size = tuple_size, noise_method = noise_method, noise_scale = noise_scale,
                                                    shortlist_enabled = TRUE, collect_ranking_panel = collect_ranking_panel, cand_tier_col = "quality_tier",
-                                                   max_offer_rounds = max_offer_rounds, seed = year)
+                                                   max_offer_rounds = max_offer_rounds, seed = year,
+                                                   verbose = verbose, precomputed_fj = year_fj)
     
     if (keep_diagnostics) diag_all[[year]] <- out$diagnostics$applicant_level
     res_all[[year]] <- out$results
@@ -2033,7 +2590,7 @@ run_job_market_sim_with_learned_prior <- function(departments, questions, n_cand
     # =========================================================================
     # EXPANDED CUMULATIVE DIAGNOSTICS
     # =========================================================================
-    if (print_diagnostics && nrow(out$results) > 0) {
+    if (print_diagnostics && verbose && nrow(out$results) > 0) {
       cumulative_results <- bind_rows(res_all[1:year])
       if (nrow(cumulative_results) > 0) {
         cumulative_with_tiers <- cumulative_results %>%
@@ -2178,6 +2735,82 @@ run_job_market_sim_with_learned_prior <- function(departments, questions, n_cand
 
 
 
+reconstruct_learned_prior_models <- function(burn_in_historical, questions, seed = 123) {
+  set.seed(seed); torch::torch_manual_seed(seed)
+  n_depts <- length(burn_in_historical)
+  models <- vector("list", n_depts)
+  for (j in seq_len(n_depts)) {
+    mdl_j <- initialize_department_model(
+      questions,
+      include_fit = FALSE,
+      include_questions = FALSE
+    )
+    hist_data <- burn_in_historical[[j]]
+    if (!is.null(hist_data) && is.data.frame(hist_data)) {
+      mdl_j$historical_data <- hist_data
+      if (nrow(hist_data) >= 10) {
+        mdl_j <- tryCatch(
+          train_department_model(
+            mdl_j, hist_data,
+            n_epochs = 100,
+            include_fit = FALSE,
+            include_questions = FALSE,
+            seed = j * 1000 + seed
+          ),
+          error = function(e) mdl_j
+        )
+      }
+    }
+    models[[j]] <- mdl_j
+  }
+  models
+}
+
+
+# =============================================================================
+# OPTIMIZATION: Extract/reconstruct model weights as plain R objects
+# Avoids expensive 100-epoch retraining per replicate in parallel workers.
+# =============================================================================
+extract_model_weights <- function(models) {
+  lapply(models, function(mdl) {
+    if (!mdl$is_trained) return(NULL)
+    param_list <- mdl$model$parameters
+    lapply(param_list, function(p) {
+      as.array(p$cpu()$detach())
+    })
+  })
+}
+
+reconstruct_from_weights <- function(weight_list, historical_list, questions, seed = 123) {
+  torch::torch_manual_seed(seed)
+  n_depts <- length(weight_list)
+  models <- vector("list", n_depts)
+  for (j in seq_len(n_depts)) {
+    mdl_j <- initialize_department_model(
+      questions, include_fit = FALSE, include_questions = FALSE
+    )
+    if (!is.null(historical_list) && j <= length(historical_list)) {
+      hist_data <- historical_list[[j]]
+      if (!is.null(hist_data) && is.data.frame(hist_data))
+        mdl_j$historical_data <- hist_data
+    }
+    w <- weight_list[[j]]
+    if (!is.null(w)) {
+      params <- mdl_j$model$parameters
+      torch::with_no_grad({
+        for (i in seq_along(params)) {
+          target_shape <- params[[i]]$shape
+          params[[i]]$copy_(torch::torch_tensor(w[[i]], dtype = torch::torch_float())$reshape(target_shape))
+        }
+      })
+      mdl_j$is_trained <- TRUE
+    }
+    models[[j]] <- mdl_j
+  }
+  models
+}
+
+
 run_multi_replicate_simulation <- function(
     sampled_depts,
     questions,
@@ -2198,9 +2831,11 @@ run_multi_replicate_simulation <- function(
     collect_rank_panel = FALSE,
     keep_diagnostics = FALSE,
     save_rep_results_dir = NULL,
-    keep_raw_replicates = FALSE,
+    keep_raw_replicates = TRUE,
     replicate_shared_burn_in = FALSE,
-    gc_every_replicate = TRUE
+    gc_every_replicate = TRUE,
+    n_workers = NULL,
+    show_replicate_progress = TRUE
 ) {
   
   # =========================================================================
@@ -2217,9 +2852,8 @@ run_multi_replicate_simulation <- function(
   yearly_hiring_schedule_sim <- generate_yearly_hiring_schedule(
     n_departments, sim_years, departments, base_seed + 600)
   
-  # Fixed participation assignments (nested by design)
-  participation_sets <- generate_nested_participation_assignments(
-    n_candidates, participation_rates[participation_rates > 0], seed = base_seed + 100)
+  # Fallback only; strategic participation sets are generated per year/cohort.
+  participation_sets <- NULL
   
   # =========================================================================
   # STEP 2: Loop over replicates
@@ -2249,7 +2883,12 @@ run_multi_replicate_simulation <- function(
     return_yearly_objects = FALSE)
   
   learned_prior_models <- burn_in$trained_models
-  
+  burn_in_historical <- burn_in$burn_in_historical
+
+  # OPTIMIZATION: Extract model weights as plain R objects for cheap reconstruction
+  # in parallel workers (avoids re-training 100 epochs per department per replicate)
+  learned_prior_weights <- extract_model_weights(learned_prior_models)
+
   cat("\n", strrep("=", 80), "\n")
   cat("BURN-IN COMPLETE. Starting replicated sim-phase runs.\n")
   cat(strrep("=", 80), "\n")
@@ -2279,30 +2918,91 @@ run_multi_replicate_simulation <- function(
   raw_replicates <- if (keep_raw_replicates) vector("list", n_replicates) else NULL
   
   # =========================================================================
-  # STEP 3: Loop over replicates (sim-phase only)
+  # STEP 3: Run replicate tasks (serial or parallel)
   # =========================================================================
-  for (rep in seq_len(n_replicates)) {
+  if (is.null(n_workers)) {
+    n_workers <- min(n_replicates, max(1L, parallel::detectCores(logical = FALSE) - 1L))
+  } else {
+    n_workers <- as.integer(n_workers)
+    if (is.na(n_workers)) n_workers <- 1L
+    n_workers <- max(1L, min(n_workers, n_replicates))
+  }
+  
+  use_parallel <- (n_workers > 1L && n_replicates > 1L)
+  if (use_parallel && (!requireNamespace("future", quietly = TRUE) ||
+                       !requireNamespace("future.apply", quietly = TRUE))) {
+    warning("Packages 'future' and 'future.apply' are required for parallel replicates. Falling back to serial.")
+    use_parallel <- FALSE
+    n_workers <- 1L
+  }
+  
+  run_single_replicate <- function(rep, learned_prior_models_override = NULL) {
     rep_seed <- base_seed + rep * 10000
-    cat("\n\n")
-    cat(strrep("*", 80), "\n")
-    cat(sprintf("***  REPLICATE %d / %d  (seed = %d)  ***\n", rep, n_replicates, rep_seed))
-    cat(strrep("*", 80), "\n\n")
-    
+    rep_verbose <- !use_parallel
+    if (rep_verbose) {
+      cat("\n\n")
+      cat(strrep("*", 80), "\n")
+      cat(sprintf("***  REPLICATE %d / %d  (seed = %d)  ***\n", rep, n_replicates, rep_seed))
+      cat(strrep("*", 80), "\n\n")
+    }
+
     set.seed(rep_seed); torch::torch_manual_seed(rep_seed)
-    
+    try(torch::torch_set_num_threads(1L), silent = TRUE)
+    try(torch::torch_set_num_interop_threads(1L), silent = TRUE)
+
     # Fresh candidate cohorts for sim phase only
     yearly_candidate_cohorts_sim <- vector("list", sim_years)
     for (year in 1:sim_years)
       yearly_candidate_cohorts_sim[[year]] <- generate_candidates_new(
         n_candidates, questions, seed = rep_seed + burn_in_years + year)
-    
+
+    # Strategic participation: score each cohort by pool alignment + quality.
+    # OPTIMIZATION: Pre-compute f_j matrices here (shared across all rates)
+    yearly_participation_sets_sim <- vector("list", sim_years)
+    yearly_fj_matrices <- vector("list", sim_years)
+    positive_rates <- participation_rates[participation_rates > 0 & participation_rates < 1]
+    for (year in 1:sim_years) {
+      cohort <- add_participation_signals(
+        candidates = yearly_candidate_cohorts_sim[[year]],
+        departments = departments,
+        questions = questions,
+        dept_weights = yearly_hiring_schedule_sim[, year]
+      )
+      yearly_candidate_cohorts_sim[[year]] <- cohort
+      yearly_participation_sets_sim[[year]] <- generate_nested_participation_assignments(
+        candidates = cohort,
+        participation_rates = positive_rates
+      )
+      # Pre-compute f_j for all candidate-department pairs (reused across rates)
+      n_cands_year <- nrow(cohort)
+      fj_mat <- matrix(NA_real_, nrow = n_cands_year, ncol = n_departments)
+      for (jj in 1:n_departments) {
+        fj_mat[, jj] <- calculate_f_j_batch(cohort, departments[jj, , drop = FALSE], questions)
+      }
+      yearly_fj_matrices[[year]] <- fj_mat
+    }
+
+    # OPTIMIZATION: Reconstruct models from saved weights (instant) instead of
+    # retraining 100 epochs per department (was the #2 bottleneck)
+    learned_prior_models_rep <- learned_prior_models_override
+    if (is.null(learned_prior_models_rep)) {
+      learned_prior_models_rep <- reconstruct_from_weights(
+        weight_list = learned_prior_weights,
+        historical_list = burn_in_historical,
+        questions = questions,
+        seed = burn_in_seed
+      )
+    }
+
     # --- SIMULATION RUNS (one per participation rate) ---
     sim_results_rep <- list()
     for (rate in participation_rates) {
       rate_chr <- as.character(rate)
-      cat(sprintf("\n### REPLICATE %d | participation_rate = %.0f%% ###\n",
-                  rep, rate * 100))
-      
+      if (rep_verbose) {
+        cat(sprintf("\n### REPLICATE %d | participation_rate = %.0f%% ###\n",
+                    rep, rate * 100))
+      }
+
       sr <- run_job_market_sim_with_learned_prior(
         departments = departments, questions = questions,
         n_candidates = n_candidates,
@@ -2310,8 +3010,9 @@ run_multi_replicate_simulation <- function(
         participation_rate = rate,
         yearly_candidate_cohorts_sim = yearly_candidate_cohorts_sim,
         participation_sets = participation_sets,
+        yearly_participation_sets_sim = yearly_participation_sets_sim,
         yearly_hiring_schedule_sim = yearly_hiring_schedule_sim,
-        learned_prior_models = learned_prior_models,
+        learned_prior_models = learned_prior_models_rep,
         seed = rep_seed, alpha = alpha, L_repeats = L_repeats,
         tuple_size = tuple_size, noise_method = noise_method,
         noise_scale = noise_scale, cand_tier_cutpoints = cand_tier_cutpoints,
@@ -2320,20 +3021,13 @@ run_multi_replicate_simulation <- function(
         return_dept_models = FALSE,
         return_yearly_results = FALSE,
         collect_ranking_panel = collect_rank_panel,
-        keep_diagnostics = keep_diagnostics)
-      
-      bucket <- sim_acc[[rate_chr]]
-      bucket <- append_replicate_table(bucket, "results", sr$results, rep)
-      bucket <- append_replicate_table(bucket, "rank_panel", sr$rank_panel, rep)
-      bucket <- append_replicate_table(bucket, "cand_roster", sr$cand_roster, rep)
-      bucket <- append_replicate_table(bucket, "diagnostics", sr$diagnostics, rep)
-      sim_acc[[rate_chr]] <- bucket
-      
-      if (keep_raw_replicates || !is.null(save_rep_results_dir)) {
-        sim_results_rep[[rate_chr]] <- sr
-      }
+        keep_diagnostics = keep_diagnostics,
+        verbose = rep_verbose,
+        precomputed_fj_list = yearly_fj_matrices)
+
+      sim_results_rep[[rate_chr]] <- sr
     }
-    
+
     if (!is.null(save_rep_results_dir)) {
       rep_file <- file.path(save_rep_results_dir, sprintf("replicate_%03d.rds", rep))
       saveRDS(
@@ -2342,16 +3036,87 @@ run_multi_replicate_simulation <- function(
         compress = "gzip"
       )
     }
+
+    rm(yearly_candidate_cohorts_sim, yearly_participation_sets_sim, learned_prior_models_rep, yearly_fj_matrices)
+    if (isTRUE(gc_every_replicate)) invisible(gc(verbose = FALSE))
+    list(replicate = rep, seed = rep_seed, sim_results = sim_results_rep)
+  }
+  
+  if (use_parallel) {
+    cat(sprintf("Parallel replicate mode: %d worker(s) for %d replicate(s)\n", n_workers, n_replicates))
+    old_plan <- future::plan()
+    on.exit(future::plan(old_plan), add = TRUE)
+    # Must use multisession (not multicore) because torch is not fork-safe:
+    # forked processes share parent torch memory, causing segfaults
+    future::plan(future::multisession, workers = n_workers)
+    if (isTRUE(show_replicate_progress) && requireNamespace("progressr", quietly = TRUE)) {
+      progressr::handlers(global = TRUE)
+      progressr::handlers("txtprogressbar")
+      rep_outputs <- progressr::with_progress({
+        p <- progressr::progressor(steps = n_replicates)
+        future.apply::future_lapply(
+          seq_len(n_replicates),
+          function(rep) {
+            out <- run_single_replicate(rep, learned_prior_models_override = NULL)
+            p(sprintf("Replicate %d/%d", rep, n_replicates))
+            out
+          },
+          future.seed = TRUE,
+          future.scheduling = 1,
+          future.globals = TRUE,
+          future.packages = c("torch", "dplyr", "tidyr", "purrr", "tibble")
+        )
+      })
+    } else {
+      if (isTRUE(show_replicate_progress)) {
+        cat("progressr not installed; running without progress bar in parallel mode.\n")
+      }
+      rep_outputs <- future.apply::future_lapply(
+        seq_len(n_replicates),
+        function(rep) run_single_replicate(rep, learned_prior_models_override = NULL),
+        future.seed = TRUE,
+        future.scheduling = 1,
+        future.globals = TRUE,
+        future.packages = c("torch", "dplyr", "tidyr", "purrr", "tibble")
+      )
+    }
+  } else {
+    cat(sprintf("Serial replicate mode: %d replicate(s)\n", n_replicates))
+    rep_outputs <- vector("list", n_replicates)
+    pb <- NULL
+    if (isTRUE(show_replicate_progress)) {
+      pb <- utils::txtProgressBar(min = 0, max = n_replicates, style = 3)
+      on.exit(try(close(pb), silent = TRUE), add = TRUE)
+    }
+    for (rep in seq_len(n_replicates)) {
+      rep_outputs[[rep]] <- run_single_replicate(
+        rep,
+        learned_prior_models_override = learned_prior_models
+      )
+      if (!is.null(pb)) utils::setTxtProgressBar(pb, rep)
+    }
+    if (!is.null(pb)) cat("\n")
+  }
+  
+  for (rep_out in rep_outputs) {
+    rep <- rep_out$replicate
+    sim_results_rep <- rep_out$sim_results
+    for (rate_chr in names(sim_results_rep)) {
+      sr <- sim_results_rep[[rate_chr]]
+      bucket <- sim_acc[[rate_chr]]
+      bucket <- append_replicate_table(bucket, "results", sr$results, rep)
+      bucket <- append_replicate_table(bucket, "rank_panel", sr$rank_panel, rep)
+      bucket <- append_replicate_table(bucket, "cand_roster", sr$cand_roster, rep)
+      bucket <- append_replicate_table(bucket, "diagnostics", sr$diagnostics, rep)
+      sim_acc[[rate_chr]] <- bucket
+    }
     if (keep_raw_replicates) {
       raw_replicates[[rep]] <- list(
         replicate = rep,
-        seed = rep_seed,
+        seed = rep_out$seed,
         sim_results = sim_results_rep
       )
     }
-    
-    rm(sim_results_rep, yearly_candidate_cohorts_sim)
-    if (isTRUE(gc_every_replicate)) invisible(gc(verbose = FALSE))
   }
   
   # =========================================================================
@@ -2374,7 +3139,10 @@ run_multi_replicate_simulation <- function(
       keep_diagnostics = keep_diagnostics,
       save_rep_results_dir = save_rep_results_dir,
       keep_raw_replicates = keep_raw_replicates,
-      replicate_shared_burn_in = replicate_shared_burn_in
+      replicate_shared_burn_in = replicate_shared_burn_in,
+      n_workers = n_workers,
+      parallel_replicates = use_parallel,
+      show_replicate_progress = isTRUE(show_replicate_progress)
     )
   )
   
@@ -2421,9 +3189,14 @@ run_multi_replicate_simulation <- function(
   combined
 }
 
+
+
+###############################################################################
 # =============================================================================
-# FIGURES
+#                                 FIGURES
 # =============================================================================
+###############################################################################
+
 # =============================================================================
 # THEME + PALETTE (unchanged from originals)
 # =============================================================================
@@ -2450,6 +3223,25 @@ tier_int_to_str <- function(x) {
     TRUE ~ NA_character_
   )
 }
+
+# =============================================================================
+# COLOR PALETTES (grayscale-safe with distinct luminance)
+# =============================================================================
+# Tier palette: chosen for colorblind safety AND grayscale distinguishability.
+# Luminance ordering: black (0) > vermillion (0.40) > blue (0.31) > sky blue (0.62)
+# Combined with linetype + shape, all four tiers remain separable in B&W print.
+tier_colors <- c(
+  "Tier 1" = "#1B613F",
+  "Tier 2" = "#1B3D61",
+  "Tier 3" = "#611B3D",
+  "Tier 4" = "#613F1B"
+)
+
+# Participation palette: two highly distinct values
+participation_colors <- c(
+  "Participating"     = "#119985",
+  "Non-participating" = "#991126"
+)
 
 # =============================================================================
 # INTERNAL HELPERS
@@ -2486,8 +3278,9 @@ tier_int_to_str <- function(x) {
     df <- df %>% dplyr::filter(year >= year_filter[1], year <= year_filter[2])
   df
 }
-
-
+###############################################################################
+################################## FIGURES ####################################
+###############################################################################
 # =============================================================================
 # 1. INTERVIEW HEATMAP (Baseline vs Questionnaire, averaged over replicates)
 # =============================================================================
@@ -2614,7 +3407,7 @@ make_fig_dept_interview_heatmap <- function(all_sim_results, year_filter = c(1, 
 # 2. HIRING HEATMAP (Baseline vs Questionnaire, averaged over replicates)
 # =============================================================================
 make_fig_dept_hiring_heatmap <- function(all_sim_results, year_filter = c(1, 10),
-                                         include_scramble = FALSE) {
+                                         include_scramble = FALSE, hire_rounds = NULL) {
   
   departments <- all_sim_results$departments %>%
     dplyr::select(dept_id, prestige_tier)
@@ -2622,8 +3415,11 @@ make_fig_dept_hiring_heatmap <- function(all_sim_results, year_filter = c(1, 10)
   
   get_hires <- function(rate_chr) {
     df <- .get_results(all_sim_results, rate_chr, year_filter)
+
     if (nrow(df) == 0) return(tibble())
     base <- df %>% dplyr::filter(accepted == 1)
+    if (!is.null(hire_rounds))
+      base <- base %>% dplyr::filter(is.na(offer_round) | offer_round <= hire_rounds)
     if (!include_scramble)
       base <- base %>% dplyr::filter(interviewed == 1 | is.na(interviewed))
     base
@@ -2727,10 +3523,12 @@ make_fig_dept_hiring_heatmap <- function(all_sim_results, year_filter = c(1, 10)
 
 # =============================================================================
 # 3. DEPARTMENT WELFARE BY TIER (line plots, averaged over replicates)
+#    — NOW WITH TIER COLORS —
 # =============================================================================
 make_fig_department_welfare_by_tier_normalized <- function(all_sim_results,
                                                            year_filter = c(1, 10),
-                                                           include_scramble = FALSE) {
+                                                           include_scramble = FALSE,
+                                                           hire_rounds = NULL) {
   
   departments <- all_sim_results$departments %>%
     dplyr::select(dept_id, prestige_tier, s_j)
@@ -2762,6 +3560,8 @@ make_fig_department_welfare_by_tier_normalized <- function(all_sim_results,
     hires <- df %>% dplyr::filter(accepted == 1)
     if (!include_scramble)
       hires <- hires %>% dplyr::filter(interviewed == 1 | is.na(interviewed))
+    if (!is.null(hire_rounds))
+      hires <- hires %>% dplyr::filter(is.na(offer_round) | offer_round <= hire_rounds)
     if (nrow(hires) == 0) return(tibble())
     
     hires %>%
@@ -2859,68 +3659,70 @@ make_fig_department_welfare_by_tier_normalized <- function(all_sim_results,
     }
   }
   
-  # --- Plots (same style as originals) ---
+  # --- Plots (with tier colors) ---
   ribbon_alpha <- 0.15
+  
+  # Common theme for Figure 3 panels
+  fig3_theme <- theme_minimal(base_size = 14) +
+    theme(panel.grid.minor = element_blank(),
+          panel.grid.major = element_line(color = "gray90", linewidth = 0.5),
+          axis.title = element_text(size = 14, face = "bold"),
+          axis.text = element_text(size = 12),
+          legend.position = "bottom",
+          legend.title = element_text(size = 14, face = "bold"),
+          legend.text = element_text(size = 13),
+          legend.key.size = unit(1.5, "lines"),
+          legend.key.width = unit(2.5, "lines"),
+          legend.spacing.x = unit(0.5, "cm"),
+          plot.margin = margin(10, 10, 10, 10))
   
   p1 <- ggplot(welfare_by_tier, aes(x = participation_rate * 100,
                                     y = utility_per_dept,
+                                    color = prestige_tier,
                                     linetype = prestige_tier,
                                     shape = prestige_tier,
                                     group = prestige_tier)) +
     geom_ribbon(aes(ymin = utility_per_dept - 1.96 * se_utility_per_dept,
-                    ymax = utility_per_dept + 1.96 * se_utility_per_dept),
-                alpha = ribbon_alpha, fill = "grey50", linetype = 0) +
-    geom_line(linewidth = 1.2, color = "black") +
-    geom_point(size = 3, color = "black") +
+                    ymax = utility_per_dept + 1.96 * se_utility_per_dept,
+                    fill = prestige_tier),
+                alpha = ribbon_alpha, linetype = 0, show.legend = FALSE) +
+    geom_line(linewidth = 1.2) +
+    geom_point(size = 3) +
+    scale_color_manual(values = tier_colors) +
+    scale_fill_manual(values = tier_colors) +
     scale_linetype_manual(values = c("solid", "dashed", "dotted", "dotdash")) +
     scale_shape_manual(values = c(16, 17, 15, 18)) +
     scale_x_continuous(breaks = c(0, 5, 20, 50, 90, 100),
                        labels = c("0", "5", "20", "50", "90", "100")) +
     scale_y_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0.05))) +
     labs(x = "Market Participation Rate (%)", y = "Mean Welfare per Department",
-         linetype = "Department Tier", shape = "Department Tier") +
-    theme_minimal(base_size = 14) +
-    theme(panel.grid.minor = element_blank(),
-          panel.grid.major = element_line(color = "gray90", linewidth = 0.5),
-          axis.title = element_text(size = 14, face = "bold"),
-          axis.text = element_text(size = 12),
-          legend.position = "bottom",
-          legend.title = element_text(size = 14, face = "bold"),
-          legend.text = element_text(size = 13),
-          legend.key.size = unit(1.5, "lines"),
-          legend.key.width = unit(2.5, "lines"),
-          legend.spacing.x = unit(0.5, "cm"),
-          plot.margin = margin(10, 10, 10, 10))
+         color = "Department Tier", linetype = "Department Tier",
+         shape = "Department Tier") +
+    fig3_theme
   
   p2 <- ggplot(welfare_by_tier, aes(x = participation_rate * 100,
                                     y = mean_utility_per_slot,
+                                    color = prestige_tier,
                                     linetype = prestige_tier,
                                     shape = prestige_tier,
                                     group = prestige_tier)) +
     geom_ribbon(aes(ymin = mean_utility_per_slot - 1.96 * se_utility_per_slot,
-                    ymax = mean_utility_per_slot + 1.96 * se_utility_per_slot),
-                alpha = ribbon_alpha, fill = "grey50", linetype = 0) +
-    geom_line(linewidth = 1.2, color = "black") +
-    geom_point(size = 3, color = "black") +
+                    ymax = mean_utility_per_slot + 1.96 * se_utility_per_slot,
+                    fill = prestige_tier),
+                alpha = ribbon_alpha, linetype = 0, show.legend = FALSE) +
+    geom_line(linewidth = 1.2) +
+    geom_point(size = 3) +
+    scale_color_manual(values = tier_colors) +
+    scale_fill_manual(values = tier_colors) +
     scale_linetype_manual(values = c("solid", "dashed", "dotted", "dotdash")) +
     scale_shape_manual(values = c(16, 17, 15, 18)) +
     scale_x_continuous(breaks = c(0, 5, 20, 50, 90, 100),
                        labels = c("0", "5", "20", "50", "90", "100")) +
     scale_y_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0.05))) +
     labs(x = "Market Participation Rate (%)", y = "Mean Welfare per Position",
-         linetype = "Department Tier", shape = "Department Tier") +
-    theme_minimal(base_size = 14) +
-    theme(panel.grid.minor = element_blank(),
-          panel.grid.major = element_line(color = "gray90", linewidth = 0.5),
-          axis.title = element_text(size = 14, face = "bold"),
-          axis.text = element_text(size = 12),
-          legend.position = "bottom",
-          legend.title = element_text(size = 14, face = "bold"),
-          legend.text = element_text(size = 13),
-          legend.key.size = unit(1.5, "lines"),
-          legend.key.width = unit(2.5, "lines"),
-          legend.spacing.x = unit(0.5, "cm"),
-          plot.margin = margin(10, 10, 10, 10))
+         color = "Department Tier", linetype = "Department Tier",
+         shape = "Department Tier") +
+    fig3_theme
   
   # Welfare gains
   welfare_gains <- welfare_by_rep %>%
@@ -2940,34 +3742,28 @@ make_fig_department_welfare_by_tier_normalized <- function(all_sim_results,
   
   p3 <- ggplot(welfare_gains, aes(x = participation_rate * 100,
                                   y = welfare_gain_per_dept,
+                                  color = prestige_tier,
                                   linetype = prestige_tier,
                                   shape = prestige_tier,
                                   group = prestige_tier)) +
     geom_ribbon(aes(ymin = welfare_gain_per_dept - 1.96 * se_gain,
-                    ymax = welfare_gain_per_dept + 1.96 * se_gain),
-                alpha = ribbon_alpha, fill = "grey50", linetype = 0) +
-    geom_line(linewidth = 1.2, color = "black") +
-    geom_point(size = 3, color = "black") +
+                    ymax = welfare_gain_per_dept + 1.96 * se_gain,
+                    fill = prestige_tier),
+                alpha = ribbon_alpha, linetype = 0, show.legend = FALSE) +
+    geom_line(linewidth = 1.2) +
+    geom_point(size = 3) +
     geom_hline(yintercept = 0, linetype = "solid", color = "gray50", linewidth = 0.8) +
+    scale_color_manual(values = tier_colors) +
+    scale_fill_manual(values = tier_colors) +
     scale_linetype_manual(values = c("solid", "dashed", "dotted", "dotdash")) +
     scale_shape_manual(values = c(16, 17, 15, 18)) +
     scale_x_continuous(breaks = c(5, 20, 50, 90, 100),
                        labels = c("5", "20", "50", "90", "100")) +
     labs(x = "Market Participation Rate (%)",
          y = "Welfare Gain per Department vs. Baseline",
-         linetype = "Department Tier", shape = "Department Tier") +
-    theme_minimal(base_size = 14) +
-    theme(panel.grid.minor = element_blank(),
-          panel.grid.major = element_line(color = "gray90", linewidth = 0.5),
-          axis.title = element_text(size = 14, face = "bold"),
-          axis.text = element_text(size = 12),
-          legend.position = "bottom",
-          legend.title = element_text(size = 14, face = "bold"),
-          legend.text = element_text(size = 13),
-          legend.key.size = unit(1.5, "lines"),
-          legend.key.width = unit(2.5, "lines"),
-          legend.spacing.x = unit(0.5, "cm"),
-          plot.margin = margin(10, 10, 10, 10))
+         color = "Department Tier", linetype = "Department Tier",
+         shape = "Department Tier") +
+    fig3_theme
   
   combined_plot_2 <- p1 + p2 +
     plot_layout(ncol = 2, guides = "collect") &
@@ -2985,10 +3781,12 @@ make_fig_department_welfare_by_tier_normalized <- function(all_sim_results,
 
 # =============================================================================
 # 4. CANDIDATE WELFARE BY TIER (line plots, averaged over replicates)
+#    — NOW WITH TIER COLORS —
 # =============================================================================
 make_fig_candidate_welfare_by_tier_revised <- function(all_sim_results,
                                                        year_filter = c(1, 10),
-                                                       include_scramble = FALSE) {
+                                                       include_scramble = FALSE,
+                                                       hire_rounds = NULL) {
   
   rate_chrs <- names(all_sim_results$sim_results)
   
@@ -3003,6 +3801,8 @@ make_fig_candidate_welfare_by_tier_revised <- function(all_sim_results,
       dplyr::filter(accepted == 1)
     if (!include_scramble)
       matches <- matches %>% dplyr::filter(interviewed == 1 | is.na(interviewed))
+    if (!is.null(hire_rounds))
+      matches <- matches %>% dplyr::filter(is.na(offer_round) | offer_round <= hire_rounds)
     matches <- matches %>%
       mutate(V_ij = candidate_utility(v_i_bar, s_j, f_j))
     
@@ -3022,6 +3822,7 @@ make_fig_candidate_welfare_by_tier_revised <- function(all_sim_results,
         n_cand = n(),
         n_matches = sum(matched),
         matching_rate = mean(matched),
+        mean_welfare = mean(welfare, na.rm = TRUE),
         mean_welfare_if_matched = mean(welfare[matched], na.rm = TRUE),
         mean_f_j_if_matched = mean(match_f_j[matched], na.rm = TRUE),
         mean_s_j_if_matched = mean(match_s_j[matched], na.rm = TRUE),
@@ -3033,6 +3834,17 @@ make_fig_candidate_welfare_by_tier_revised <- function(all_sim_results,
   if (nrow(welfare_by_rep) == 0) {
     message("No candidate welfare data"); return(NULL)
   }
+  
+  # Average across replicates (unconditional utility: includes unmatched as zero)
+  unconditional_welfare <- welfare_by_rep %>%
+    group_by(participation_rate, quality_tier) %>%
+    summarise(
+      mean_welfare = mean(mean_welfare, na.rm = TRUE),
+      se_mean_welfare = sd(mean_welfare, na.rm = TRUE) / sqrt(sum(!is.na(mean_welfare))),
+      .groups = "drop"
+    ) %>%
+    mutate(quality_tier = factor(quality_tier,
+                                 levels = c("Tier 1","Tier 2","Tier 3","Tier 4")))
   
   # Average across replicates
   conditional_welfare <- welfare_by_rep %>%
@@ -3082,18 +3894,64 @@ make_fig_candidate_welfare_by_tier_revised <- function(all_sim_results,
   
   ribbon_alpha <- 0.15
   
+  # Common theme for Figure 4 panels
+  fig4_theme <- theme_minimal(base_size = 14) +
+    theme(panel.grid.minor = element_blank(),
+          panel.grid.major = element_line(color = "gray90", linewidth = 0.5),
+          axis.title = element_text(size = 14, face = "bold"),
+          axis.text = element_text(size = 12),
+          legend.position = "bottom",
+          legend.title = element_text(size = 14, face = "bold"),
+          legend.text = element_text(size = 13),
+          legend.key.size = unit(1.5, "lines"),
+          legend.key.width = unit(2.5, "lines"),
+          legend.spacing.x = unit(0.5, "cm"),
+          plot.margin = margin(10, 10, 10, 10))
+  
+  p0_unconditional <- ggplot(unconditional_welfare,
+                             aes(x = participation_rate * 100,
+                                 y = mean_welfare,
+                                 color = quality_tier,
+                                 linetype = quality_tier,
+                                 shape = quality_tier,
+                                 size = quality_tier,
+                                 group = quality_tier)) +
+    geom_ribbon(aes(ymin = mean_welfare - 1.96 * se_mean_welfare,
+                    ymax = mean_welfare + 1.96 * se_mean_welfare,
+                    fill = quality_tier),
+                alpha = ribbon_alpha, linetype = 0, show.legend = FALSE) +
+    geom_line(linewidth = 1.2) +
+    geom_point() +
+    scale_color_manual(values = tier_colors) +
+    scale_fill_manual(values = tier_colors) +
+    scale_linetype_manual(values = c("solid", "dashed", "dotted", "dotdash")) +
+    scale_shape_manual(values = c(16, 17, 15, 18)) +
+    scale_size_manual(values = c(3, 3, 3, 4.5)) +
+    scale_x_continuous(breaks = c(0, 5, 20, 50, 90, 100),
+                       labels = c("0", "5", "20", "50", "90", "100")) +
+    scale_y_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0.05))) +
+    labs(x = "Market Participation Rate (%)",
+         y = "Mean Candidate Utility (Unconditional)",
+         color = "Candidate Tier", linetype = "Candidate Tier",
+         shape = "Candidate Tier", size = "Candidate Tier") +
+    fig4_theme
+  
   p1_conditional <- ggplot(conditional_welfare,
                            aes(x = participation_rate * 100,
                                y = mean_welfare_if_matched,
+                               color = quality_tier,
                                linetype = quality_tier,
                                shape = quality_tier,
                                size = quality_tier,
                                group = quality_tier)) +
     geom_ribbon(aes(ymin = mean_welfare_if_matched - 1.96 * se_welfare,
-                    ymax = mean_welfare_if_matched + 1.96 * se_welfare),
-                alpha = ribbon_alpha, fill = "grey50", linetype = 0, show.legend = FALSE) +
-    geom_line(linewidth = 1.2, color = "black") +
-    geom_point(color = "black") +
+                    ymax = mean_welfare_if_matched + 1.96 * se_welfare,
+                    fill = quality_tier),
+                alpha = ribbon_alpha, linetype = 0, show.legend = FALSE) +
+    geom_line(linewidth = 1.2) +
+    geom_point() +
+    scale_color_manual(values = tier_colors) +
+    scale_fill_manual(values = tier_colors) +
     scale_linetype_manual(values = c("solid", "dashed", "dotted", "dotdash")) +
     scale_shape_manual(values = c(16, 17, 15, 18)) +
     scale_size_manual(values = c(3, 3, 3, 4.5)) +
@@ -3101,57 +3959,45 @@ make_fig_candidate_welfare_by_tier_revised <- function(all_sim_results,
                        labels = c("0", "5", "20", "50", "90", "100")) +
     scale_y_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0.05))) +
     labs(x = "Market Participation Rate (%)", y = "Mean Candidate Utility",
-         linetype = "Candidate Tier", shape = "Candidate Tier", size = "Candidate Tier") +
-    theme_minimal(base_size = 14) +
-    theme(panel.grid.minor = element_blank(),
-          panel.grid.major = element_line(color = "gray90", linewidth = 0.5),
-          axis.title = element_text(size = 14, face = "bold"),
-          axis.text = element_text(size = 12),
-          legend.position = "bottom",
-          legend.title = element_text(size = 14, face = "bold"),
-          legend.text = element_text(size = 13),
-          legend.key.size = unit(1.5, "lines"),
-          legend.key.width = unit(2.5, "lines"),
-          legend.spacing.x = unit(0.5, "cm"),
-          plot.margin = margin(10, 10, 10, 10))
+         color = "Candidate Tier", linetype = "Candidate Tier",
+         shape = "Candidate Tier", size = "Candidate Tier") +
+    fig4_theme
   
   p2_gains <- conditional_gains %>%
     dplyr::filter(participation_rate > 0, !is.na(welfare_gain)) %>%
     ggplot(aes(x = participation_rate * 100, y = welfare_gain,
+               color = quality_tier,
                linetype = quality_tier, shape = quality_tier, group = quality_tier)) +
     geom_ribbon(aes(ymin = welfare_gain - 1.96 * se_welfare,
-                    ymax = welfare_gain + 1.96 * se_welfare),
-                alpha = ribbon_alpha, fill = "grey50", linetype = 0) +
-    geom_line(linewidth = 1.2, color = "black") +
-    geom_point(size = 3, color = "black") +
+                    ymax = welfare_gain + 1.96 * se_welfare,
+                    fill = quality_tier),
+                alpha = ribbon_alpha, linetype = 0, show.legend = FALSE) +
+    geom_line(linewidth = 1.2) +
+    geom_point(size = 3) +
     geom_hline(yintercept = 0, linetype = "solid", color = "gray50", linewidth = 0.8) +
+    scale_color_manual(values = tier_colors) +
+    scale_fill_manual(values = tier_colors) +
     scale_linetype_manual(values = c("solid", "dashed", "dotted", "dotdash")) +
     scale_shape_manual(values = c(16, 17, 15, 18)) +
     scale_x_continuous(breaks = c(5, 20, 50, 90, 100),
                        labels = c("5", "20", "50", "90", "100")) +
     labs(x = "Market Participation Rate (%)", y = expression(Delta * bar(V)[ij]),
-         linetype = "Candidate Tier", shape = "Candidate Tier") +
-    theme_minimal(base_size = 14) +
-    theme(panel.grid.minor = element_blank(),
-          panel.grid.major = element_line(color = "gray90", linewidth = 0.5),
-          axis.title = element_text(size = 14, face = "bold"),
-          axis.text = element_text(size = 12),
-          legend.position = "bottom",
-          legend.title = element_text(size = 14, face = "bold"),
-          legend.text = element_text(size = 13),
-          legend.key.size = unit(1.5, "lines"),
-          legend.key.width = unit(2.5, "lines"),
-          legend.spacing.x = unit(0.5, "cm"),
-          plot.margin = margin(10, 10, 10, 10))
+         color = "Candidate Tier", linetype = "Candidate Tier",
+         shape = "Candidate Tier") +
+    fig4_theme
   
   p3_alignment <- ggplot(conditional_welfare,
                          aes(x = participation_rate * 100, y = mean_f_j_if_matched,
+                             color = quality_tier,
                              linetype = quality_tier, shape = quality_tier, group = quality_tier)) +
     geom_ribbon(aes(ymin = mean_f_j_if_matched - 1.96 * se_f_j,
-                    ymax = mean_f_j_if_matched + 1.96 * se_f_j),
-                alpha = ribbon_alpha, fill = "grey50", linetype = 0) +
-    geom_line(linewidth = 1.2, color = "black") +
-    geom_point(size = 3, color = "black") +
+                    ymax = mean_f_j_if_matched + 1.96 * se_f_j,
+                    fill = quality_tier),
+                alpha = ribbon_alpha, linetype = 0, show.legend = FALSE) +
+    geom_line(linewidth = 1.2) +
+    geom_point(size = 3) +
+    scale_color_manual(values = tier_colors) +
+    scale_fill_manual(values = tier_colors) +
     scale_linetype_manual(values = c("solid", "dashed", "dotted", "dotdash")) +
     scale_shape_manual(values = c(16, 17, 15, 18)) +
     scale_x_continuous(breaks = c(0, 5, 20, 50, 90, 100),
@@ -3159,19 +4005,9 @@ make_fig_candidate_welfare_by_tier_revised <- function(all_sim_results,
     scale_y_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0.05))) +
     labs(x = "Market Participation Rate (%)",
          y = expression(E * "[Alignment " * f[j] * " | Matched]"),
-         linetype = "Candidate Tier", shape = "Candidate Tier") +
-    theme_minimal(base_size = 14) +
-    theme(panel.grid.minor = element_blank(),
-          panel.grid.major = element_line(color = "gray90", linewidth = 0.5),
-          axis.title = element_text(size = 14, face = "bold"),
-          axis.text = element_text(size = 12),
-          legend.position = "bottom",
-          legend.title = element_text(size = 14, face = "bold"),
-          legend.text = element_text(size = 13),
-          legend.key.size = unit(1.5, "lines"),
-          legend.key.width = unit(2.5, "lines"),
-          legend.spacing.x = unit(0.5, "cm"),
-          plot.margin = margin(10, 10, 10, 10))
+         color = "Candidate Tier", linetype = "Candidate Tier",
+         shape = "Candidate Tier") +
+    fig4_theme
   
   combined_2panel <- p1_conditional + p2_gains +
     plot_layout(ncol = 2, guides = "collect") & theme(legend.position = "bottom")
@@ -3179,8 +4015,10 @@ make_fig_candidate_welfare_by_tier_revised <- function(all_sim_results,
     plot_layout(ncol = 3, guides = "collect") & theme(legend.position = "bottom")
   
   list(plot = combined_2panel, plot_3panel = combined_3panel,
+       plot_unconditional = p0_unconditional,
        plot_conditional = p1_conditional, plot_gains = p2_gains,
        plot_alignment = p3_alignment,
+       unconditional_welfare = unconditional_welfare,
        conditional_welfare = conditional_welfare,
        conditional_gains = conditional_gains,
        conditional_tests = conditional_tests)
@@ -3189,11 +4027,12 @@ make_fig_candidate_welfare_by_tier_revised <- function(all_sim_results,
 
 # =============================================================================
 # 5. CANDIDATE BY PARTICIPATION (Participating vs Non-participating)
+#    — NOW WITH PARTICIPATION COLORS —
 # =============================================================================
 make_fig_candidate_by_participation <- function(all_sim_results,
                                                 year_filter = c(1, 10),
-                                                include_scramble = FALSE) {
-  
+                                                include_scramble = FALSE,
+                                                hire_rounds = NULL) {
   rate_chrs <- names(all_sim_results$sim_results)
   # Interior rates: exclude baseline (0) and full (1)
   interior_rates <- setdiff(rate_chrs, c("0", "1"))
@@ -3209,6 +4048,8 @@ make_fig_candidate_by_participation <- function(all_sim_results,
     dplyr::filter(accepted == 1)
   if (!include_scramble)
     bl_results <- bl_results %>% dplyr::filter(interviewed == 1 | is.na(interviewed))
+  if (!is.null(hire_rounds))
+    bl_results <- bl_results %>% dplyr::filter(is.na(offer_round) | offer_round <= hire_rounds)
   bl_results <- bl_results %>%
     mutate(V_ij = candidate_utility(v_i_bar, s_j, f_j))
   
@@ -3249,6 +4090,8 @@ make_fig_candidate_by_participation <- function(all_sim_results,
       dplyr::filter(accepted == 1)
     if (!include_scramble)
       df <- df %>% dplyr::filter(interviewed == 1 | is.na(interviewed))
+    if (!is.null(hire_rounds))
+      df <- df %>% dplyr::filter(is.na(offer_round) | offer_round <= hire_rounds)
     df <- df %>% mutate(V_ij = candidate_utility(v_i_bar, s_j, f_j))
     
     matched_agg <- df %>%
@@ -3303,27 +4146,11 @@ make_fig_candidate_by_participation <- function(all_sim_results,
     }
   }
   
-  # --- Plots (same style as originals) ---
+  # --- Plots (with participation colors) ---
   ribbon_alpha <- 0.15
   
-  p1 <- ggplot(comparison_data,
-               aes(x = participation_rate * 100, y = mean_welfare,
-                   linetype = participation_status, shape = participation_status)) +
-    geom_hline(yintercept = baseline_stats$baseline_mean_welfare,
-               linetype = "dotted", color = "gray50", linewidth = 0.8) +
-    geom_ribbon(aes(ymin = mean_welfare - 1.96 * se_welfare,
-                    ymax = mean_welfare + 1.96 * se_welfare,
-                    group = participation_status),
-                alpha = ribbon_alpha, fill = "grey50", linetype = 0) +
-    geom_line(linewidth = 1.2, color = "black") +
-    geom_point(size = 3.5, color = "black") +
-    scale_linetype_manual(values = c("Participating" = "solid", "Non-participating" = "dashed")) +
-    scale_shape_manual(values = c("Participating" = 16, "Non-participating" = 17)) +
-    scale_x_continuous(breaks = c(5, 20, 50, 90), labels = c("5", "20", "50", "90")) +
-    scale_y_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0.05))) +
-    labs(x = "Market Participation Rate (%)", y = "Mean Candidate Welfare",
-         linetype = NULL, shape = NULL) +
-    theme_minimal(base_size = 14) +
+  # Common theme for Figure 5 panels
+  fig5_theme <- theme_minimal(base_size = 14) +
     theme(panel.grid.minor = element_blank(),
           panel.grid.major = element_line(color = "gray90", linewidth = 0.5),
           axis.title = element_text(size = 14, face = "bold"),
@@ -3335,64 +4162,75 @@ make_fig_candidate_by_participation <- function(all_sim_results,
           legend.spacing.x = unit(0.5, "cm"),
           plot.margin = margin(10, 10, 10, 10))
   
+  p1 <- ggplot(comparison_data,
+               aes(x = participation_rate * 100, y = mean_welfare,
+                   color = participation_status,
+                   linetype = participation_status, shape = participation_status)) +
+    geom_hline(yintercept = baseline_stats$baseline_mean_welfare,
+               linetype = "dotted", color = "gray50", linewidth = 0.8) +
+    geom_ribbon(aes(ymin = mean_welfare - 1.96 * se_welfare,
+                    ymax = mean_welfare + 1.96 * se_welfare,
+                    fill = participation_status,
+                    group = participation_status),
+                alpha = ribbon_alpha, linetype = 0, show.legend = FALSE) +
+    geom_line(linewidth = 1.2) +
+    geom_point(size = 3.5) +
+    scale_color_manual(values = participation_colors) +
+    scale_fill_manual(values = participation_colors) +
+    scale_linetype_manual(values = c("Participating" = "solid", "Non-participating" = "dashed")) +
+    scale_shape_manual(values = c("Participating" = 16, "Non-participating" = 17)) +
+    scale_x_continuous(breaks = c(5, 20, 50, 90), labels = c("5", "20", "50", "90")) +
+    scale_y_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0.05))) +
+    labs(x = "Market Participation Rate (%)", y = "Mean Candidate Welfare",
+         color = NULL, linetype = NULL, shape = NULL) +
+    fig5_theme
+  
   p2 <- ggplot(comparison_data,
                aes(x = participation_rate * 100, y = matching_rate,
+                   color = participation_status,
                    linetype = participation_status, shape = participation_status)) +
     geom_hline(yintercept = baseline_stats$baseline_matching_rate,
                linetype = "dotted", color = "gray50", linewidth = 0.8) +
     geom_ribbon(aes(ymin = matching_rate - 1.96 * se_matching_rate,
                     ymax = matching_rate + 1.96 * se_matching_rate,
+                    fill = participation_status,
                     group = participation_status),
-                alpha = ribbon_alpha, fill = "grey50", linetype = 0) +
-    geom_line(linewidth = 1.2, color = "black") +
-    geom_point(size = 3.5, color = "black") +
+                alpha = ribbon_alpha, linetype = 0, show.legend = FALSE) +
+    geom_line(linewidth = 1.2) +
+    geom_point(size = 3.5) +
+    scale_color_manual(values = participation_colors) +
+    scale_fill_manual(values = participation_colors) +
     scale_linetype_manual(values = c("Participating" = "solid", "Non-participating" = "dashed")) +
     scale_shape_manual(values = c("Participating" = 16, "Non-participating" = 17)) +
     scale_x_continuous(breaks = c(5, 20, 50, 90), labels = c("5", "20", "50", "90")) +
     scale_y_continuous(labels = scales::percent_format(accuracy = 0.1),
                        limits = c(0, NA), expand = expansion(mult = c(0, 0.05))) +
     labs(x = "Market Participation Rate (%)", y = "Candidate Matching Rate",
-         linetype = NULL, shape = NULL) +
-    theme_minimal(base_size = 14) +
-    theme(panel.grid.minor = element_blank(),
-          panel.grid.major = element_line(color = "gray90", linewidth = 0.5),
-          axis.title = element_text(size = 14, face = "bold"),
-          axis.text = element_text(size = 12),
-          legend.position = "bottom",
-          legend.text = element_text(size = 13),
-          legend.key.size = unit(1.5, "lines"),
-          legend.key.width = unit(2.5, "lines"),
-          legend.spacing.x = unit(0.5, "cm"),
-          plot.margin = margin(10, 10, 10, 10))
+         color = NULL, linetype = NULL, shape = NULL) +
+    fig5_theme
   
   p3 <- ggplot(comparison_data,
                aes(x = participation_rate * 100, y = mean_welfare_if_matched,
+                   color = participation_status,
                    linetype = participation_status, shape = participation_status)) +
     geom_hline(yintercept = baseline_stats$baseline_mean_welfare_if_matched,
                linetype = "dotted", color = "gray50", linewidth = 0.8) +
     geom_ribbon(aes(ymin = mean_welfare_if_matched - 1.96 * se_welfare_if_matched,
                     ymax = mean_welfare_if_matched + 1.96 * se_welfare_if_matched,
+                    fill = participation_status,
                     group = participation_status),
-                alpha = ribbon_alpha, fill = "grey50", linetype = 0) +
-    geom_line(linewidth = 1.2, color = "black") +
-    geom_point(size = 3.5, color = "black") +
+                alpha = ribbon_alpha, linetype = 0, show.legend = FALSE) +
+    geom_line(linewidth = 1.2) +
+    geom_point(size = 3.5) +
+    scale_color_manual(values = participation_colors) +
+    scale_fill_manual(values = participation_colors) +
     scale_linetype_manual(values = c("Participating" = "solid", "Non-participating" = "dashed")) +
     scale_shape_manual(values = c("Participating" = 16, "Non-participating" = 17)) +
     scale_x_continuous(breaks = c(5, 20, 50, 90), labels = c("5", "20", "50", "90")) +
     scale_y_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0.05))) +
     labs(x = "Market Participation Rate (%)", y = "Mean Welfare (If Matched)",
-         linetype = NULL, shape = NULL) +
-    theme_minimal(base_size = 14) +
-    theme(panel.grid.minor = element_blank(),
-          panel.grid.major = element_line(color = "gray90", linewidth = 0.5),
-          axis.title = element_text(size = 14, face = "bold"),
-          axis.text = element_text(size = 12),
-          legend.position = "bottom",
-          legend.text = element_text(size = 13),
-          legend.key.size = unit(1.5, "lines"),
-          legend.key.width = unit(2.5, "lines"),
-          legend.spacing.x = unit(0.5, "cm"),
-          plot.margin = margin(10, 10, 10, 10))
+         color = NULL, linetype = NULL, shape = NULL) +
+    fig5_theme
   
   combined_2panel <- (p1 | p2) +
     plot_layout(guides = "collect") & theme(legend.position = "bottom")
@@ -3403,80 +4241,3 @@ make_fig_candidate_by_participation <- function(all_sim_results,
        plot_welfare = p1, plot_matching = p2, plot_welfare_conditional = p3,
        data = comparison_data, baseline_stats = baseline_stats)
 }
-
-
-# =============================================================================
-# EXECUTION EXAMPLE
-# =============================================================================
-setwd("/Users/alikmofrad/UCLA PhD/SCALE Group/Research/Job Market /Codes/Academic Job Market/department_generator")
-departments_final <- read_csv("departments_dataset.csv")
-departments <- departments_final %>% mutate(dept_id = row_number())
-
-start.time <- Sys.time()
-
-all_sim_results <- run_multi_replicate_simulation(
-  sampled_depts       = departments,
-  questions           = questions,
-  n_candidates        = 300,
-  burn_in_years       = 20,
-  sim_years           = 10,
-  participation_rates = c(0, 0.05, 0.2, 0.5, 0.9, 1.00), #c(0, 0.05, 0.2, 0.5, 0.9, 1.00)
-  base_seed           = 42,
-  n_replicates        = 20,
-  alpha               = 0.05,
-  L_repeats           = 10,
-  max_offer_rounds    = 3,
-  print_sim_diagnostics = FALSE,
-  collect_rank_panel  = FALSE,
-  keep_diagnostics    = FALSE,
-  save_rep_results_dir = "replicate_checkpoints",
-  keep_raw_replicates = FALSE,
-  gc_every_replicate = TRUE
-)
-
-end.time <- Sys.time()
-(time.taken <- round(end.time - start.time, 2))
-
-#saveRDS(all_sim_results, "all_sim_results_20reps.rds")
-
-#
-# # --- Figures (all auto-average over replicates) ---
-(interview_heatmap  <- make_fig_dept_interview_heatmap(all_sim_results, year_filter = c(1, 10), include_scramble = FALSE))
-(hiring_heatmap     <- make_fig_dept_hiring_heatmap(all_sim_results, year_filter = c(1, 10), include_scramble = FALSE))
-(dept_welfare       <- make_fig_department_welfare_by_tier_normalized(all_sim_results, year_filter = c(1, 10), include_scramble = FALSE))
-(cand_welfare       <- make_fig_candidate_welfare_by_tier_revised(all_sim_results, year_filter = c(1, 10), include_scramble = FALSE))
-(cand_participation <- make_fig_candidate_by_participation(all_sim_results, year_filter = c(1, 10), include_scramble = FALSE))
-
-
-# =============================================================================
-# SAVE FIGS
-# =============================================================================
-
-#ggsave("fig_dept_interview_heatmap.pdf",
-#       interview_heatmap$plot,
-#       width = 10, height = 5,
-#       device = cairo_pdf)
-
-
-#ggsave("fig_dept_hiring_heatmap.pdf",
-#       hiring_heatmap$plot,
-#       width = 10, height = 5,
-#       device = cairo_pdf)
-
-
-#ggsave("fig_department_welfare.pdf",
-#       dept_welfare$plot_welfare_per_slot,
-#       width = 7, height = 5,
-#       device = cairo_pdf)
-
-
-#ggsave("fig_candidate_welfare_by_tier.pdf",
-#       cand_welfare$plot_conditional,
-#       width = 7, height = 5,
-#       device = cairo_pdf)
-
-
-#ggsave("fig_candidate_by_participation.pdf",
-#       cand_participation$plot,
-#       width = 10, height = 4,
-#       device = cairo_pdf)
