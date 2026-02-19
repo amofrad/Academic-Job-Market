@@ -1020,6 +1020,191 @@ departments_final <- departments_final %>%
 #   )
 
 
+# =============================================================================
+# SECTION 6: CREATE "HIDDEN GEM" DEPARTMENTS
+# =============================================================================
+# Some Tier 3/4 departments have 1-2 attributes that rival Tier 1/2 departments
+# This reflects real-world variation (e.g., a teaching school in a great city,
+# or a lower-ranked program with unusually high salary due to cost of living)
+
+create_hidden_gems <- function(departments_df, gem_rate = 0.25, seed = 2026) {
+  set.seed(seed)
+  
+  # Identify Tier 3/4 departments eligible for "hidden gem" status
+  eligible_idx <- which(departments_df$tier %in% c("Tier 3", "Tier 4"))
+  n_gems <- ceiling(length(eligible_idx) * gem_rate)
+  gem_idx <- sample(eligible_idx, n_gems)
+  
+  cat("\n=== CREATING HIDDEN GEM DEPARTMENTS ===\n")
+  cat("Total Tier 3/4 departments:", length(eligible_idx), "\n")
+  cat("Hidden gems to create:", n_gems, "\n\n")
+  
+  # Track what gems we create
+  gem_log <- tibble(
+    university = character(),
+    tier = character(),
+    gem_type = character(),
+    original_value = character(),
+    new_value = character()
+  )
+  
+  for (idx in gem_idx) {
+    # Each gem gets 1-2 standout attributes
+    n_attributes <- sample(1:2, 1, prob = c(0.6, 0.4))
+    
+    # Possible gem types with weights (some more common than others)
+    gem_types <- c(
+      "salary",           # Unusually high salary for tier
+      "location",         # Urban location (A or B)
+      "teaching_load",    # Light teaching load
+      "startup",          # Good startup package
+      "summer_support",   # Strong summer support
+      "phd_ratio"         # Good PhD student ratio
+    )
+    
+    # Weight toward attributes that matter most to candidates
+    gem_weights <- c(0.25, 0.25, 0.20, 0.12, 0.10, 0.08)
+    
+    selected_gems <- sample(gem_types, n_attributes, prob = gem_weights, replace = FALSE)
+    
+    for (gem_type in selected_gems) {
+      uni_name <- departments_df$university[idx]
+      tier <- departments_df$tier[idx]
+      
+      if (gem_type == "salary") {
+        # Boost salary to Tier 1/2 levels (1.3-1.5x state average instead of 0.9-1.0x)
+        original <- departments_df$q6_typical_salary_range[idx]
+        # Get base state salary and apply Tier 1/2 multiplier
+        state_salary <- original / ifelse(tier == "Tier 3", 1.0, 0.9)
+        multiplier <- runif(1, 1.25, 1.45)
+        departments_df$q6_typical_salary_range[idx] <- state_salary * multiplier
+        
+        gem_log <- bind_rows(gem_log, tibble(
+          university = uni_name, tier = tier, gem_type = "High Salary",
+          original_value = sprintf("$%.0f", original),
+          new_value = sprintf("$%.0f", departments_df$q6_typical_salary_range[idx])
+        ))
+      }
+      
+      if (gem_type == "location") {
+        # Only upgrade if currently C or D
+        original <- departments_df$q1_geographic_setting[idx]
+        if (original %in% c("C", "D")) {
+          new_setting <- sample(c("A", "B"), 1, prob = c(0.3, 0.7))
+          departments_df$q1_geographic_setting[idx] <- new_setting
+          
+          gem_log <- bind_rows(gem_log, tibble(
+            university = uni_name, tier = tier, gem_type = "Urban Location",
+            original_value = original, new_value = new_setting
+          ))
+        }
+      }
+      
+      if (gem_type == "teaching_load") {
+        # Upgrade to B (2-2 load) - rare for Tier 3/4
+        original <- departments_df$q9_typical_teaching_load[idx]
+        if (original %in% c("C", "D")) {
+          departments_df$q9_typical_teaching_load[idx] <- "B"
+          
+          gem_log <- bind_rows(gem_log, tibble(
+            university = uni_name, tier = tier, gem_type = "Light Teaching (2-2)",
+            original_value = original, new_value = "B"
+          ))
+        }
+      }
+      
+      if (gem_type == "startup") {
+        # Boost startup to C or D level
+        original <- departments_df$q7_typical_startup[idx]
+        if (original %in% c("A", "B")) {
+          new_startup <- sample(c("C", "D"), 1, prob = c(0.7, 0.3))
+          departments_df$q7_typical_startup[idx] <- new_startup
+          
+          gem_log <- bind_rows(gem_log, tibble(
+            university = uni_name, tier = tier, gem_type = "Good Startup",
+            original_value = original, new_value = new_startup
+          ))
+        }
+      }
+      
+      if (gem_type == "summer_support") {
+        # Upgrade to A or B
+        original <- departments_df$q8_guaranteed_summer[idx]
+        if (original %in% c("C", "D")) {
+          new_summer <- sample(c("A", "B"), 1, prob = c(0.3, 0.7))
+          departments_df$q8_guaranteed_summer[idx] <- new_summer
+          
+          gem_log <- bind_rows(gem_log, tibble(
+            university = uni_name, tier = tier, gem_type = "Strong Summer Support",
+            original_value = original, new_value = new_summer
+          ))
+        }
+      }
+      
+      if (gem_type == "phd_ratio") {
+        # Boost PhD ratio to Tier 1/2 levels
+        original <- departments_df$q14_phd_student_ratio[idx]
+        if (original < 2.5) {
+          new_ratio <- runif(1, 2.5, 3.5)
+          departments_df$q14_phd_student_ratio[idx] <- new_ratio
+          
+          gem_log <- bind_rows(gem_log, tibble(
+            university = uni_name, tier = tier, gem_type = "High PhD Ratio",
+            original_value = sprintf("%.2f", original),
+            new_value = sprintf("%.2f", new_ratio)
+          ))
+        }
+      }
+    }
+  }
+  
+  # Print summary
+  cat("Hidden gems created:\n")
+  print(gem_log %>% arrange(tier, university))
+  
+  cat("\nGem type distribution:\n")
+  print(table(gem_log$gem_type))
+  
+  # Store gem info as attribute
+  attr(departments_df, "hidden_gems") <- gem_log
+  
+  return(departments_df)
+}
+
+# =============================================================================
+# APPLY HIDDEN GEMS
+# =============================================================================
+
+departments_final <- create_hidden_gems(departments_final, gem_rate = 0.25, seed = 2026)
+
+# Verify the changes
+cat("\n=== VERIFICATION: Tier 3/4 Departments with Tier 1/2 Attributes ===\n")
+
+cat("\nTier 3/4 with urban/suburban location (A or B):\n")
+departments_final %>%
+  filter(tier %in% c("Tier 3", "Tier 4"), 
+         q1_geographic_setting %in% c("A", "B")) %>%
+  dplyr::select(university, tier, q1_geographic_setting) %>%
+  print(n = 20)
+
+cat("\nTier 3/4 with light teaching load (B = 2-2):\n")
+departments_final %>%
+  filter(tier %in% c("Tier 3", "Tier 4"), 
+         q9_typical_teaching_load == "B") %>%
+  dplyr::select(university, tier, q9_typical_teaching_load) %>%
+  print(n = 20)
+
+cat("\nSalary distribution by tier (after hidden gems):\n")
+departments_final %>%
+  group_by(tier) %>%
+  summarise(
+    min_salary = min(q6_typical_salary_range, na.rm = TRUE),
+    mean_salary = mean(q6_typical_salary_range, na.rm = TRUE),
+    max_salary = max(q6_typical_salary_range, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  print()
+
 
 # Save final dataset
 write_csv(departments_final, "departments_dataset.csv")
