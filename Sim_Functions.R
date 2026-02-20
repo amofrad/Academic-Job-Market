@@ -34,7 +34,9 @@ candidate_utility <- function(v_i_bar, s_j, f_j, cand_tier = NULL,
                               prestige_sensitivity = NULL) {
   if (is.null(prestige_sensitivity)) {
     # Shift weight modestly toward prestige to improve early regular-round acceptance.
-    beta <- 0.10 + 0.15 * v_i_bar
+   # beta <- 0.10 + 0.15 * v_i_bar
+    beta <- pmin(0.90, pmax(0.1, 0.1 + 0.5 * v_i_bar))
+
   } else {
     beta <- prestige_sensitivity
   }
@@ -42,9 +44,15 @@ candidate_utility <- function(v_i_bar, s_j, f_j, cand_tier = NULL,
   pmin(pmax(V_ij, 1e-6), 1 - 1e-6)
 }
 
+# true_utility <- function(s_j, v_i_bar, f_j, dept_tier = NULL, cand_tier = NULL) {
+#   # Keep s_j in [0,1] but avoid overly fit-dominated utility at low s_j.
+#   (v_i_bar + 1e-8)^s_j * (f_j + 1e-8)^(1 - s_j)
+# }
+
 true_utility <- function(s_j, v_i_bar, f_j, dept_tier = NULL, cand_tier = NULL) {
-  # Keep s_j in [0,1] but avoid overly fit-dominated utility at low s_j.
-  (v_i_bar + 1e-8)^s_j * (f_j + 1e-8)^(1 - s_j)
+  quality_floor <- 0.3  # guaranteed quality weight
+  alpha <- quality_floor + (1 - quality_floor) * s_j
+  (v_i_bar + 1e-8)^alpha * (f_j + 1e-8)^(1 - alpha)
 }
 
 questions <- list(
@@ -171,7 +179,7 @@ calculate_f_j <- function(candidate_row, department_row, questions, gamma = 2.5)
 # that departments differentially value preference dimensions via
 # department-specific normalized weights {w_tilde_jk}.
 # =============================================================================
-calculate_f_j_batch <- function(candidates_df, dept_row, questions, gamma = 1.8) {
+calculate_f_j_batch <- function(candidates_df, dept_row, questions, gamma = 1.2) {
   n <- nrow(candidates_df)
   if (n == 0) return(numeric(0))
   if (is.data.frame(dept_row)) dept_row <- as.list(dept_row[1, ])
@@ -273,7 +281,10 @@ calculate_f_j_batch <- function(candidates_df, dept_row, questions, gamma = 1.8)
     if (is.null(w) || is.na(w)) w <- 1.0 / n_cat
     
     if (q_name == "q2_region") {
-      s_k <- as.numeric(grepl(dept_char, as.character(cand_vals), fixed = TRUE))
+      cand_str <- paste0(",", gsub("\\s+", "", as.character(cand_vals)), ",")
+dept_tok <- paste0(",", gsub("\\s+", "", dept_char), ",")
+s_k <- as.numeric(grepl(dept_tok, cand_str, fixed = TRUE))
+
       s_k[!valid] <- 0
     } else {
       levels_q <- questions$categorical[[q_name]]
@@ -401,7 +412,7 @@ generate_candidates_new <- function(n_candidates, questions, seed = NULL) {
   
   candidates$q_q15_medical_school_proximity <- sample(c("0","1"), n, replace=TRUE, prob=c(0.60,0.40))
   #candidates$prestige_sensitivity <- 0.15 + 0.25 * (1 - flexibility)
-  candidates$prestige_sensitivity <- 0.10 + 0.15 * candidates$v_i_bar
+  candidates$prestige_sensitivity <- 0.2 + 0.25 * candidates$v_i_bar
   candidates %>% dplyr::select(-quality_pctl, -within_tier_rank)
 }
 
