@@ -8,7 +8,7 @@ cat("=== BURN-IN STAGE ===\n")
 cat("Time:", format(Sys.time()), "\n\n")
 
 # ── Configuration (must match sim stage) ──
-base_seed        <- 1
+base_seed        <- 14
 n_candidates     <- 300
 burn_in_years    <- 20
 sim_years        <- 10
@@ -18,17 +18,7 @@ max_offer_rounds <- 2
 noise_method     <- "bootstrap"
 noise_scale      <- NULL
 cand_tier_cutpoints <- c(0.10, 0.25, 0.50)
-participation_rates <- c(0, 0.05, 0.2, 0.5, 0.9, 1.00)
-hiring_schedule <- list(
-  hire_prob_by_tier = c("Tier 1" = 0.6, "Tier 2" = 0.6, "Tier 3" = 0.6, "Tier 4" = 0.6),
-  s_j_weight = 0.60,
-  s_j_exponent = 1.0,
-  min_hire_prob = 0.05,
-  max_hire_prob = 0.95,
-  bottom_sj_quantile = 0.03,
-  bottom_sj_penalty = 0.20,
-  normalize_within_tier = TRUE
-)
+participation_rates <- c(0, 0.05, 0.2, 0.5, 0.9, 1.00)#c(0, 0.05, 0.2, 0.5, 0.9, 1.00)
 
 set.seed(base_seed); torch::torch_manual_seed(base_seed)
 
@@ -40,27 +30,9 @@ n_departments     <- nrow(departments)
 
 # ── Generate FIXED hiring schedules (deterministic from seed) ──
 yearly_hiring_schedule_burn_in <- generate_yearly_hiring_schedule(
-  n_departments, burn_in_years, departments, base_seed + 500,
-  hire_prob_by_tier = hiring_schedule$hire_prob_by_tier,
-  s_j_weight = hiring_schedule$s_j_weight,
-  s_j_exponent = hiring_schedule$s_j_exponent,
-  min_hire_prob = hiring_schedule$min_hire_prob,
-  max_hire_prob = hiring_schedule$max_hire_prob,
-  bottom_sj_quantile = hiring_schedule$bottom_sj_quantile,
-  bottom_sj_penalty = hiring_schedule$bottom_sj_penalty,
-  normalize_within_tier = hiring_schedule$normalize_within_tier
-)
+  n_departments, burn_in_years, departments, base_seed + 500)
 yearly_hiring_schedule_sim <- generate_yearly_hiring_schedule(
-  n_departments, sim_years, departments, base_seed + 600,
-  hire_prob_by_tier = hiring_schedule$hire_prob_by_tier,
-  s_j_weight = hiring_schedule$s_j_weight,
-  s_j_exponent = hiring_schedule$s_j_exponent,
-  min_hire_prob = hiring_schedule$min_hire_prob,
-  max_hire_prob = hiring_schedule$max_hire_prob,
-  bottom_sj_quantile = hiring_schedule$bottom_sj_quantile,
-  bottom_sj_penalty = hiring_schedule$bottom_sj_penalty,
-  normalize_within_tier = hiring_schedule$normalize_within_tier
-)
+  n_departments, sim_years, departments, base_seed + 600)
 
 # ── Run burn-in ──
 start_time <- Sys.time()
@@ -106,8 +78,7 @@ burn_in_artifacts <- list(
     noise_method        = noise_method,
     noise_scale         = noise_scale,
     cand_tier_cutpoints = cand_tier_cutpoints,
-    participation_rates = participation_rates,
-    hiring_schedule     = hiring_schedule
+    participation_rates = participation_rates
   )
 )
 

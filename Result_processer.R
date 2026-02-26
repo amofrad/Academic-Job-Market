@@ -81,8 +81,8 @@ for (rc in rate_keys) {
   cat(sprintf("  Rate %5s: %d result rows, %d replicates\n", rc, nr, n_rep))
 }
 
+#all_sim_results <- readRDS("all_sim_results.rds")
 
-#all_sim_results <- readRDS("all_sim_results_200.rds")
 saveRDS(all_sim_results, "all_sim_results.rds", compress = "gzip")
 cat(sprintf("\nSaved all_sim_results.rds (%.1f MB)\n",
             file.size("all_sim_results.rds") / 1e6))
