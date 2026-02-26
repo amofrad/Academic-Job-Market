@@ -1,13 +1,13 @@
 #!/usr/bin/env Rscript
 # =============================================================================
 # STAGE 3: COMBINE batch results into final all_sim_results structure
-# Usage: Rscript combine_results.R
+# Usage: Rscript Result_processer.R
 # =============================================================================
 source("Sim_Functions.R")
 
 cat("=== COMBINING RESULTS ===\n")
 
-n_batches <- 25L
+n_batches <- 10L
 
 # ── Load burn-in artifacts (for departments, config, burn-in results) ──
 artifacts <- readRDS("burn_in_artifacts.rds")
@@ -89,11 +89,17 @@ cat(sprintf("\nSaved all_sim_results.rds (%.1f MB)\n",
 
 # ── Generate figures ──
 cat("\nGenerating figures...\n")
+
 (interview_heatmap  <- make_fig_dept_interview_heatmap(all_sim_results, year_filter = c(1, 10), include_scramble = FALSE))$plot
 (hiring_heatmap     <- make_fig_dept_hiring_heatmap(all_sim_results, year_filter = c(1, 10), include_scramble = T, hire_rounds = 2))$plot
 (dept_welfare       <- make_fig_department_welfare_by_tier_normalized(all_sim_results, year_filter = c(1, 10), include_scramble = T, hire_rounds = 2))$plot_welfare_per_slot
 (cand_welfare       <- make_fig_candidate_welfare_by_tier_revised(all_sim_results, year_filter = c(1, 10), include_scramble = T, hire_rounds = 2))$plot_conditional
 (cand_participation <- make_fig_candidate_by_participation(all_sim_results, year_filter = c(1, 10), include_scramble = T, hire_rounds = 2))$plot
+
+#cand_welfare$plot_unconditional_gains
+
+
+
 
 ggsave("fig_dept_interview_heatmap.pdf",  interview_heatmap$plot,              width = 10, height = 5, device = cairo_pdf)
 ggsave("fig_dept_hiring_heatmap.pdf",     hiring_heatmap$plot,                 width = 10, height = 5, device = cairo_pdf)
@@ -109,3 +115,42 @@ saveRDS(hiring_heatmap, "hiring_heatmap.rds")
 saveRDS(dept_welfare, "dept_welfare.rds")
 saveRDS(cand_welfare, "cand_welfare.rds")
 saveRDS(cand_participation, "cand_participation.rds")
+
+
+
+
+
+
+
+
+
+
+
+
+###### DIAGNOSTICS ########
+
+
+total_change <- hiring_heatmap$data %>%
+  group_by(scenario, prestige_tier) %>%
+  summarise(total_mean_n = sum(mean_n), .groups = "drop")%>%
+  pivot_wider(
+    names_from  = prestige_tier,
+    values_from = total_mean_n,
+    values_fill = 0
+  ) %>%
+  arrange(scenario)
+
+
+pct_change <- hiring_heatmap$data %>%
+  group_by(scenario, prestige_tier) %>%
+  summarise(total_mean_n = sum(mean_n, na.rm = TRUE), .groups = "drop") %>%
+  left_join(hiring_heatmap$hiring_quotas, by = "prestige_tier") %>%
+  mutate(mean_n_per_slot = total_mean_n / quota) %>%
+  dplyr::select(scenario, prestige_tier, mean_n_per_slot) %>%
+  pivot_wider(
+    names_from  = prestige_tier,
+    values_from = mean_n_per_slot
+  )
+
+
+total_change; pct_change

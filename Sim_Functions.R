@@ -35,7 +35,7 @@ candidate_utility <- function(v_i_bar, s_j, f_j, cand_tier = NULL,
   if (is.null(prestige_sensitivity)) {
     # Shift weight modestly toward prestige to improve early regular-round acceptance.
    # beta <- 0.10 + 0.15 * v_i_bar
-    beta <- pmin(0.90, pmax(0.1, 0.1 + 0.5 * v_i_bar))
+    beta <- pmin(0.90, pmax(0.3, 0.3 + 0.2 * v_i_bar))
 
   } else {
     beta <- prestige_sensitivity
@@ -44,13 +44,13 @@ candidate_utility <- function(v_i_bar, s_j, f_j, cand_tier = NULL,
   pmin(pmax(V_ij, 1e-6), 1 - 1e-6)
 }
 
-# true_utility <- function(s_j, v_i_bar, f_j, dept_tier = NULL, cand_tier = NULL) {
-#   # Keep s_j in [0,1] but avoid overly fit-dominated utility at low s_j.
+#true_utility <- function(s_j, v_i_bar, f_j, dept_tier = NULL, cand_tier = NULL) {
+   # Keep s_j in [0,1] but avoid overly fit-dominated utility at low s_j.
 #   (v_i_bar + 1e-8)^s_j * (f_j + 1e-8)^(1 - s_j)
-# }
+#}
 
 true_utility <- function(s_j, v_i_bar, f_j, dept_tier = NULL, cand_tier = NULL) {
-  quality_floor <- 0.3  # guaranteed quality weight
+  quality_floor <- 0.01  # guaranteed quality weight
   alpha <- quality_floor + (1 - quality_floor) * s_j
   (v_i_bar + 1e-8)^alpha * (f_j + 1e-8)^(1 - alpha)
 }
@@ -179,7 +179,7 @@ calculate_f_j <- function(candidate_row, department_row, questions, gamma = 2.5)
 # that departments differentially value preference dimensions via
 # department-specific normalized weights {w_tilde_jk}.
 # =============================================================================
-calculate_f_j_batch <- function(candidates_df, dept_row, questions, gamma = 1.2) {
+calculate_f_j_batch <- function(candidates_df, dept_row, questions, gamma = 1.4) {
   n <- nrow(candidates_df)
   if (n == 0) return(numeric(0))
   if (is.data.frame(dept_row)) dept_row <- as.list(dept_row[1, ])
@@ -330,9 +330,9 @@ generate_candidates_new <- function(n_candidates, questions, seed = NULL) {
   if (!is.null(seed)) set.seed(seed)
   candidates <- tibble(
     cand_id = 1:n_candidates,
-    v_i1 = rbeta(n_candidates, 17, 8) * 0.9,
-    v_i2 = rbeta(n_candidates, 17, 8) * 0.9,
-    v_i3 = rbeta(n_candidates, 17, 8) * 0.9
+    v_i1 = rbeta(n_candidates, 2, 1.1), #* 0.9,
+    v_i2 = rbeta(n_candidates, 2, 1.1), #* 0.9,
+    v_i3 = rbeta(n_candidates, 2, 1.1), #* 0.9
   ) %>% mutate(v_i_bar = (v_i1 * v_i2 * v_i3)^(1/3))
   
   candidates <- candidates %>%
@@ -346,7 +346,21 @@ generate_candidates_new <- function(n_candidates, questions, seed = NULL) {
   n <- n_candidates; v_pctl <- candidates$quality_pctl
   within_rank <- candidates$within_tier_rank
   flexibility <- 0.3 + 0.7 * within_rank
-  
+
+  # Add idiosyncratic preference heterogeneity (uncorrelated with quality)
+  # KEY INSIGHT: HIGH-quality candidates get HIGH-VARIANCE preferences (benefit most from personalized matching)
+  #              LOW-quality candidates get LOW-VARIANCE preferences (concentrated around 0.5)
+
+  # Shape parameters: high quality → (1,1) = uniform = max variance; low quality → (5,5) = concentrated
+  # More aggressive formula: alpha = 1 + 4*(1-v_pctl)^2
+  alpha_param <- 1 + 4 * (1 - v_pctl)^2  # Tier 1 (~0.9): ~1.04, Tier 4 (~0.3): ~2.96
+  beta_param <- alpha_param  # Symmetric beta distribution
+
+  # Generate preferences with quality-dependent variance
+  teaching_focus <- rbeta(n, alpha_param, beta_param)      # 0 = research-focused, 1 = teaching-focused
+  location_priority <- rbeta(n, alpha_param, beta_param)   # 0 = location-indifferent, 1 = location-crucial
+  collab_preference <- rbeta(n, alpha_param, beta_param)   # 0 = independent, 1 = collaborative
+
   # Helper: fully vectorized weighted sampling (no apply)
   vsample <- function(choices, prob_matrix) {
     rs <- rowSums(prob_matrix)
@@ -368,9 +382,15 @@ generate_candidates_new <- function(n_candidates, questions, seed = NULL) {
   candidates$q_q14_phd_student_ratio <- pmax(0.5, pmin(5.0,
                                                        1.0 + 2.5 * runif(n) + 0.5 * v_pctl + rnorm(n, 0, 0.5)))
   
-  # Geographic setting (vectorized)
-  pm <- cbind((1-flexibility)*0.50 + flexibility*0.25, (1-flexibility)*0.30 + flexibility*0.30,
-              (1-flexibility)*0.15 + flexibility*0.30, (1-flexibility)*0.05 + flexibility*0.15)
+  # Geographic setting (vectorized) - now includes location_priority and collab_preference
+  pm <- cbind(
+    (1-flexibility)*0.50 + flexibility*0.25 - location_priority*0.2 + collab_preference*0.15,  # A (Major city) - collaborative types prefer cities
+    (1-flexibility)*0.30 + flexibility*0.30 + location_priority*0.05,                          # B (Mid-size)
+    (1-flexibility)*0.15 + flexibility*0.30 + location_priority*0.15 - collab_preference*0.1,  # C (College town)
+    (1-flexibility)*0.05 + flexibility*0.15 + location_priority*0.05 - collab_preference*0.05  # D (Rural)
+  )
+  pm <- pmax(pm, 0.02)
+  pm <- pm / rowSums(pm)  # Normalize to ensure valid probabilities
   candidates$q_q1_geographic_setting <- vsample(c("A","B","C","D"), pm)
   
   # Region (multi-select, must loop but optimized)
@@ -380,8 +400,15 @@ generate_candidates_new <- function(n_candidates, questions, seed = NULL) {
   candidates$q_q2_region <- vapply(n_reg, function(nr)
     paste(sample(reg_names, nr, prob = reg_probs, replace = FALSE), collapse = ","), character(1))
   
-  # Teaching load (vectorized)
-  pm <- cbind(pmax(0.50-0.3*flexibility,0.02), 0.30, pmax(0.15+0.2*flexibility,0.02), pmax(0.05+0.1*flexibility,0.02))
+  # Teaching load (vectorized) - now includes teaching_focus heterogeneity
+  pm <- cbind(
+    pmax(0.50-0.3*flexibility, 0.02) * (1 - teaching_focus*0.4),  # A (1-1 load) - research-focused prefer this
+    0.30,                                                          # B (1-2 load)
+    pmax(0.15+0.2*flexibility, 0.02) * (1 + teaching_focus*0.3),  # C (2-2 load)
+    pmax(0.05+0.1*flexibility, 0.02) * (1 + teaching_focus*0.5)   # D (2-3+ load) - teaching-focused more open
+  )
+  pm <- pmax(pm, 0.02)
+  pm <- pm / rowSums(pm)  # Normalize
   candidates$q_q9_typical_teaching_load <- vsample(c("A","B","C","D"), pm)
   
   # Startup (vectorized)
@@ -398,12 +425,30 @@ generate_candidates_new <- function(n_candidates, questions, seed = NULL) {
   candidates$q_q5_dual_career <- sample(c("Y","N"), n, replace=TRUE, prob=c(0.35,0.65))
   candidates$q_q8_guaranteed_summer <- sample(c("A","B","C","D"), n, replace=TRUE, prob=c(0.35,0.35,0.20,0.10))
   
-  # Course types (vectorized)
-  pm <- cbind(pmax(0.35-0.15*flexibility,0.02), 0.35, pmax(0.20+0.1*flexibility,0.02), pmax(0.10+0.05*flexibility,0.02))
+  # Course types (vectorized) - influenced by teaching_focus
+  pm <- cbind(
+    pmax(0.35-0.15*flexibility, 0.02) * (1 - teaching_focus*0.3),  # A (Graduate only) - research-focused
+    0.35,                                                           # B (Mix)
+    pmax(0.20+0.1*flexibility, 0.02) * (1 + teaching_focus*0.2),   # C (Mostly undergrad)
+    pmax(0.10+0.05*flexibility, 0.02) * (1 + teaching_focus*0.4)   # D (Undergrad only) - teaching-focused
+  )
+  pm <- pmax(pm, 0.02)
+  pm <- pm / rowSums(pm)  # Normalize
   candidates$q_q10_course_types <- vsample(c("A","B","C","D"), pm)
   
   candidates$q_q11_mentoring_program <- sample(c("A","B","C","D"), n, replace=TRUE, prob=c(0.25,0.35,0.25,0.15))
-  candidates$q_q12_research_culture <- sample(c("A","B","C","D","E"), n, replace=TRUE, prob=c(0.15,0.20,0.30,0.25,0.10))
+
+  # Research culture (vectorized) - heavily influenced by collaboration preference
+  pm <- cbind(
+    0.15 * (1.5 - collab_preference),     # A (Individual) - independent types prefer this
+    0.20,                                  # B (Mostly individual)
+    0.30,                                  # C (Balanced)
+    0.25 * (1 + collab_preference*0.6),   # D (Collaborative)
+    0.10 * (1 + collab_preference*0.8)    # E (Highly collaborative) - collaborative types prefer this
+  )
+  pm <- pmax(pm, 0.02)
+  pm <- pm / rowSums(pm)  # Normalize
+  candidates$q_q12_research_culture <- vsample(c("A","B","C","D","E"), pm)
   
   # Publication venues (vectorized)
   pm <- cbind(pmax(0.05-0.04*v_pctl,0.02), pmax(0.15-0.05*v_pctl,0.02), pmax(0.30,0.02),
@@ -411,8 +456,12 @@ generate_candidates_new <- function(n_candidates, questions, seed = NULL) {
   candidates$q_q13_publication_venues <- vsample(c("A","B","C","D","E"), pm)
   
   candidates$q_q15_medical_school_proximity <- sample(c("0","1"), n, replace=TRUE, prob=c(0.60,0.40))
-  #candidates$prestige_sensitivity <- 0.15 + 0.25 * (1 - flexibility)
-  candidates$prestige_sensitivity <- 0.2 + 0.25 * candidates$v_i_bar
+
+  # Prestige sensitivity: convex function ensures ALL candidates are primarily fit-focused
+  # This allows fit improvements at lower-tier departments to dominate prestige concerns
+  # With these low values, Tier 2-4 depts with good fit can match/exceed Tier 1 depts with mediocre fit
+  candidates$prestige_sensitivity <- 0.02 + 0.10 * (candidates$v_i_bar)^2
+
   candidates %>% dplyr::select(-quality_pctl, -within_tier_rank)
 }
 
@@ -2663,7 +2712,10 @@ run_job_market_sim_with_learned_prior <- function(departments, questions, n_cand
           filter(accepted == 1) %>%
           mutate(cand_tier_str = tier_int_to_str_local(cand_tier),
                  dept_tier_str = tier_int_to_str_local(dept_tier),
-                 V_ij = candidate_utility(v_i_bar, s_j, f_j))
+                 V_ij = if("prestige_sensitivity" %in% names(.))
+                          candidate_utility(v_i_bar, s_j, f_j, prestige_sensitivity = prestige_sensitivity)
+                        else
+                          candidate_utility(v_i_bar, s_j, f_j))
         cand_tier_metrics <- hires %>%
           group_by(cand_tier_str) %>%
           summarise(n_hired = n(), mean_V = mean(V_ij, na.rm = TRUE),
@@ -3242,10 +3294,10 @@ tier_int_to_str <- function(x) {
 # Luminance ordering: black (0) > vermillion (0.40) > blue (0.31) > sky blue (0.62)
 # Combined with linetype + shape, all four tiers remain separable in B&W print.
 tier_colors <- c(
-  "Tier 1" = "#1B613F",
-  "Tier 2" = "#1B3D61",
-  "Tier 3" = "#611B3D",
-  "Tier 4" = "#613F1B"
+  "Tier 1" = "#2C3E50",
+  "Tier 2" = "#336B5C",
+  "Tier 3" = "#C2783F",
+  "Tier 4" = "#b09446"
 )
 
 # Participation palette: two highly distinct values
@@ -3697,18 +3749,19 @@ make_fig_department_welfare_by_tier_normalized <- function(all_sim_results,
                     ymax = utility_per_dept + 1.96 * se_utility_per_dept,
                     fill = prestige_tier),
                 alpha = ribbon_alpha, linetype = 0, show.legend = FALSE) +
-    geom_line(linewidth = 1.2) +
-    geom_point(size = 3) +
+    geom_line(linewidth = 1.4) +
+    geom_point(aes(size = prestige_tier)) +
     scale_color_manual(values = tier_colors) +
     scale_fill_manual(values = tier_colors) +
-    scale_linetype_manual(values = c("solid", "dashed", "dotted", "dotdash")) +
+    scale_linetype_manual(values = c("solid", "dashed", "11", "3112")) +
     scale_shape_manual(values = c(16, 17, 15, 18)) +
+    scale_size_manual(values = c(3, 3, 3, 4.5)) +
     scale_x_continuous(breaks = c(0, 5, 20, 50, 90, 100),
                        labels = c("0", "5", "20", "50", "90", "100")) +
-    scale_y_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0.05))) +
+    scale_y_continuous(expand = expansion(mult = c(0.05, 0.05))) +
     labs(x = "Market Participation Rate (%)", y = "Mean Welfare per Department",
          color = "Department Tier", linetype = "Department Tier",
-         shape = "Department Tier") +
+         shape = "Department Tier", size = "Department Tier") +
     fig3_theme
   
   p2 <- ggplot(welfare_by_tier, aes(x = participation_rate * 100,
@@ -3721,18 +3774,19 @@ make_fig_department_welfare_by_tier_normalized <- function(all_sim_results,
                     ymax = mean_utility_per_slot + 1.96 * se_utility_per_slot,
                     fill = prestige_tier),
                 alpha = ribbon_alpha, linetype = 0, show.legend = FALSE) +
-    geom_line(linewidth = 1.2) +
-    geom_point(size = 3) +
+    geom_line(linewidth = 1.4) +
+    geom_point(aes(size = prestige_tier)) +
     scale_color_manual(values = tier_colors) +
     scale_fill_manual(values = tier_colors) +
-    scale_linetype_manual(values = c("solid", "dashed", "dotted", "dotdash")) +
+    scale_linetype_manual(values = c("solid", "dashed", "11", "3112")) +
     scale_shape_manual(values = c(16, 17, 15, 18)) +
+    scale_size_manual(values = c(3, 3, 3, 4.5)) +
     scale_x_continuous(breaks = c(0, 5, 20, 50, 90, 100),
                        labels = c("0", "5", "20", "50", "90", "100")) +
-    scale_y_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0.05))) +
+    scale_y_continuous(expand = expansion(mult = c(0.05, 0.05))) +
     labs(x = "Market Participation Rate (%)", y = "Mean Welfare per Position",
          color = "Department Tier", linetype = "Department Tier",
-         shape = "Department Tier") +
+         shape = "Department Tier", size = "Department Tier") +
     fig3_theme
   
   # Welfare gains
@@ -3761,19 +3815,20 @@ make_fig_department_welfare_by_tier_normalized <- function(all_sim_results,
                     ymax = welfare_gain_per_dept + 1.96 * se_gain,
                     fill = prestige_tier),
                 alpha = ribbon_alpha, linetype = 0, show.legend = FALSE) +
-    geom_line(linewidth = 1.2) +
-    geom_point(size = 3) +
+    geom_line(linewidth = 1.4) +
+    geom_point(aes(size = prestige_tier)) +
     geom_hline(yintercept = 0, linetype = "solid", color = "gray50", linewidth = 0.8) +
     scale_color_manual(values = tier_colors) +
     scale_fill_manual(values = tier_colors) +
-    scale_linetype_manual(values = c("solid", "dashed", "dotted", "dotdash")) +
+    scale_linetype_manual(values = c("solid", "dashed", "11", "3112")) +
     scale_shape_manual(values = c(16, 17, 15, 18)) +
+    scale_size_manual(values = c(3, 3, 3, 4.5)) +
     scale_x_continuous(breaks = c(5, 20, 50, 90, 100),
                        labels = c("5", "20", "50", "90", "100")) +
     labs(x = "Market Participation Rate (%)",
          y = "Welfare Gain per Department vs. Baseline",
          color = "Department Tier", linetype = "Department Tier",
-         shape = "Department Tier") +
+         shape = "Department Tier", size = "Department Tier") +
     fig3_theme
   
   combined_plot_2 <- p1 + p2 +
@@ -3815,7 +3870,7 @@ make_fig_candidate_welfare_by_tier_revised <- function(all_sim_results,
     if (!is.null(hire_rounds))
       matches <- matches %>% dplyr::filter(is.na(offer_round) | offer_round <= hire_rounds)
     matches <- matches %>%
-      mutate(V_ij = candidate_utility(v_i_bar, s_j, f_j))
+      mutate(V_ij = candidate_utility(v_i_bar, s_j, f_j, prestige_sensitivity = prestige_sensitivity))
     
     # Join by replicate, year, cand_id
     roster %>%
@@ -3856,6 +3911,17 @@ make_fig_candidate_welfare_by_tier_revised <- function(all_sim_results,
     ) %>%
     mutate(quality_tier = factor(quality_tier,
                                  levels = c("Tier 1","Tier 2","Tier 3","Tier 4")))
+  
+  # Unconditional gains vs baseline
+  baseline_vals_unconditional <- unconditional_welfare %>%
+    dplyr::filter(participation_rate == 0) %>%
+    dplyr::select(quality_tier, baseline_welfare = mean_welfare)
+  
+  unconditional_gains <- unconditional_welfare %>%
+    left_join(baseline_vals_unconditional, by = "quality_tier") %>%
+    mutate(welfare_gain = mean_welfare - baseline_welfare,
+           pct_gain = ifelse(baseline_welfare > 0,
+                             (mean_welfare / baseline_welfare - 1) * 100, NA_real_))
   
   # Average across replicates
   conditional_welfare <- welfare_by_rep %>%
@@ -3931,16 +3997,16 @@ make_fig_candidate_welfare_by_tier_revised <- function(all_sim_results,
                     ymax = mean_welfare + 1.96 * se_mean_welfare,
                     fill = quality_tier),
                 alpha = ribbon_alpha, linetype = 0, show.legend = FALSE) +
-    geom_line(linewidth = 1.2) +
+    geom_line(linewidth = 1.4) +
     geom_point() +
     scale_color_manual(values = tier_colors) +
     scale_fill_manual(values = tier_colors) +
-    scale_linetype_manual(values = c("solid", "dashed", "dotted", "dotdash")) +
+    scale_linetype_manual(values = c("solid", "dashed", "11", "3112")) +
     scale_shape_manual(values = c(16, 17, 15, 18)) +
     scale_size_manual(values = c(3, 3, 3, 4.5)) +
     scale_x_continuous(breaks = c(0, 5, 20, 50, 90, 100),
                        labels = c("0", "5", "20", "50", "90", "100")) +
-    scale_y_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0.05))) +
+    scale_y_continuous(expand = expansion(mult = c(0.05, 0.05))) +
     labs(x = "Market Participation Rate (%)",
          y = "Mean Candidate Utility (Unconditional)",
          color = "Candidate Tier", linetype = "Candidate Tier",
@@ -3959,16 +4025,16 @@ make_fig_candidate_welfare_by_tier_revised <- function(all_sim_results,
                     ymax = mean_welfare_if_matched + 1.96 * se_welfare,
                     fill = quality_tier),
                 alpha = ribbon_alpha, linetype = 0, show.legend = FALSE) +
-    geom_line(linewidth = 1.2) +
+    geom_line(linewidth = 1.4) +
     geom_point() +
     scale_color_manual(values = tier_colors) +
     scale_fill_manual(values = tier_colors) +
-    scale_linetype_manual(values = c("solid", "dashed", "dotted", "dotdash")) +
+    scale_linetype_manual(values = c("solid", "dashed", "11", "3112")) +
     scale_shape_manual(values = c(16, 17, 15, 18)) +
     scale_size_manual(values = c(3, 3, 3, 4.5)) +
     scale_x_continuous(breaks = c(0, 5, 20, 50, 90, 100),
                        labels = c("0", "5", "20", "50", "90", "100")) +
-    scale_y_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0.05))) +
+    scale_y_continuous(expand = expansion(mult = c(0.05, 0.05))) +
     labs(x = "Market Participation Rate (%)", y = "Mean Candidate Utility",
          color = "Candidate Tier", linetype = "Candidate Tier",
          shape = "Candidate Tier", size = "Candidate Tier") +
@@ -3983,18 +4049,44 @@ make_fig_candidate_welfare_by_tier_revised <- function(all_sim_results,
                     ymax = welfare_gain + 1.96 * se_welfare,
                     fill = quality_tier),
                 alpha = ribbon_alpha, linetype = 0, show.legend = FALSE) +
-    geom_line(linewidth = 1.2) +
-    geom_point(size = 3) +
+    geom_line(linewidth = 1.4) +
+    geom_point(aes(size = quality_tier)) +
     geom_hline(yintercept = 0, linetype = "solid", color = "gray50", linewidth = 0.8) +
     scale_color_manual(values = tier_colors) +
     scale_fill_manual(values = tier_colors) +
-    scale_linetype_manual(values = c("solid", "dashed", "dotted", "dotdash")) +
+    scale_linetype_manual(values = c("solid", "dashed", "11", "3112")) +
     scale_shape_manual(values = c(16, 17, 15, 18)) +
+    scale_size_manual(values = c(3, 3, 3, 4.5)) +
     scale_x_continuous(breaks = c(5, 20, 50, 90, 100),
                        labels = c("5", "20", "50", "90", "100")) +
     labs(x = "Market Participation Rate (%)", y = expression(Delta * bar(V)[ij]),
          color = "Candidate Tier", linetype = "Candidate Tier",
-         shape = "Candidate Tier") +
+         shape = "Candidate Tier", size = "Candidate Tier") +
+    fig4_theme
+  
+  p2_unconditional_gains <- unconditional_gains %>%
+    dplyr::filter(participation_rate > 0, !is.na(welfare_gain)) %>%
+    ggplot(aes(x = participation_rate * 100, y = welfare_gain,
+               color = quality_tier,
+               linetype = quality_tier, shape = quality_tier, group = quality_tier)) +
+    geom_ribbon(aes(ymin = welfare_gain - 1.96 * se_mean_welfare,
+                    ymax = welfare_gain + 1.96 * se_mean_welfare,
+                    fill = quality_tier),
+                alpha = ribbon_alpha, linetype = 0, show.legend = FALSE) +
+    geom_line(linewidth = 1.4) +
+    geom_point(aes(size = quality_tier)) +
+    geom_hline(yintercept = 0, linetype = "solid", color = "gray50", linewidth = 0.8) +
+    scale_color_manual(values = tier_colors) +
+    scale_fill_manual(values = tier_colors) +
+    scale_linetype_manual(values = c("solid", "dashed", "11", "3112")) +
+    scale_shape_manual(values = c(16, 17, 15, 18)) +
+    scale_size_manual(values = c(3, 3, 3, 4.5)) +
+    scale_x_continuous(breaks = c(5, 20, 50, 90, 100),
+                       labels = c("5", "20", "50", "90", "100")) +
+    labs(x = "Market Participation Rate (%)",
+         y = "Mean Candidate Utility Gain vs Baseline (Unconditional)",
+         color = "Candidate Tier", linetype = "Candidate Tier",
+         shape = "Candidate Tier", size = "Candidate Tier") +
     fig4_theme
   
   p3_alignment <- ggplot(conditional_welfare,
@@ -4005,19 +4097,20 @@ make_fig_candidate_welfare_by_tier_revised <- function(all_sim_results,
                     ymax = mean_f_j_if_matched + 1.96 * se_f_j,
                     fill = quality_tier),
                 alpha = ribbon_alpha, linetype = 0, show.legend = FALSE) +
-    geom_line(linewidth = 1.2) +
-    geom_point(size = 3) +
+    geom_line(linewidth = 1.4) +
+    geom_point(aes(size = quality_tier)) +
     scale_color_manual(values = tier_colors) +
     scale_fill_manual(values = tier_colors) +
-    scale_linetype_manual(values = c("solid", "dashed", "dotted", "dotdash")) +
+    scale_linetype_manual(values = c("solid", "dashed", "11", "3112")) +
     scale_shape_manual(values = c(16, 17, 15, 18)) +
+    scale_size_manual(values = c(3, 3, 3, 4.5)) +
     scale_x_continuous(breaks = c(0, 5, 20, 50, 90, 100),
                        labels = c("0", "5", "20", "50", "90", "100")) +
-    scale_y_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0.05))) +
+    scale_y_continuous(expand = expansion(mult = c(0.05, 0.05))) +
     labs(x = "Market Participation Rate (%)",
          y = expression(E * "[Alignment " * f[j] * " | Matched]"),
          color = "Candidate Tier", linetype = "Candidate Tier",
-         shape = "Candidate Tier") +
+         shape = "Candidate Tier", size = "Candidate Tier") +
     fig4_theme
   
   combined_2panel <- p1_conditional + p2_gains +
@@ -4028,8 +4121,10 @@ make_fig_candidate_welfare_by_tier_revised <- function(all_sim_results,
   list(plot = combined_2panel, plot_3panel = combined_3panel,
        plot_unconditional = p0_unconditional,
        plot_conditional = p1_conditional, plot_gains = p2_gains,
+       plot_unconditional_gains = p2_unconditional_gains,
        plot_alignment = p3_alignment,
        unconditional_welfare = unconditional_welfare,
+       unconditional_gains = unconditional_gains,
        conditional_welfare = conditional_welfare,
        conditional_gains = conditional_gains,
        conditional_tests = conditional_tests)
@@ -4062,7 +4157,7 @@ make_fig_candidate_by_participation <- function(all_sim_results,
   if (!is.null(hire_rounds))
     bl_results <- bl_results %>% dplyr::filter(is.na(offer_round) | offer_round <= hire_rounds)
   bl_results <- bl_results %>%
-    mutate(V_ij = candidate_utility(v_i_bar, s_j, f_j))
+    mutate(V_ij = candidate_utility(v_i_bar, s_j, f_j, prestige_sensitivity = prestige_sensitivity))
   
   bl_per_rep <- bl_roster %>%
     left_join(bl_results %>%
@@ -4103,7 +4198,7 @@ make_fig_candidate_by_participation <- function(all_sim_results,
       df <- df %>% dplyr::filter(interviewed == 1 | is.na(interviewed))
     if (!is.null(hire_rounds))
       df <- df %>% dplyr::filter(is.na(offer_round) | offer_round <= hire_rounds)
-    df <- df %>% mutate(V_ij = candidate_utility(v_i_bar, s_j, f_j))
+    df <- df %>% mutate(V_ij = candidate_utility(v_i_bar, s_j, f_j, prestige_sensitivity = prestige_sensitivity))
     
     matched_agg <- df %>%
       group_by(replicate, year, cand_id) %>%
@@ -4177,70 +4272,118 @@ make_fig_candidate_by_participation <- function(all_sim_results,
                aes(x = participation_rate * 100, y = mean_welfare,
                    color = participation_status,
                    linetype = participation_status, shape = participation_status)) +
-    geom_hline(yintercept = baseline_stats$baseline_mean_welfare,
-               linetype = "dotted", color = "gray50", linewidth = 0.8) +
+    geom_hline(aes(yintercept = baseline_stats$baseline_mean_welfare,
+                   linetype = "Baseline (\u03C1 = 0%)",
+                   color = "Baseline (\u03C1 = 0%)"),
+               linewidth = 0.9, inherit.aes = FALSE) +
     geom_ribbon(aes(ymin = mean_welfare - 1.96 * se_welfare,
                     ymax = mean_welfare + 1.96 * se_welfare,
                     fill = participation_status,
                     group = participation_status),
                 alpha = ribbon_alpha, linetype = 0, show.legend = FALSE) +
-    geom_line(linewidth = 1.2) +
+    geom_line(linewidth = 1.4) +
     geom_point(size = 3.5) +
-    scale_color_manual(values = participation_colors) +
+    scale_color_manual(
+      values = c(participation_colors, "Baseline (\u03C1 = 0%)" = "gray45"),
+      breaks = c("Participating", "Non-participating", "Baseline (\u03C1 = 0%)")) +
     scale_fill_manual(values = participation_colors) +
-    scale_linetype_manual(values = c("Participating" = "solid", "Non-participating" = "dashed")) +
-    scale_shape_manual(values = c("Participating" = 16, "Non-participating" = 17)) +
+    scale_linetype_manual(
+      values = c("Participating" = "solid", "Non-participating" = "11",
+                 "Baseline (\u03C1 = 0%)" = "dashed"),
+      breaks = c("Participating", "Non-participating", "Baseline (\u03C1 = 0%)")) +
+    scale_shape_manual(
+      values = c("Participating" = 16, "Non-participating" = 17, "Baseline (\u03C1 = 0%)" = NA),
+      breaks = c("Participating", "Non-participating", "Baseline (\u03C1 = 0%)")) +
     scale_x_continuous(breaks = c(5, 20, 50, 90), labels = c("5", "20", "50", "90")) +
     scale_y_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0.05))) +
     labs(x = "Market Participation Rate (%)", y = "Mean Candidate Welfare",
          color = NULL, linetype = NULL, shape = NULL) +
+    guides(linetype = "none", shape = "none",
+           color = guide_legend(
+             title = NULL,
+             override.aes = list(
+               linetype = c("solid", "11", "dashed"),
+               shape = c(16, 17, NA),
+               linewidth = c(1.4, 1.4, 0.9)))) +
     fig5_theme
   
   p2 <- ggplot(comparison_data,
                aes(x = participation_rate * 100, y = matching_rate,
                    color = participation_status,
                    linetype = participation_status, shape = participation_status)) +
-    geom_hline(yintercept = baseline_stats$baseline_matching_rate,
-               linetype = "dotted", color = "gray50", linewidth = 0.8) +
+    geom_hline(aes(yintercept = baseline_stats$baseline_matching_rate,
+                   linetype = "Baseline (\u03C1 = 0%)",
+                   color = "Baseline (\u03C1 = 0%)"),
+               linewidth = 0.9, inherit.aes = FALSE) +
     geom_ribbon(aes(ymin = matching_rate - 1.96 * se_matching_rate,
                     ymax = matching_rate + 1.96 * se_matching_rate,
                     fill = participation_status,
                     group = participation_status),
                 alpha = ribbon_alpha, linetype = 0, show.legend = FALSE) +
-    geom_line(linewidth = 1.2) +
+    geom_line(linewidth = 1.4) +
     geom_point(size = 3.5) +
-    scale_color_manual(values = participation_colors) +
+    scale_color_manual(
+      values = c(participation_colors, "Baseline (\u03C1 = 0%)" = "gray45"),
+      breaks = c("Participating", "Non-participating", "Baseline (\u03C1 = 0%)")) +
     scale_fill_manual(values = participation_colors) +
-    scale_linetype_manual(values = c("Participating" = "solid", "Non-participating" = "dashed")) +
-    scale_shape_manual(values = c("Participating" = 16, "Non-participating" = 17)) +
+    scale_linetype_manual(
+      values = c("Participating" = "solid", "Non-participating" = "11",
+                 "Baseline (\u03C1 = 0%)" = "dashed"),
+      breaks = c("Participating", "Non-participating", "Baseline (\u03C1 = 0%)")) +
+    scale_shape_manual(
+      values = c("Participating" = 16, "Non-participating" = 17, "Baseline (\u03C1 = 0%)" = NA),
+      breaks = c("Participating", "Non-participating", "Baseline (\u03C1 = 0%)")) +
     scale_x_continuous(breaks = c(5, 20, 50, 90), labels = c("5", "20", "50", "90")) +
     scale_y_continuous(labels = scales::percent_format(accuracy = 0.1),
                        limits = c(0, NA), expand = expansion(mult = c(0, 0.05))) +
     labs(x = "Market Participation Rate (%)", y = "Candidate Matching Rate",
          color = NULL, linetype = NULL, shape = NULL) +
+    guides(linetype = "none", shape = "none",
+           color = guide_legend(
+             title = NULL,
+             override.aes = list(
+               linetype = c("solid", "11", "dashed"),
+               shape = c(16, 17, NA),
+               linewidth = c(1.4, 1.4, 0.9)))) +
     fig5_theme
   
   p3 <- ggplot(comparison_data,
                aes(x = participation_rate * 100, y = mean_welfare_if_matched,
                    color = participation_status,
                    linetype = participation_status, shape = participation_status)) +
-    geom_hline(yintercept = baseline_stats$baseline_mean_welfare_if_matched,
-               linetype = "dotted", color = "gray50", linewidth = 0.8) +
+    geom_hline(aes(yintercept = baseline_stats$baseline_mean_welfare_if_matched,
+                   linetype = "Baseline (\u03C1 = 0%)",
+                   color = "Baseline (\u03C1 = 0%)"),
+               linewidth = 0.9, inherit.aes = FALSE) +
     geom_ribbon(aes(ymin = mean_welfare_if_matched - 1.96 * se_welfare_if_matched,
                     ymax = mean_welfare_if_matched + 1.96 * se_welfare_if_matched,
                     fill = participation_status,
                     group = participation_status),
                 alpha = ribbon_alpha, linetype = 0, show.legend = FALSE) +
-    geom_line(linewidth = 1.2) +
+    geom_line(linewidth = 1.4) +
     geom_point(size = 3.5) +
-    scale_color_manual(values = participation_colors) +
+    scale_color_manual(
+      values = c(participation_colors, "Baseline (\u03C1 = 0%)" = "gray45"),
+      breaks = c("Participating", "Non-participating", "Baseline (\u03C1 = 0%)")) +
     scale_fill_manual(values = participation_colors) +
-    scale_linetype_manual(values = c("Participating" = "solid", "Non-participating" = "dashed")) +
-    scale_shape_manual(values = c("Participating" = 16, "Non-participating" = 17)) +
+    scale_linetype_manual(
+      values = c("Participating" = "solid", "Non-participating" = "11",
+                 "Baseline (\u03C1 = 0%)" = "dashed"),
+      breaks = c("Participating", "Non-participating", "Baseline (\u03C1 = 0%)")) +
+    scale_shape_manual(
+      values = c("Participating" = 16, "Non-participating" = 17, "Baseline (\u03C1 = 0%)" = NA),
+      breaks = c("Participating", "Non-participating", "Baseline (\u03C1 = 0%)")) +
     scale_x_continuous(breaks = c(5, 20, 50, 90), labels = c("5", "20", "50", "90")) +
     scale_y_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0.05))) +
     labs(x = "Market Participation Rate (%)", y = "Mean Welfare (If Matched)",
          color = NULL, linetype = NULL, shape = NULL) +
+    guides(linetype = "none", shape = "none",
+           color = guide_legend(
+             title = NULL,
+             override.aes = list(
+               linetype = c("solid", "11", "dashed"),
+               shape = c(16, 17, NA),
+               linewidth = c(1.4, 1.4, 0.9)))) +
     fig5_theme
   
   combined_2panel <- (p1 | p2) +
