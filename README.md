@@ -1,6 +1,11 @@
-# Replication Code: Two-Sided Matching in the Academic Statistics Job Market
+# Replication Code: A Statistical Market-Design Framework for the Academic Job Market for New Statisticians
 
-This repository contains the replication code and data for the paper on two-sided matching markets applied to the academic statistics job market. The simulation framework models strategic participation via preference questionnaires in a decentralized labor market.
+This repository contains the replication code and data for:
+
+> **A Statistical Market-Design Framework for the Academic Job Market for New Statisticians**
+> Ali Kaazempur-Mofrad, Xiaowu Dai, and Xuming He
+
+The paper frames interview allocation as a statistical ranking problem under uncertainty and proposes a market-design framework that incorporates structured preference signaling into interview selection. Candidates submit a standardized questionnaire describing preferences over job characteristics, which departments combine with traditional application materials and historical hiring data to estimate candidate-specific acceptance probabilities and expected utilities. The simulation framework evaluates market outcomes under varying participation rates.
 
 ## Computational Requirements
 
@@ -118,7 +123,7 @@ Rscript code/BurnIn.R
 - `sim_years = 10` — years of simulation (determines hiring schedule)
 - `base_seed = 14` — master random seed
 - `L_repeats = 100` — bootstrap replicates for ranking uncertainty
-- `participation_rates = c(0, 0.05, 0.2, 0.5, 0.9, 1.0)` — strategic participation rates to evaluate
+- `participation_rates = c(0, 0.05, 0.2, 0.5, 0.9, 1.0)` — participation rates $\rho$ to evaluate
 
 ### Stage 2: Simulation Batches
 
@@ -155,8 +160,8 @@ This script:
 3. Generates PDF figures in `manuscript/fig/`:
    - `fig_dept_interview_heatmap.pdf` — Interview allocation across department and candidate tiers
    - `fig_dept_hiring_heatmap.pdf` — Hiring outcomes across tiers
-   - `fig_department_welfare.pdf` — Department welfare by tier (normalized per hiring position)
-   - `fig_candidate_welfare_by_tier.pdf` — Candidate welfare by quality tier
+   - `fig_department_welfare.pdf` — Department welfare per hiring position by tier
+   - `fig_candidate_welfare_by_tier.pdf` — Matched candidate utility $\bar{V}_{ij}$ by quality tier
    - `fig_candidate_by_participation.pdf` — Welfare comparison of participating vs. non-participating candidates
 
 ## Data Description
@@ -172,7 +177,7 @@ The primary input dataset containing 101 US statistics departments with the foll
 | `city`, `state` | Character | Location |
 | `peer_assessment_score` | Numeric | US News peer assessment (1-5 scale) |
 | `tier` | Character | Prestige tier (Tier 1-4, by rank) |
-| `s_j` | Numeric | Normalized prestige score [0, 1] |
+| `s_j` | Numeric | Normalized prestige parameter $s_j \in [0, 1]$ |
 | `q1_geographic_setting` | Character | A=Major metro, B=Mid-size, C=College town, D=Rural |
 | `q2_region` | Character | Northeast, Southeast, Midwest, Southwest, West Coast |
 | `q3_airport_proximity` | Character | A=<1hr, B=1-2hr, C=2-3hr, D=>3hr |
@@ -198,18 +203,18 @@ The primary input dataset containing 101 US statistics departments with the foll
 
 ## Key Functions in `Sim_Functions.R`
 
-The simulation is built on the following core components:
+The simulation is built on the following core components. Notation follows the paper: $U_{ji}$ denotes department $j$'s utility from hiring candidate $i$, $V_{ij}$ denotes candidate $i$'s utility from joining department $j$, $\pi_{ji}$ is the acceptance probability, $f_j(\mathbf{q}_i, \mathbf{d}_j)$ is the preference alignment function, and $s_j$ is the department prestige parameter.
 
 | Function | Description |
 |----------|-------------|
-| `candidate_utility()` | Candidate's utility over department prestige and fit |
-| `department_utility()` | Department's utility over candidate quality and fit |
-| `compute_f_j()` | Vectorized fit score computation (questionnaire-based) |
+| `candidate_utility()` | Candidate utility $V_{ij}$ over department prestige and fit |
+| `department_utility()` | Department utility $U_{ji}$ over candidate quality and alignment (Cobb-Douglas specification) |
+| `compute_f_j()` | Vectorized alignment score $f_j(\mathbf{q}_i, \mathbf{d}_j)$ computation (questionnaire-based) |
 | `generate_candidates_new()` | Generate candidate cohorts with heterogeneous preferences |
-| `prepare_departments()` | Initialize department attributes and weight vectors |
-| `acceptance_net` | Torch neural network for acceptance probability |
-| `predict_acceptance_probability()` | Bootstrap acceptance prediction |
-| `compute_pairwise_lower_ranks()` | Ranking with uncertainty quantification |
+| `prepare_departments()` | Initialize department attributes ($s_j$, weight vectors, questionnaire responses) |
+| `acceptance_net` | Torch neural network for estimating acceptance probability $\pi_{ji}$ |
+| `predict_acceptance_probability()` | Bootstrap acceptance prediction $\hat{\pi}_{ji}$ |
+| `compute_pairwise_lower_ranks()` | Confidence-calibrated ranking via pairwise expected utility $\mathcal{U}_{ji} = U_{ji} \cdot \pi_{ji}$ comparisons |
 | `select_interviews_sure_screening()` | Interview selection via sure screening |
 | `resolve_offers_sequential()` | Two-round offer resolution with scramble |
 | `run_burn_in_phase()` | Burn-in phase to learn department priors |
@@ -218,7 +223,7 @@ The simulation is built on the following core components:
 | `fig_interview_heatmap()` | Figure: interview allocation heatmap |
 | `fig_hiring_heatmap()` | Figure: hiring outcomes heatmap |
 | `fig_department_welfare()` | Figure: department welfare by tier |
-| `fig_candidate_welfare()` | Figure: candidate welfare by tier |
+| `fig_candidate_welfare()` | Figure: candidate welfare $\bar{V}_{ij}$ by tier |
 | `fig_participation_welfare()` | Figure: participating vs. non-participating welfare |
 
 ## Reproducing Results
@@ -249,4 +254,4 @@ The department dataset (`data/departments_dataset.csv`) is provided and does not
 
 ## License
 
-This code is provided for academic reproducibility purposes accompanying the JASA submission.
+This code is provided for academic reproducibility purposes accompanying the paper "A Statistical Market-Design Framework for the Academic Job Market for New Statisticians" (Kaazempur-Mofrad, Dai, and He).

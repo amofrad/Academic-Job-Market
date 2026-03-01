@@ -21,6 +21,9 @@ cand_participation.rds
 # Generated PDF figures
 fig_*.pdf
 
+# LaTeX source (not tracked)
+*.tex
+
 # Python virtual environments (web scraping)
 usnews_scraper_env/
 __pycache__/
