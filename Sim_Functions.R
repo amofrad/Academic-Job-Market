@@ -100,7 +100,6 @@ safe_categorical_to_index <- function(values, levels, var_name = "unknown") {
   indices
 }
 
-
 # =============================================================================
 # compute_f_j — Vectorized fit score computation
 #

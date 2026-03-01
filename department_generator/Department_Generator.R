@@ -1003,8 +1003,7 @@ departments_final %>%
 
 departments_final <- departments_final %>%
   mutate(
-    s_j = (peer_assessment_score - min(peer_assessment_score, na.rm = TRUE)) /
-      (max(peer_assessment_score, na.rm = TRUE) - min(peer_assessment_score, na.rm = TRUE))
+    s_j = (peer_assessment_score - 1) / (5 - 1)
   )
 
 
@@ -1193,11 +1192,19 @@ departments_final %>%
   ) %>%
   print()
 
-# ── Remove intermediate columns not used by the simulation ──
+# ── Remove intermediate columns and order cleanly ──
 departments_final <- departments_final %>%
-  select(-any_of(c("has_match", "n_undergrads", "cost_avg", "rate_admissions",
+  dplyr::select(-any_of(c("has_match", "n_undergrads", "cost_avg", "rate_admissions",
                     "locale_type", "department_size_faculty",
-                    "department_size_phd_students", "peer_assessment_score")))
+                    "department_size_phd_students"))) %>%
+  dplyr::select(rank, university, city, state, peer_assessment_score, tier, s_j,
+                q1_geographic_setting, q2_region, q3_airport_proximity,
+                q4_cost_of_living, q5_dual_career, q6_typical_salary_range,
+                q7_typical_startup, q8_guaranteed_summer, q9_typical_teaching_load,
+                q10_course_types, q11_mentoring_program, q12_research_culture,
+                q13_publication_venues, q14_phd_student_ratio,
+                q15_medical_school_proximity,
+                everything())
 
 # ── Save final dataset ──
 write_csv(departments_final, "../departments_dataset.csv")
