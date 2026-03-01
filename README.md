@@ -177,7 +177,7 @@ The primary input dataset containing 101 US statistics departments with the foll
 | `city`, `state` | Character | Location |
 | `peer_assessment_score` | Numeric | US News peer assessment (1-5 scale) |
 | `tier` | Character | Prestige tier (Tier 1-4, by rank) |
-| `s_j` | Numeric | Normalized prestige parameter $s_j \in [0, 1]$ |
+| `s_j` | Numeric | Department prestige parameter $s_j \in [0, 1]$ |
 | `q1_geographic_setting` | Character | A=Major metro, B=Mid-size, C=College town, D=Rural |
 | `q2_region` | Character | Northeast, Southeast, Midwest, Southwest, West Coast |
 | `q3_airport_proximity` | Character | A=<1hr, B=1-2hr, C=2-3hr, D=>3hr |
@@ -203,13 +203,13 @@ The primary input dataset containing 101 US statistics departments with the foll
 
 ## Key Functions in `Sim_Functions.R`
 
-The simulation is built on the following core components. Notation follows the paper: $U_{ji}$ denotes department $j$'s utility from hiring candidate $i$, $V_{ij}$ denotes candidate $i$'s utility from joining department $j$, $\pi_{ji}$ is the acceptance probability, $f_j(\mathbf{q}_i, \mathbf{d}_j)$ is the preference alignment function, and $s_j$ is the department prestige parameter.
+The simulation is built on the following core components. Notation follows the paper: $U_{ji}$ denotes department $j$'s utility from hiring candidate $i$, $V_{ij}$ denotes candidate $i$'s utility from joining department $j$, $\pi_{ji}$ is the acceptance probability, $f_{ji}$ is the preference alignment function, and $s_j$ is the department prestige parameter.
 
 | Function | Description |
 |----------|-------------|
 | `candidate_utility()` | Candidate utility $V_{ij}$ over department prestige and fit |
 | `department_utility()` | Department utility $U_{ji}$ over candidate quality and alignment (Cobb-Douglas specification) |
-| `compute_f_j()` | Vectorized alignment score $f_j(\mathbf{q}_i, \mathbf{d}_j)$ computation (questionnaire-based) |
+| `compute_f_j()` | Vectorized alignment score $f_{ji}$ computation (questionnaire-based) |
 | `generate_candidates_new()` | Generate candidate cohorts with heterogeneous preferences |
 | `prepare_departments()` | Initialize department attributes ($s_j$, weight vectors, questionnaire responses) |
 | `acceptance_net` | Torch neural network for estimating acceptance probability $\pi_{ji}$ |
