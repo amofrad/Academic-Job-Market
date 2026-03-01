@@ -69,7 +69,8 @@ Academic-Job-Market/
 │           └── salary_data.csv         # State-level faculty salary data (NCES 2023)
 ├── data/
 │   └── departments_dataset.csv         # Pre-built department dataset (101 departments)
-├── manuscript/                         # LaTeX source and generated figures
+├── manuscript/                         # LaTeX source
+│   └── fig/                            # Generated figures
 └── output/                             # Generated artifacts
 ```
 
@@ -151,10 +152,10 @@ Rscript code/Result_processer.R
 This script:
 1. Loads all 10 batch files and the burn-in artifacts
 2. Merges results into a single `output/all_sim_results.rds` structure
-3. Generates five publication-quality PDF figures in `manuscript/`:
+3. Generates PDF figures in `manuscript/fig/`:
    - `fig_dept_interview_heatmap.pdf` — Interview allocation across department and candidate tiers
    - `fig_dept_hiring_heatmap.pdf` — Hiring outcomes across tiers
-   - `fig_department_welfare.pdf` — Department welfare by tier (normalized per hiring slot)
+   - `fig_department_welfare.pdf` — Department welfare by tier (normalized per hiring position)
    - `fig_candidate_welfare_by_tier.pdf` — Candidate welfare by quality tier
    - `fig_candidate_by_participation.pdf` — Welfare comparison of participating vs. non-participating candidates
 
