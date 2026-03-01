@@ -1,32 +1,82 @@
 #!/usr/bin/env Rscript
 # =============================================================================
-# USNews_Rankings_Scraper.R — Parse US News 2022 Statistics department rankings
+# USNews_Rankings_Scraper.R — Scrape and parse US News 2022 Statistics rankings
 #
-# Parses JSON output from the USNews-Scrapper tool
-# (https://github.com/OvroAbir/USNews-Scrapper) to extract department rankings,
-# peer assessment scores, and locations.
+# Automates the full pipeline:
+#   1. Initializes the USNews-Scrapper Git submodule (if needed)
+#   2. Sets up a Python virtual environment and installs dependencies
+#   3. Runs the Python scraper to download rankings JSON
+#   4. Parses the JSON output to extract department rankings
 #
-# Prerequisites:
-#   1. Initialize the USNews-Scrapper submodule:
-#      git submodule update --init
-#   2. Install Python dependencies:
-#      cd USNews-Scrapper && pip install -r requirements.txt
-#   3. Run the Python scraper targeting the statistics rankings URL:
-#      cd usnews_scrapper
-#      python usnews_scrapper.py \
-#        --url="https://www.usnews.com/best-graduate-schools/top-science-schools/statistics-rankings" \
-#        -o statistics_rankings -p 2
-#   4. JSON files will be saved in USNews-Scrapper/usnews_scrapper/temp/
+# Uses the USNews-Scrapper tool (https://github.com/OvroAbir/USNews-Scrapper),
+# included as a Git submodule at USNews-Scrapper/.
+#
+# Prerequisites: Python 3.8+, Git
 #
 # Output:
 #   usnews_statistics.csv — ranked list of statistics departments with
 #     columns: rank, university, city, state, peer_assessment_score
 # =============================================================================
+
+# Set working directory to this script's location
+setwd(dirname(rstudioapi::getSourceEditorContext()$path))
+
 library(tidyverse)
 library(jsonlite)
 
+# =============================================================================
+# STEP 1: Initialize submodule if needed
+# =============================================================================
+if (!dir.exists("USNews-Scrapper/usnews_scrapper")) {
+  cat("Initializing USNews-Scrapper submodule...\n")
+  status <- system("cd .. && git submodule update --init department_generator/USNews-Scrapper")
+  if (status != 0) stop("Failed to initialize submodule. Ensure Git is installed.")
+}
+
+# =============================================================================
+# STEP 2: Set up Python virtual environment and install dependencies
+# =============================================================================
+venv_dir <- "USNews-Scrapper/.venv"
+venv_python <- file.path(venv_dir, "bin", "python")
+
+if (!file.exists(venv_python)) {
+  cat("Creating Python virtual environment...\n")
+  status <- system(sprintf("python3 -m venv %s", venv_dir))
+  if (status != 0) stop("Failed to create virtual environment. Ensure Python 3 is installed.")
+
+  cat("Installing Python dependencies...\n")
+  pip <- file.path(venv_dir, "bin", "pip")
+  system(sprintf("%s install -r USNews-Scrapper/requirements.txt", pip))
+  system(sprintf("%s install --upgrade requests urllib3 chardet idna", pip))
+}
+
+# =============================================================================
+# STEP 3: Run the Python scraper
+# =============================================================================
 temp_dir <- "USNews-Scrapper/usnews_scrapper/temp"
 
+if (!dir.exists(temp_dir) || length(list.files(temp_dir, pattern = "\\.txt$")) == 0) {
+  cat("Running US News scraper...\n")
+  abs_activate <- normalizePath(file.path(venv_dir, "bin", "activate"))
+  scraper_cmd <- sprintf(
+    'source "%s" && cd USNews-Scrapper/usnews_scrapper && python usnews_scrapper.py %s',
+    abs_activate,
+    '--url="https://www.usnews.com/best-graduate-schools/top-science-schools/statistics-rankings" -o statistics_rankings -p 2'
+  )
+  system(scraper_cmd)
+  # The scraper may exit with an error during its own tablib export step,
+  # but the raw JSON files we need are saved to temp/ before that.
+  n_files <- length(list.files(temp_dir, pattern = "\\.txt$"))
+  if (n_files == 0) stop("Scraper failed: no JSON files found in ", temp_dir)
+  cat(sprintf("Scraper downloaded %d JSON files.\n", n_files))
+} else {
+  cat("Scraped JSON files already exist in", temp_dir, "— skipping scraper.\n")
+}
+
+# =============================================================================
+# STEP 4: Parse scraped JSON into rankings CSV
+# =============================================================================
+cat("\nParsing scraped JSON files...\n")
 all_schools <- list()
 
 for (i in 1:11) {

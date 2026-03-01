@@ -59,13 +59,13 @@ Academic-Job-Market/
 ├── Result_processer.R              # Stage 3: Combine results and generate figures
 ├── departments_dataset.csv         # Pre-built department dataset (101 departments)
 ├── department_generator/           # Department dataset construction
-│   ├── USNews_Rankings_Scraper.R   # Parse US News 2022 rankings JSON
+│   ├── USNews_Rankings_Scraper.R   # Scrape and parse US News 2022 rankings
 │   ├── Department_Generator.R      # Build department attributes
+│   ├── USNews-Scrapper/            # Git submodule: Python web scraper
 │   ├── usnews_statistics.csv       # Scraped rankings (101 departments)
-│   ├── supporting_data/
-│   │   ├── cost_of_living_us.csv   # County-level cost of living (MIT Living Wage)
-│   │   └── salary_data.csv         # State-level faculty salary data (NCES 2023)
-│   └── Terminal_code.rtf           # Terminal commands for running the web scraper
+│   └── supporting_data/
+│       ├── cost_of_living_us.csv   # County-level cost of living (MIT Living Wage)
+│       └── salary_data.csv         # State-level faculty salary data (NCES 2023)
 ```
 
 ## Workflow: Order of Operations
@@ -76,29 +76,18 @@ The simulation proceeds in three stages. `Sim_Functions.R` is sourced by all sta
 
 The department dataset (`departments_dataset.csv`) is provided pre-built. To regenerate it from source data:
 
-1. **Web scraping** (requires Python):
-   ```bash
-   # Clone the US News scraper tool
-   git clone https://github.com/OvroAbir/USNews-Scrapper.git
-   cd USNews-Scrapper/usnews_scrapper
-
-   # Run scraper targeting statistics department rankings
-   python usnews_scrapper.py \
-     --url="https://www.usnews.com/best-graduate-schools/top-science-schools/statistics-rankings" \
-     -o statistics_rankings -p 2
-   ```
-
-2. **Parse scraped JSON** into structured CSV:
+1. **Scrape and parse US News rankings** (requires Python 3.8+):
    ```bash
    cd department_generator/
    Rscript USNews_Rankings_Scraper.R
    # Output: usnews_statistics.csv
    ```
+   This script automatically initializes the [USNews-Scrapper](https://github.com/OvroAbir/USNews-Scrapper) Git submodule, sets up a Python virtual environment, runs the web scraper, and parses the resulting JSON into a structured CSV.
 
-3. **Generate department attributes** by matching to College Scorecard data and estimating questionnaire responses:
+2. **Generate department attributes** by matching to College Scorecard data and estimating questionnaire responses:
    ```bash
    Rscript Department_Generator.R
-   # Output: departments_dataset.csv
+   # Output: ../departments_dataset.csv
    ```
 
    This script:
