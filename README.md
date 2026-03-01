@@ -4,6 +4,8 @@ This repository contains the replication code and data for:
 
 > **A Statistical Market-Design Framework for the Academic Job Market for New Statisticians**
 > Ali Kaazempur-Mofrad, Xiaowu Dai, and Xuming He
+>
+> Project website: [academic-markets.github.io](https://academic-markets.github.io)
 
 The paper frames interview allocation as a statistical ranking problem under uncertainty and proposes a market-design framework that incorporates structured preference signaling into interview selection. Candidates submit a standardized questionnaire describing preferences over job characteristics, which departments combine with traditional application materials and historical hiring data to estimate candidate-specific acceptance probabilities and expected utilities. The simulation framework evaluates market outcomes under varying participation rates.
 
@@ -214,7 +216,7 @@ The simulation is built on the following core components. Notation follows the p
 | `prepare_departments()` | Initialize department attributes ($s_j$, weight vectors, questionnaire responses) |
 | `acceptance_net` | Torch neural network for estimating acceptance probability $\pi_{ji}$ |
 | `predict_acceptance_probability()` | Bootstrap acceptance prediction $\hat{\pi}_{ji}$ |
-| `compute_pairwise_lower_ranks()` | Confidence-calibrated ranking via pairwise expected utility $\mathcal{U}_{ji} = U_{ji} \cdot \pi_{ji}$ comparisons |
+| `compute_pairwise_lower_ranks()` | Confidence-calibrated ranking via pairwise expected utility $U_{ji} \cdot \pi_{ji}$ comparisons |
 | `select_interviews_sure_screening()` | Interview selection via sure screening |
 | `resolve_offers_sequential()` | Two-round offer resolution with scramble |
 | `run_burn_in_phase()` | Burn-in phase to learn department priors |
