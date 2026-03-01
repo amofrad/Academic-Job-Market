@@ -46,7 +46,7 @@ torch::install_torch()
 - **Runtime estimates**:
   - `BurnIn.R` (Stage 1): ~2-3 minutes
   - `sim_batch.R` (Stage 2): ~1.5-2.5 hours per batch (20 replicates each). The 10 batches can be run in parallel on an HPC cluster, so wall-clock time for the full 200 replicates is approximately 1.5-2.5 hours when parallelized.
-  - `Result_processer.R` (Stage 3): < 1 minute
+  - `Result_processer.R` (Stage 3): ~1-2 minutes
 
 ## Repository Structure
 
@@ -83,13 +83,13 @@ The department dataset (`data/departments_dataset.csv`) is provided pre-built. T
 
 1. **Scrape and parse US News rankings** (requires Python 3.8+):
 
-   Open `code/department_generator/USNews_Rankings_Scraper.R` in RStudio and run it. The script automatically initializes the [USNews-Scrapper](https://github.com/OvroAbir/USNews-Scrapper) Git submodule, sets up a Python virtual environment, runs the web scraper, and parses the resulting JSON into a structured CSV.
+   Run `code/department_generator/USNews_Rankings_Scraper.R`. The script automatically initializes the [USNews-Scrapper](https://github.com/OvroAbir/USNews-Scrapper) Git submodule, sets up a Python virtual environment, runs the web scraper, and parses the resulting JSON into a structured CSV.
 
    Output: `code/department_generator/usnews_statistics.csv`
 
 2. **Generate department attributes** by matching to College Scorecard data and estimating questionnaire responses:
 
-   Open `code/department_generator/Department_Generator.R` in RStudio and run it.
+   Run `code/department_generator/Department_Generator.R`.
 
    Output: `data/departments_dataset.csv`
 
