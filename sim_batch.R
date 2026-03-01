@@ -1,11 +1,22 @@
 #!/usr/bin/env Rscript
 # =============================================================================
-# STAGE 2: SIM BATCH (runs as a job array task)
-# Usage: Rscript run_sim_batch.R <TASK_ID>
-#   TASK_ID 1 -> replicates 1-20
-#   TASK_ID 2 -> replicates 21-40
-#   ...
-#   TASK_ID 5 -> replicates 81-100
+# sim_batch.R — Stage 2: Parallel simulation batch (runs as a job array task)
+#
+# Each task processes a batch of 20 replicates across all participation rates.
+# Designed for HPC job arrays: 10 tasks yield 200 total replicates.
+#
+# Usage:
+#   Rscript sim_batch.R <TASK_ID>
+#
+# Arguments:
+#   TASK_ID — integer (1-10); determines replicate range:
+#     Task 1 -> replicates 1-20, Task 2 -> 21-40, ..., Task 10 -> 181-200
+#
+# Input:
+#   burn_in_artifacts.rds — output from BurnIn.R (Stage 1)
+#
+# Output:
+#   sim_batch_<TASK_ID>.rds — batch results for this task's replicates
 # =============================================================================
 source("Sim_Functions.R")
 
@@ -18,7 +29,7 @@ reps_per_task <- 20L
 rep_start <- (task_id - 1L) * reps_per_task + 1L
 rep_end   <- task_id * reps_per_task
 
-cat(sprintf("=== SIM BATCH: Task %d | Replicates %d–%d ===\n",
+cat(sprintf("=== SIM BATCH: Task %d | Replicates %d-%d ===\n",
             task_id, rep_start, rep_end))
 cat("Time:", format(Sys.time()), "\n\n")
 
@@ -26,10 +37,10 @@ cat("Time:", format(Sys.time()), "\n\n")
 cat("Loading burn_in_artifacts.rds...\n")
 artifacts <- readRDS("burn_in_artifacts.rds")
 
-departments                    <- artifacts$departments
-burn_in_historical             <- artifacts$burn_in_historical
-yearly_hiring_schedule_sim     <- artifacts$yearly_hiring_schedule_sim
-cfg                            <- artifacts$config
+departments                <- artifacts$departments
+burn_in_historical         <- artifacts$burn_in_historical
+yearly_hiring_schedule_sim <- artifacts$yearly_hiring_schedule_sim
+cfg                        <- artifacts$config
 
 base_seed           <- cfg$base_seed
 n_candidates        <- cfg$n_candidates
@@ -47,7 +58,7 @@ n_departments <- nrow(departments)
 burn_in_seed  <- base_seed
 
 # ── Reconstruct learned prior models from burn-in historical data ──
-# (torch models can't be serialized via saveRDS, so we retrain from data)
+# (torch models cannot be serialized via saveRDS; retrain from data)
 cat("Reconstructing learned prior models from burn-in data...\n")
 learned_prior_models <- reconstruct_learned_prior_models(
   burn_in_historical = burn_in_historical,
@@ -64,33 +75,34 @@ old_plan <- future::plan()
 on.exit(future::plan(old_plan), add = TRUE)
 future::plan(future::multisession, workers = n_workers)
 
-# ── Replicate function (same logic as run_multi_replicate_simulation) ──
+# ── Single-replicate function ──
 run_one_replicate <- function(rep) {
   rep_seed <- base_seed + rep * 10000
-  set.seed(rep_seed); torch::torch_manual_seed(rep_seed)
+  set.seed(rep_seed)
+  torch::torch_manual_seed(rep_seed)
   try(torch::torch_set_num_threads(1L), silent = TRUE)
   try(torch::torch_set_num_interop_threads(1L), silent = TRUE)
 
-  # Fresh candidate cohorts for sim phase
+  # Generate candidate cohorts for simulation phase
   yearly_candidate_cohorts_sim <- vector("list", sim_years)
   for (year in 1:sim_years)
     yearly_candidate_cohorts_sim[[year]] <- generate_candidates_new(
       n_candidates, questions, seed = rep_seed + burn_in_years + year)
 
-  # Strategic participation sets per year
+  # Compute participation assignments per year
   positive_rates <- participation_rates[participation_rates > 0 &
-                                        participation_rates < 1]
+                                          participation_rates < 1]
   yearly_participation_sets_sim <- vector("list", sim_years)
   for (year in 1:sim_years) {
     cohort <- add_participation_signals(
-      candidates  = yearly_candidate_cohorts_sim[[year]],
-      departments = departments,
-      questions   = questions,
+      candidates   = yearly_candidate_cohorts_sim[[year]],
+      departments  = departments,
+      questions    = questions,
       dept_weights = yearly_hiring_schedule_sim[, year]
     )
     yearly_candidate_cohorts_sim[[year]] <- cohort
     yearly_participation_sets_sim[[year]] <- generate_nested_participation_assignments(
-      candidates         = cohort,
+      candidates          = cohort,
       participation_rates = positive_rates
     )
   }
@@ -102,7 +114,7 @@ run_one_replicate <- function(rep) {
     seed               = burn_in_seed
   )
 
-  # Run each participation rate
+  # Run simulation for each participation rate
   sim_results_rep <- list()
   for (rate in participation_rates) {
     rate_chr <- as.character(rate)
@@ -118,18 +130,18 @@ run_one_replicate <- function(rep) {
       yearly_participation_sets_sim = yearly_participation_sets_sim,
       yearly_hiring_schedule_sim   = yearly_hiring_schedule_sim,
       learned_prior_models         = lpm,
-      seed             = rep_seed,
-      alpha            = alpha,
-      L_repeats        = L_repeats,
-      noise_method     = noise_method,
-      noise_scale      = noise_scale,
+      seed                = rep_seed,
+      alpha               = alpha,
+      L_repeats           = L_repeats,
+      noise_method        = noise_method,
+      noise_scale         = noise_scale,
       cand_tier_cutpoints = cand_tier_cutpoints,
-      max_offer_rounds = max_offer_rounds,
-      print_diagnostics      = FALSE,
-      return_dept_models     = FALSE,
-      return_yearly_results  = FALSE,
-      collect_ranking_panel  = FALSE,
-      keep_diagnostics       = FALSE
+      max_offer_rounds    = max_offer_rounds,
+      print_diagnostics        = FALSE,
+      return_dept_models       = FALSE,
+      return_yearly_results    = FALSE,
+      collect_ranking_panel    = FALSE,
+      keep_diagnostics         = FALSE
     )
     sim_results_rep[[rate_chr]] <- sr
   }
@@ -156,7 +168,7 @@ rep_outputs <- future.apply::future_lapply(
 elapsed <- round(difftime(Sys.time(), start_time, units = "hours"), 2)
 cat(sprintf("\nBatch %d completed in %s hours\n", task_id, elapsed))
 
-# ── Aggregate into same structure as run_multi_replicate_simulation ──
+# ── Aggregate results ──
 rate_keys <- as.character(participation_rates)
 sim_acc <- setNames(
   lapply(rate_keys, function(x) list(

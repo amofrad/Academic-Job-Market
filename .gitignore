@@ -1,0 +1,27 @@
+# macOS
+.DS_Store
+
+# R session files
+.Rhistory
+.RData
+.Rproj.user/
+
+# Generated artifacts (reproduce via pipeline)
+burn_in_artifacts.rds
+sim_batch_*.rds
+all_sim_results.rds
+
+# Generated figure data
+interview_heatmap.rds
+hiring_heatmap.rds
+dept_welfare.rds
+cand_welfare.rds
+cand_participation.rds
+
+# Generated PDF figures
+fig_*.pdf
+
+# Python virtual environments (web scraping)
+usnews_scraper_env/
+USNews-Scrapper/
+__pycache__/

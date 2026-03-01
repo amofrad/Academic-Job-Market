@@ -1,55 +1,49 @@
+#!/usr/bin/env Rscript
+# =============================================================================
+# Department_Generator.R — Construct department dataset for simulation
+#
+# Builds a complete department dataset by:
+#   1. Loading US News 2022 statistics department rankings (usnews_statistics.csv)
+#   2. Matching departments to US College Scorecard data (fuzzy name matching)
+#   3. Assigning geographic attributes (setting, region, airport, cost of living)
+#   4. Estimating compensation, teaching, and research environment attributes
+#   5. Creating "hidden gem" departments (Tier 3/4 with standout features)
+#
+# Input:
+#   usnews_statistics.csv              — from USNews_Rankings_Scraper.R
+#   supporting_data/cost_of_living_us.csv
+#   supporting_data/salary_data.csv
+#
+# Output:
+#   departments_dataset.csv — 101 departments with all questionnaire attributes
+#
+# Required packages: dplyr, tidyverse, collegeScorecard, stringdist
+# =============================================================================
 library(dplyr)
 library(tidyverse)
 library(collegeScorecard)
 library(stringdist)
 
-# Load College Scorecard data
+# ── Load source data ──
 data(school)
 data(scorecard)
 
-# Read Department Ranking Data
 departments <- read_csv("usnews_statistics.csv")
 
-# Schools missing their respective city
+# Fix missing city entries
 departments <- departments %>%
   mutate(
     city = case_when(
-      university == "Boston University"       ~ "Boston",
-      university == "University of Nebraska"  ~ "Lincoln",
-      university == "University of Alabama"   ~ "Tuscaloosa",
+      university == "Boston University"        ~ "Boston",
+      university == "University of Nebraska"   ~ "Lincoln",
+      university == "University of Alabama"    ~ "Tuscaloosa",
       university == "Portland State University" ~ "Portland",
       TRUE ~ city
     )
   )
 
-# Create tier classification
+# ── Tier classification by rank ──
 set.seed(1)
-# departments <- departments %>%
-#   mutate(tier = case_when(
-#     rank <= 20 ~ "Tier 1",
-#     rank <= 40 ~ "Tier 2",
-#     rank <= 70 ~ "Tier 3",
-#     TRUE ~ "Tier 4"
-#   ))
-# departments <- departments %>%
-#   mutate(tier = case_when(
-#     rank <= 10 ~ "Tier 1",
-#     rank <= 25 ~ "Tier 2",
-#     rank <= 50 ~ "Tier 3",
-#     TRUE ~ "Tier 4"
-#   ))
-
-# Get the cutpoints from quantiles
-# cutpoints <- quantile(departments$peer_assessment_score, probs = c(0.5, 0.75, 0.9), na.rm = TRUE)
-# 
-# # Create tiers based on quantiles
-# departments <- departments %>%
-#   mutate(tier = case_when(
-#     peer_assessment_score >= cutpoints[3] ~ "Tier 1",  # Top 10%
-#     peer_assessment_score >= cutpoints[2] ~ "Tier 2",  # 75th-90th percentile
-#     peer_assessment_score >= cutpoints[1] ~ "Tier 3",  # 50th-75th percentile
-#     TRUE ~ "Tier 4"                                     # Bottom 50%
-#   ))
 departments <- departments %>%
   mutate(
     tier = case_when(
@@ -91,8 +85,6 @@ departments <- departments %>%
     # Additional info
     department_size_faculty = NA_integer_,
     department_size_phd_students = NA_integer_
-    # has_biostat_program = NA_character_,
-    # primary_department_type = NA_character_
   )
 
 # =============================================================================
@@ -584,9 +576,6 @@ departments_enriched <- departments_enriched %>%
 
 
 
-
-
-
 # =============================================================================
 # SECTION 5: ESTIMATE REMAINING QUESTIONNAIRE RESPONSES (Q5, Q7-Q14)
 # =============================================================================
@@ -1014,11 +1003,6 @@ departments_final <- departments_final %>%
       (max(peer_assessment_score, na.rm = TRUE) - min(peer_assessment_score, na.rm = TRUE))
   )
 
-# departments_final <- departments_final %>%
-#   mutate(
-#     s_j = peer_assessment_score/5
-#   )
-
 
 # =============================================================================
 # SECTION 6: CREATE "HIDDEN GEM" DEPARTMENTS
@@ -1205,9 +1189,6 @@ departments_final %>%
   ) %>%
   print()
 
-
-# Save final dataset
+# ── Save final dataset ──
 write_csv(departments_final, "departments_dataset.csv")
-
-
-
+cat(sprintf("\nSaved departments_dataset.csv (%d departments)\n", nrow(departments_final)))

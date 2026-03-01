@@ -1,7 +1,24 @@
 #!/usr/bin/env Rscript
 # =============================================================================
-# STAGE 3: COMBINE batch results into final all_sim_results structure
-# Usage: Rscript Result_processer.R
+# Result_processer.R — Stage 3: Combine batch results and generate figures
+#
+# Merges all sim_batch_*.rds files into a single all_sim_results structure
+# and produces publication-quality PDF figures.
+#
+# Usage:
+#   Rscript Result_processer.R
+#
+# Input:
+#   burn_in_artifacts.rds        — output from BurnIn.R (Stage 1)
+#   sim_batch_1.rds ... sim_batch_10.rds — output from sim_batch.R (Stage 2)
+#
+# Output:
+#   all_sim_results.rds          — combined simulation results
+#   fig_dept_interview_heatmap.pdf
+#   fig_dept_hiring_heatmap.pdf
+#   fig_department_welfare.pdf
+#   fig_candidate_welfare_by_tier.pdf
+#   fig_candidate_by_participation.pdf
 # =============================================================================
 source("Sim_Functions.R")
 
@@ -9,8 +26,8 @@ cat("=== COMBINING RESULTS ===\n")
 
 n_batches <- 10L
 
-# ── Load burn-in artifacts (for departments, config, burn-in results) ──
-artifacts <- readRDS("burn_in_artifacts.rds")
+# ── Load burn-in artifacts ──
+artifacts   <- readRDS("burn_in_artifacts.rds")
 departments <- artifacts$departments
 cfg         <- artifacts$config
 
@@ -40,20 +57,20 @@ for (b in 1:n_batches) {
   }
 }
 
-# ── Assemble into the same structure as run_multi_replicate_simulation ──
+# ── Assemble final results structure ──
 all_sim_results <- list(
   departments = departments,
   questions   = questions,
   participation_sets = NULL,
   config = list(
-    n_candidates        = cfg$n_candidates,
-    burn_in_years       = cfg$burn_in_years,
-    sim_years           = cfg$sim_years,
-    participation_rates = cfg$participation_rates,
-    base_seed           = cfg$base_seed,
-    n_replicates        = n_batches * 20L,
-    alpha               = cfg$alpha,
-    L_repeats           = cfg$L_repeats,
+    n_candidates          = cfg$n_candidates,
+    burn_in_years         = cfg$burn_in_years,
+    sim_years             = cfg$sim_years,
+    participation_rates   = cfg$participation_rates,
+    base_seed             = cfg$base_seed,
+    n_replicates          = n_batches * 20L,
+    alpha                 = cfg$alpha,
+    L_repeats             = cfg$L_repeats,
     print_sim_diagnostics = FALSE,
     collect_rank_panel    = FALSE,
     keep_diagnostics      = FALSE
@@ -76,12 +93,10 @@ all_sim_results <- list(
 # ── Summary ──
 cat("\n=== COMBINED RESULTS SUMMARY ===\n")
 for (rc in rate_keys) {
-  nr <- nrow(all_sim_results$sim_results[[rc]]$results)
+  nr    <- nrow(all_sim_results$sim_results[[rc]]$results)
   n_rep <- length(unique(all_sim_results$sim_results[[rc]]$results$replicate))
   cat(sprintf("  Rate %5s: %d result rows, %d replicates\n", rc, nr, n_rep))
 }
-
-#all_sim_results <- readRDS("all_sim_results.rds")
 
 saveRDS(all_sim_results, "all_sim_results.rds", compress = "gzip")
 cat(sprintf("\nSaved all_sim_results.rds (%.1f MB)\n",
@@ -90,67 +105,32 @@ cat(sprintf("\nSaved all_sim_results.rds (%.1f MB)\n",
 # ── Generate figures ──
 cat("\nGenerating figures...\n")
 
-(interview_heatmap  <- make_fig_dept_interview_heatmap(all_sim_results, year_filter = c(1, 10), include_scramble = FALSE))$plot
-(hiring_heatmap     <- make_fig_dept_hiring_heatmap(all_sim_results, year_filter = c(1, 10), include_scramble = T, hire_rounds = 2))$plot
-(dept_welfare       <- make_fig_department_welfare_by_tier_normalized(all_sim_results, year_filter = c(1, 10), include_scramble = T, hire_rounds = 2))$plot_welfare_per_slot
-(cand_welfare       <- make_fig_candidate_welfare_by_tier_revised(all_sim_results, year_filter = c(1, 10), include_scramble = T, hire_rounds = 2))$plot_conditional
-(cand_participation <- make_fig_candidate_by_participation(all_sim_results, year_filter = c(1, 10), include_scramble = T, hire_rounds = 2))$plot
+interview_heatmap  <- make_fig_dept_interview_heatmap(all_sim_results,
+                        year_filter = c(1, 10), include_scramble = FALSE)
+hiring_heatmap     <- make_fig_dept_hiring_heatmap(all_sim_results,
+                        year_filter = c(1, 10), include_scramble = TRUE, hire_rounds = 2)
+dept_welfare       <- make_fig_department_welfare_by_tier_normalized(all_sim_results,
+                        year_filter = c(1, 10), include_scramble = TRUE, hire_rounds = 2)
+cand_welfare       <- make_fig_candidate_welfare_by_tier_revised(all_sim_results,
+                        year_filter = c(1, 10), include_scramble = TRUE, hire_rounds = 2)
+cand_participation <- make_fig_candidate_by_participation(all_sim_results,
+                        year_filter = c(1, 10), include_scramble = TRUE, hire_rounds = 2)
 
-#cand_welfare$plot_unconditional_gains
+ggsave("fig_dept_interview_heatmap.pdf",     interview_heatmap$plot,
+       width = 10, height = 5, device = cairo_pdf)
+ggsave("fig_dept_hiring_heatmap.pdf",        hiring_heatmap$plot,
+       width = 10, height = 5, device = cairo_pdf)
+ggsave("fig_department_welfare.pdf",         dept_welfare$plot_welfare_per_slot,
+       width = 7,  height = 5, device = cairo_pdf)
+ggsave("fig_candidate_welfare_by_tier.pdf",  cand_welfare$plot_conditional,
+       width = 7,  height = 5, device = cairo_pdf)
+ggsave("fig_candidate_by_participation.pdf", cand_participation$plot,
+       width = 10, height = 4, device = cairo_pdf)
 
-
-
-
-ggsave("fig_dept_interview_heatmap.pdf",  interview_heatmap$plot,              width = 10, height = 5, device = cairo_pdf)
-ggsave("fig_dept_hiring_heatmap.pdf",     hiring_heatmap$plot,                 width = 10, height = 5, device = cairo_pdf)
-ggsave("fig_department_welfare.pdf",      dept_welfare$plot_welfare_per_slot,   width = 7,  height = 5, device = cairo_pdf)
-ggsave("fig_candidate_welfare_by_tier.pdf", cand_welfare$plot_conditional,     width = 7,  height = 5, device = cairo_pdf)
-ggsave("fig_candidate_by_participation.pdf", cand_participation$plot,          width = 10, height = 4, device = cairo_pdf)
-
-cat("All figures saved. Done.\n")
-
-
-saveRDS(interview_heatmap, "interview_heatmap.rds")
-saveRDS(hiring_heatmap, "hiring_heatmap.rds")
-saveRDS(dept_welfare, "dept_welfare.rds")
-saveRDS(cand_welfare, "cand_welfare.rds")
+saveRDS(interview_heatmap,  "interview_heatmap.rds")
+saveRDS(hiring_heatmap,     "hiring_heatmap.rds")
+saveRDS(dept_welfare,       "dept_welfare.rds")
+saveRDS(cand_welfare,       "cand_welfare.rds")
 saveRDS(cand_participation, "cand_participation.rds")
 
-
-
-
-
-
-
-
-
-
-
-
-###### DIAGNOSTICS ########
-
-
-total_change <- hiring_heatmap$data %>%
-  group_by(scenario, prestige_tier) %>%
-  summarise(total_mean_n = sum(mean_n), .groups = "drop")%>%
-  pivot_wider(
-    names_from  = prestige_tier,
-    values_from = total_mean_n,
-    values_fill = 0
-  ) %>%
-  arrange(scenario)
-
-
-pct_change <- hiring_heatmap$data %>%
-  group_by(scenario, prestige_tier) %>%
-  summarise(total_mean_n = sum(mean_n, na.rm = TRUE), .groups = "drop") %>%
-  left_join(hiring_heatmap$hiring_quotas, by = "prestige_tier") %>%
-  mutate(mean_n_per_slot = total_mean_n / quota) %>%
-  dplyr::select(scenario, prestige_tier, mean_n_per_slot) %>%
-  pivot_wider(
-    names_from  = prestige_tier,
-    values_from = mean_n_per_slot
-  )
-
-
-total_change; pct_change
+cat("All figures saved. Done.\n")
