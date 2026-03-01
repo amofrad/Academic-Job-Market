@@ -4,7 +4,7 @@
 #
 # Builds a complete department dataset by:
 #   1. Loading US News 2022 statistics department rankings (usnews_statistics.csv)
-#   2. Matching departments to US College Scorecard data (fuzzy name matching)
+#   2. Matching departments to US College Scorecard data
 #   3. Assigning geographic attributes (setting, region, airport, cost of living)
 #   4. Estimating compensation, teaching, and research environment attributes
 #   5. Creating "hidden gem" departments (Tier 3/4 with standout features)
@@ -364,7 +364,7 @@ university_data <- school %>%
     rate_admissions, rate_completion, score_sat_avg, amnt_earnings_med_10y
   )
 
-# Fuzzy matching function
+# Matching function
 match_university_fuzzy <- function(dept_name, dept_city, dept_state) {
   normalize_name <- function(name) {
     name %>%
@@ -1192,6 +1192,12 @@ departments_final %>%
     .groups = "drop"
   ) %>%
   print()
+
+# ── Remove intermediate columns not used by the simulation ──
+departments_final <- departments_final %>%
+  select(-any_of(c("has_match", "n_undergrads", "cost_avg", "rate_admissions",
+                    "locale_type", "department_size_faculty",
+                    "department_size_phd_students", "peer_assessment_score")))
 
 # ── Save final dataset ──
 write_csv(departments_final, "../departments_dataset.csv")

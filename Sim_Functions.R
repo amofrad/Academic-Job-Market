@@ -102,14 +102,14 @@ safe_categorical_to_index <- function(values, levels, var_name = "unknown") {
 
 
 # =============================================================================
-# calculate_f_j_batch — Vectorized fit score computation
+# compute_f_j — Vectorized fit score computation
 #
 # Computes f_j for ALL candidates vs ONE department in a single call.
 # Uses the department's weight_vector (generated in prepare_departments)
 # to weight each questionnaire dimension, implementing department-specific
 # normalized weights {w_tilde_jk}.
 # =============================================================================
-calculate_f_j_batch <- function(candidates_df, dept_row, questions, gamma = 1.4) {
+compute_f_j <- function(candidates_df, dept_row, questions, gamma = 1.4) {
   n <- nrow(candidates_df)
   if (n == 0) return(numeric(0))
   if (is.data.frame(dept_row)) dept_row <- as.list(dept_row[1, ])
@@ -1143,7 +1143,7 @@ add_participation_signals <- function(candidates, departments, questions,
   
   fit_mat <- matrix(NA_real_, nrow = n_candidates, ncol = n_departments)
   for (j in seq_len(n_departments)) {
-    fit_mat[, j] <- calculate_f_j_batch(candidates, departments[j, , drop = FALSE], questions)
+    fit_mat[, j] <- compute_f_j(candidates, departments[j, , drop = FALSE], questions)
   }
   
   pool_alignment <- as.vector(fit_mat %*% dept_weights)
@@ -1357,7 +1357,7 @@ simulate_market_year_adaptive_sequential <- function(candidates, departments, qu
     else apps_all[[cand_tier_col]] <- factor(as.character(apps_all[[cand_tier_col]]), levels=c("Tier 1","Tier 2","Tier 3","Tier 4"))
     apps_all <- apps_all %>% mutate(dept_tier=tier_to_int(dept$prestige_tier %||% "Tier 4"), cand_tier=tier_to_int(.data[[cand_tier_col]]))
     # Batch compute f_j for all candidates vs this department
-    apps_all$f_j <- calculate_f_j_batch(apps_all, dept, questions)
+    apps_all$f_j <- compute_f_j(apps_all, dept, questions)
     if (shortlist_enabled) {
       allow_map <- list("Tier 1"=c("Tier 1"),"Tier 2"=c("Tier 1","Tier 2"),"Tier 3"=c("Tier 1","Tier 2","Tier 3"),"Tier 4"=c("Tier 1","Tier 2","Tier 3","Tier 4"))
       pt <- as.character(dept$prestige_tier %||% "Tier 4"); allowed <- allow_map[[pt]] %||% allow_map[["Tier 4"]]
@@ -2004,7 +2004,7 @@ simulate_market_year_with_learned_prior <- function(candidates, departments, que
     if (!is.null(precomputed_fj) && j <= ncol(precomputed_fj)) {
       apps_all$f_j <- precomputed_fj[, j]
     } else {
-      apps_all$f_j <- calculate_f_j_batch(apps_all, dept, questions)
+      apps_all$f_j <- compute_f_j(apps_all, dept, questions)
     }
 
     if (shortlist_enabled) {
@@ -2610,7 +2610,7 @@ run_multi_replicate_simulation <- function(
       n_cands_year <- nrow(cohort)
       fj_mat <- matrix(NA_real_, nrow = n_cands_year, ncol = n_departments)
       for (jj in 1:n_departments) {
-        fj_mat[, jj] <- calculate_f_j_batch(cohort, departments[jj, , drop = FALSE], questions)
+        fj_mat[, jj] <- compute_f_j(cohort, departments[jj, , drop = FALSE], questions)
       }
       yearly_fj_matrices[[year]] <- fj_mat
     }

@@ -26,7 +26,7 @@ This repository contains the replication code and data for the paper on two-side
 | `gridExtra` | >= 2.3 | Grid-based plot arrangement |
 | `janitor` | >= 2.2.0 | Data cleaning utilities |
 | `collegeScorecard` | >= 0.1.0 | US College Scorecard data (department generation only) |
-| `stringdist` | >= 0.9.0 | Fuzzy string matching (department generation only) |
+| `stringdist` | >= 0.9.0 | String matching (department generation only) |
 | `jsonlite` | >= 1.8.0 | JSON parsing (web scraping only) |
 
 Install all packages with:
@@ -103,7 +103,7 @@ The department dataset (`departments_dataset.csv`) is provided pre-built. To reg
 
    This script:
    - Loads the US News 2022 rankings of 101 statistics departments
-   - Fuzzy-matches each department to the US College Scorecard database to obtain institutional characteristics (enrollment, selectivity, public/private status, locale)
+   - Matches each department to the US College Scorecard database to obtain institutional characteristics (enrollment, selectivity, public/private status, locale)
    - Assigns geographic attributes (setting, region, airport proximity) via hand-coded lookup tables
    - Computes cost-of-living from county-level MIT Living Wage data
    - Estimates faculty salary from NCES state-level data, scaled by department tier
@@ -193,12 +193,8 @@ The primary input dataset containing 101 US statistics departments with the foll
 | `q13_publication_venues` | Character | A=Top-4, B=Applied, C=ML, D=Domain, E=Mixed |
 | `q14_phd_student_ratio` | Numeric | PhD students per faculty member |
 | `q15_medical_school_proximity` | Integer | 0/1 indicator |
-| `has_match` | Logical | Successfully matched to College Scorecard |
 | `public_private` | Character | Public or Private institution |
-| `n_undergrads` | Numeric | Number of undergraduates |
 | `university_size` | Character | Small/Medium/Large/Very Large |
-| `cost_avg` | Numeric | Average cost of attendance |
-| `rate_admissions` | Numeric | Admissions rate |
 
 ### Supporting Data
 
@@ -213,7 +209,7 @@ The simulation is built on the following core components:
 |----------|-------------|
 | `candidate_utility()` | Candidate's Cobb-Douglas utility over prestige and fit |
 | `department_utility()` | Department's utility over candidate quality and fit |
-| `calculate_f_j_batch()` | Vectorized fit score computation (questionnaire-based) |
+| `compute_f_j()` | Vectorized fit score computation (questionnaire-based) |
 | `generate_candidates_new()` | Generate candidate cohorts with heterogeneous preferences |
 | `prepare_departments()` | Initialize department attributes and weight vectors |
 | `acceptance_net` | Torch neural network for acceptance probability |
