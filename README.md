@@ -65,7 +65,7 @@ Academic-Job-Market/
 │       ├── USNews-Scrapper/            # Git submodule: Python web scraper
 │       ├── usnews_statistics.csv       # Scraped rankings (101 departments)
 │       └── supporting_data/
-│           ├── cost_of_living_us.csv   # County-level cost of living (MIT Living Wage)
+│           ├── cost_of_living_us.csv   # County-level cost of living (EPI Family Budget)
 │           └── salary_data.csv         # State-level faculty salary data (NCES 2023)
 ├── data/
 │   └── departments_dataset.csv         # Pre-built department dataset (101 departments)
@@ -97,7 +97,7 @@ The department dataset (`data/departments_dataset.csv`) is provided pre-built. T
    - Loads the US News 2022 rankings of 101 statistics departments
    - Matches each department to the US College Scorecard database to obtain institutional characteristics (enrollment, selectivity, public/private status, locale)
    - Assigns geographic attributes (setting, region, airport proximity) via hand-coded lookup tables
-   - Computes cost-of-living from county-level MIT Living Wage data
+   - Computes cost-of-living from county-level EPI Family Budget data
    - Estimates faculty salary from NCES state-level data, scaled by department tier
    - Infers remaining questionnaire responses (teaching load, startup, research culture, etc.) from institutional characteristics and tier
    - Creates "hidden gem" departments: ~25% of Tier 3/4 departments receive 1-2 attributes that rival higher-tier departments
@@ -192,7 +192,7 @@ The primary input dataset containing 101 US statistics departments with the foll
 
 ### Supporting Data
 
-- **`cost_of_living_us.csv`**: County-level cost of living from the MIT Living Wage Calculator, including housing, food, transportation, healthcare, and other costs.
+- **`cost_of_living_us.csv`**: County-level cost of living from the Economic Policy Institute (EPI) Family Budget Calculator, including housing, food, transportation, healthcare, and other costs.
 - **`salary_data.csv`**: State-level adjusted 9-month average faculty salary from the National Center for Education Statistics (NCES), 2023.
 
 ## Key Functions in `Sim_Functions.R`
@@ -201,7 +201,7 @@ The simulation is built on the following core components:
 
 | Function | Description |
 |----------|-------------|
-| `candidate_utility()` | Candidate's Cobb-Douglas utility over prestige and fit |
+| `candidate_utility()` | Candidate's utility over department prestige and fit |
 | `department_utility()` | Department's utility over candidate quality and fit |
 | `compute_f_j()` | Vectorized fit score computation (questionnaire-based) |
 | `generate_candidates_new()` | Generate candidate cohorts with heterogeneous preferences |
