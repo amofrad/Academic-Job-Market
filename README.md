@@ -7,7 +7,7 @@ This repository contains the replication code and data for:
 >
 > Project website: [academic-markets.github.io](https://academic-markets.github.io)
 
-The paper frames interview allocation as a statistical ranking problem under uncertainty and proposes a market-design framework that incorporates structured preference signaling into interview selection. Candidates submit a standardized questionnaire describing preferences over job characteristics, which departments combine with traditional application materials and historical hiring data to estimate candidate-specific acceptance probabilities and expected utilities. The simulation framework evaluates market outcomes under varying participation rates.
+The paper frames interview allocation as a statistical ranking problem under uncertainty and proposes a market-design framework that incorporates structured preference signaling into interview selection. Candidates submit a standardized questionnaire describing preferences over job characteristics, which departments combine with traditional application materials and historical hiring data to estimate candidate offer acceptance probabilities and expected utilities. The simulation framework evaluates market outcomes under varying participation rates.
 
 ## Computational Requirements
 
