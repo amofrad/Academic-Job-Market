@@ -2865,10 +2865,10 @@ tier_colors <- setNames(
   c("Tier 1", "Tier 2", "Tier 3", "Tier 4")
 )
 
-# Participation palette: two highly distinct values
-participation_colors <- c(
-  "Participating"     = "#119985",
-  "Non-participating" = "#991126"
+# Participation palette: cavaliers_retro from nbapalettes (via paletteer)
+participation_colors <- setNames(
+  as.character(paletteer_d("nbapalettes::cavaliers_retro", n = 2)),
+  c("Participating", "Non-participating")
 )
 
 # =============================================================================
@@ -3314,13 +3314,13 @@ fig_department_welfare <- function(all_sim_results,
                     ymax = utility_per_dept + 1.96 * se_utility_per_dept,
                     fill = prestige_tier),
                 alpha = ribbon_alpha, linetype = 0, show.legend = FALSE) +
-    geom_line(linewidth = 1.4) +
+    geom_line(linewidth = 1.8) +
     geom_point(aes(size = prestige_tier)) +
     scale_color_manual(values = tier_colors) +
     scale_fill_manual(values = tier_colors) +
-    scale_linetype_manual(values = c("solid", "dashed", "11", "3112")) +
+    scale_linetype_manual(values = c("solid", "solid", "solid", "solid")) +
     scale_shape_manual(values = c(16, 17, 15, 18)) +
-    scale_size_manual(values = c(3, 3, 3, 4.5)) +
+    scale_size_manual(values = c(4, 4, 4, 5.5)) +
     scale_x_continuous(breaks = c(0, 5, 20, 50, 90, 100),
                        labels = c("0", "5", "20", "50", "90", "100")) +
     scale_y_continuous(expand = expansion(mult = c(0.05, 0.05))) +
@@ -3339,13 +3339,13 @@ fig_department_welfare <- function(all_sim_results,
                     ymax = mean_utility_per_slot + 1.96 * se_utility_per_slot,
                     fill = prestige_tier),
                 alpha = ribbon_alpha, linetype = 0, show.legend = FALSE) +
-    geom_line(linewidth = 1.4) +
+    geom_line(linewidth = 1.8) +
     geom_point(aes(size = prestige_tier)) +
     scale_color_manual(values = tier_colors) +
     scale_fill_manual(values = tier_colors) +
-    scale_linetype_manual(values = c("solid", "dashed", "11", "3112")) +
+    scale_linetype_manual(values = c("solid", "solid", "solid", "solid")) +
     scale_shape_manual(values = c(16, 17, 15, 18)) +
-    scale_size_manual(values = c(3, 3, 3, 4.5)) +
+    scale_size_manual(values = c(4, 4, 4, 5.5)) +
     scale_x_continuous(breaks = c(0, 5, 20, 50, 90, 100),
                        labels = c("0", "5", "20", "50", "90", "100")) +
     scale_y_continuous(expand = expansion(mult = c(0.05, 0.05))) +
@@ -3380,14 +3380,14 @@ fig_department_welfare <- function(all_sim_results,
                     ymax = welfare_gain_per_dept + 1.96 * se_gain,
                     fill = prestige_tier),
                 alpha = ribbon_alpha, linetype = 0, show.legend = FALSE) +
-    geom_line(linewidth = 1.4) +
+    geom_line(linewidth = 1.8) +
     geom_point(aes(size = prestige_tier)) +
     geom_hline(yintercept = 0, linetype = "solid", color = "gray50", linewidth = 0.8) +
     scale_color_manual(values = tier_colors) +
     scale_fill_manual(values = tier_colors) +
-    scale_linetype_manual(values = c("solid", "dashed", "11", "3112")) +
+    scale_linetype_manual(values = c("solid", "solid", "solid", "solid")) +
     scale_shape_manual(values = c(16, 17, 15, 18)) +
-    scale_size_manual(values = c(3, 3, 3, 4.5)) +
+    scale_size_manual(values = c(4, 4, 4, 5.5)) +
     scale_x_continuous(breaks = c(5, 20, 50, 90, 100),
                        labels = c("5", "20", "50", "90", "100")) +
     labs(x = "Market Participation Rate (%)",
@@ -3562,13 +3562,13 @@ fig_candidate_welfare <- function(all_sim_results,
                     ymax = mean_welfare + 1.96 * se_mean_welfare,
                     fill = quality_tier),
                 alpha = ribbon_alpha, linetype = 0, show.legend = FALSE) +
-    geom_line(linewidth = 1.4) +
+    geom_line(linewidth = 1.8) +
     geom_point() +
     scale_color_manual(values = tier_colors) +
     scale_fill_manual(values = tier_colors) +
-    scale_linetype_manual(values = c("solid", "dashed", "11", "3112")) +
+    scale_linetype_manual(values = c("solid", "solid", "solid", "solid")) +
     scale_shape_manual(values = c(16, 17, 15, 18)) +
-    scale_size_manual(values = c(3, 3, 3, 4.5)) +
+    scale_size_manual(values = c(4, 4, 4, 5.5)) +
     scale_x_continuous(breaks = c(0, 5, 20, 50, 90, 100),
                        labels = c("0", "5", "20", "50", "90", "100")) +
     scale_y_continuous(expand = expansion(mult = c(0.05, 0.05))) +
@@ -3590,13 +3590,13 @@ fig_candidate_welfare <- function(all_sim_results,
                     ymax = mean_welfare_if_matched + 1.96 * se_welfare,
                     fill = quality_tier),
                 alpha = ribbon_alpha, linetype = 0, show.legend = FALSE) +
-    geom_line(linewidth = 1.4) +
+    geom_line(linewidth = 1.8) +
     geom_point() +
     scale_color_manual(values = tier_colors) +
     scale_fill_manual(values = tier_colors) +
-    scale_linetype_manual(values = c("solid", "dashed", "11", "3112")) +
+    scale_linetype_manual(values = c("solid", "solid", "solid", "solid")) +
     scale_shape_manual(values = c(16, 17, 15, 18)) +
-    scale_size_manual(values = c(3, 3, 3, 4.5)) +
+    scale_size_manual(values = c(4, 4, 4, 5.5)) +
     scale_x_continuous(breaks = c(0, 5, 20, 50, 90, 100),
                        labels = c("0", "5", "20", "50", "90", "100")) +
     scale_y_continuous(expand = expansion(mult = c(0.05, 0.05))) +
@@ -3614,14 +3614,14 @@ fig_candidate_welfare <- function(all_sim_results,
                     ymax = welfare_gain + 1.96 * se_welfare,
                     fill = quality_tier),
                 alpha = ribbon_alpha, linetype = 0, show.legend = FALSE) +
-    geom_line(linewidth = 1.4) +
+    geom_line(linewidth = 1.8) +
     geom_point(aes(size = quality_tier)) +
     geom_hline(yintercept = 0, linetype = "solid", color = "gray50", linewidth = 0.8) +
     scale_color_manual(values = tier_colors) +
     scale_fill_manual(values = tier_colors) +
-    scale_linetype_manual(values = c("solid", "dashed", "11", "3112")) +
+    scale_linetype_manual(values = c("solid", "solid", "solid", "solid")) +
     scale_shape_manual(values = c(16, 17, 15, 18)) +
-    scale_size_manual(values = c(3, 3, 3, 4.5)) +
+    scale_size_manual(values = c(4, 4, 4, 5.5)) +
     scale_x_continuous(breaks = c(5, 20, 50, 90, 100),
                        labels = c("5", "20", "50", "90", "100")) +
     labs(x = "Market Participation Rate (%)", y = expression(Delta * bar(V)[ij]),
@@ -3638,14 +3638,14 @@ fig_candidate_welfare <- function(all_sim_results,
                     ymax = welfare_gain + 1.96 * se_mean_welfare,
                     fill = quality_tier),
                 alpha = ribbon_alpha, linetype = 0, show.legend = FALSE) +
-    geom_line(linewidth = 1.4) +
+    geom_line(linewidth = 1.8) +
     geom_point(aes(size = quality_tier)) +
     geom_hline(yintercept = 0, linetype = "solid", color = "gray50", linewidth = 0.8) +
     scale_color_manual(values = tier_colors) +
     scale_fill_manual(values = tier_colors) +
-    scale_linetype_manual(values = c("solid", "dashed", "11", "3112")) +
+    scale_linetype_manual(values = c("solid", "solid", "solid", "solid")) +
     scale_shape_manual(values = c(16, 17, 15, 18)) +
-    scale_size_manual(values = c(3, 3, 3, 4.5)) +
+    scale_size_manual(values = c(4, 4, 4, 5.5)) +
     scale_x_continuous(breaks = c(5, 20, 50, 90, 100),
                        labels = c("5", "20", "50", "90", "100")) +
     labs(x = "Market Participation Rate (%)",
@@ -3662,13 +3662,13 @@ fig_candidate_welfare <- function(all_sim_results,
                     ymax = mean_f_j_if_matched + 1.96 * se_f_j,
                     fill = quality_tier),
                 alpha = ribbon_alpha, linetype = 0, show.legend = FALSE) +
-    geom_line(linewidth = 1.4) +
+    geom_line(linewidth = 1.8) +
     geom_point(aes(size = quality_tier)) +
     scale_color_manual(values = tier_colors) +
     scale_fill_manual(values = tier_colors) +
-    scale_linetype_manual(values = c("solid", "dashed", "11", "3112")) +
+    scale_linetype_manual(values = c("solid", "solid", "solid", "solid")) +
     scale_shape_manual(values = c(16, 17, 15, 18)) +
-    scale_size_manual(values = c(3, 3, 3, 4.5)) +
+    scale_size_manual(values = c(4, 4, 4, 5.5)) +
     scale_x_continuous(breaks = c(0, 5, 20, 50, 90, 100),
                        labels = c("0", "5", "20", "50", "90", "100")) +
     scale_y_continuous(expand = expansion(mult = c(0.05, 0.05))) +

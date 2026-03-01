@@ -20,8 +20,7 @@ This repository contains the replication code and data for the paper on two-side
 | `future` | >= 1.33.0 | Parallel execution backend |
 | `future.apply` | >= 1.11.0 | Parallel `lapply` via futures |
 | `viridis` | >= 0.6.0 | Color palettes for heatmap figures |
-| `paletteer` | >= 0.6.0 | Unified interface to color palettes |
-| `nationalparkcolors` | >= 0.2.0 | Acadia palette for tier color scheme |
+| `paletteer` | >= 0.6.0 | Color palettes for figures |
 | `patchwork` | >= 1.2.0 | Combining ggplot panels |
 | `scales` | >= 1.3.0 | Axis scale formatting |
 | `gridExtra` | >= 2.3 | Grid-based plot arrangement |
@@ -34,8 +33,7 @@ Install all packages with:
 
 ```r
 install.packages(c("tidyverse", "torch", "MASS", "Matrix", "future",
-                   "future.apply", "viridis", "paletteer",
-                   "nationalparkcolors", "patchwork", "scales",
+                   "future.apply", "viridis", "paletteer", "patchwork", "scales",
                    "gridExtra", "janitor", "collegeScorecard", "stringdist",
                    "jsonlite"))
 torch::install_torch()
