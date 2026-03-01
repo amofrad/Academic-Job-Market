@@ -19,7 +19,9 @@ This repository contains the replication code and data for the paper on two-side
 | `Matrix` | >= 1.5 | Sparse matrix operations |
 | `future` | >= 1.33.0 | Parallel execution backend |
 | `future.apply` | >= 1.11.0 | Parallel `lapply` via futures |
-| `viridis` | >= 0.6.0 | Color palettes for figures |
+| `viridis` | >= 0.6.0 | Color palettes for heatmap figures |
+| `paletteer` | >= 0.6.0 | Unified interface to color palettes |
+| `nationalparkcolors` | >= 0.2.0 | Acadia palette for tier color scheme |
 | `patchwork` | >= 1.2.0 | Combining ggplot panels |
 | `scales` | >= 1.3.0 | Axis scale formatting |
 | `gridExtra` | >= 2.3 | Grid-based plot arrangement |
@@ -32,7 +34,8 @@ Install all packages with:
 
 ```r
 install.packages(c("tidyverse", "torch", "MASS", "Matrix", "future",
-                   "future.apply", "viridis", "patchwork", "scales",
+                   "future.apply", "viridis", "paletteer",
+                   "nationalparkcolors", "patchwork", "scales",
                    "gridExtra", "janitor", "collegeScorecard", "stringdist",
                    "jsonlite"))
 torch::install_torch()
@@ -42,7 +45,10 @@ torch::install_torch()
 
 - **Memory**: >= 16 GB RAM recommended (32 GB for full 200-replicate runs)
 - **CPU**: Multi-core processor recommended; each simulation batch uses 20 parallel workers
-- **Runtime**: The full pipeline (burn-in + 200 replicates across 10 batches) takes approximately 24-48 hours on a modern multi-core workstation. Individual batches can be run in parallel on an HPC cluster.
+- **Runtime estimates**:
+  - `BurnIn.R` (Stage 1): ~2-3 minutes
+  - `sim_batch.R` (Stage 2): ~1.5-2.5 hours per batch (20 replicates each). The 10 batches can be run in parallel on an HPC cluster, so wall-clock time for the full 200 replicates is approximately 1.5-2.5 hours when parallelized.
+  - `Result_processer.R` (Stage 3): < 1 minute
 
 ## Repository Structure
 
@@ -112,7 +118,7 @@ The burn-in phase runs 20 years of baseline simulation (without strategic partic
 
 ```bash
 Rscript BurnIn.R
-# Output: burn_in_artifacts.rds
+# Output: burn_in_artifacts.rds (~2-3 minutes)
 ```
 
 **Key parameters** (set in `BurnIn.R`):
@@ -125,15 +131,15 @@ Rscript BurnIn.R
 
 ### Stage 2: Simulation Batches
 
-Each batch processes 20 independent replicates for all participation rates. Run 10 batches for 200 total replicates.
+Each batch processes 20 independent replicates for all participation rates. Run 10 batches for 200 total replicates. Each batch takes approximately 1.5-2.5 hours.
 
 ```bash
-# Run sequentially:
+# Run sequentially (~15-25 hours total):
 for i in $(seq 1 10); do
   Rscript sim_batch.R $i
 done
 
-# Or submit as HPC job array (e.g., SLURM):
+# Or submit as HPC job array for parallel execution (~1.5-2.5 hours total):
 # sbatch --array=1-10 run_sim.slurm
 ```
 
@@ -208,7 +214,7 @@ The simulation is built on the following core components:
 | Function | Description |
 |----------|-------------|
 | `candidate_utility()` | Candidate's Cobb-Douglas utility over prestige and fit |
-| `true_utility()` | Department's true utility over candidate quality and fit |
+| `department_utility()` | Department's utility over candidate quality and fit |
 | `calculate_f_j_batch()` | Vectorized fit score computation (questionnaire-based) |
 | `generate_candidates_new()` | Generate candidate cohorts with heterogeneous preferences |
 | `prepare_departments()` | Initialize department attributes and weight vectors |
@@ -216,20 +222,26 @@ The simulation is built on the following core components:
 | `predict_acceptance_probability()` | Bootstrap acceptance prediction |
 | `compute_pairwise_lower_ranks()` | Ranking with uncertainty quantification |
 | `select_interviews_sure_screening()` | Interview selection via sure screening |
-| `resolve_offers_sequential()` | Truncated DA with scramble round |
+| `resolve_offers_sequential()` | Two-round offer resolution with scramble |
 | `run_burn_in_phase()` | Burn-in phase to learn department priors |
 | `run_job_market_sim_with_learned_prior()` | Simulation with learned priors |
 | `reconstruct_learned_prior_models()` | Rebuild torch models from historical data |
+| `fig_interview_heatmap()` | Figure: interview allocation heatmap |
+| `fig_hiring_heatmap()` | Figure: hiring outcomes heatmap |
+| `fig_department_welfare()` | Figure: department welfare by tier |
+| `fig_candidate_welfare()` | Figure: candidate welfare by tier |
+| `fig_participation_welfare()` | Figure: participating vs. non-participating welfare |
 
 ## Reproducing Results
 
 To reproduce all results from the paper:
 
 ```bash
-# Step 1: Burn-in (run once, ~2-4 hours)
+# Step 1: Burn-in (run once, ~2-3 minutes)
 Rscript BurnIn.R
 
 # Step 2: Simulation batches (10 batches x 20 replicates = 200 total)
+# ~1.5-2.5 hours per batch; run in parallel on HPC for fastest results
 for i in $(seq 1 10); do
   Rscript sim_batch.R $i
 done

@@ -7,7 +7,7 @@
 #   - Questionnaire-based fit score calculation
 #   - Neural network acceptance probability models
 #   - Interview selection via sure screening
-#   - Offer resolution (truncated deferred acceptance with scramble)
+#   - Offer resolution (two-round offers with scramble)
 #   - Burn-in and learned prior infrastructure
 #   - Multi-replicate simulation orchestration
 #   - Publication-quality figure generation
@@ -24,6 +24,7 @@ suppressPackageStartupMessages({
   library(janitor)
   library(patchwork)
   library(scales)
+  library(paletteer)
   library(parallel)
   library(future)
   library(future.apply)
@@ -56,7 +57,7 @@ candidate_utility <- function(v_i_bar, s_j, f_j, cand_tier = NULL,
   pmin(pmax(V_ij, 1e-6), 1 - 1e-6)
 }
 
-true_utility <- function(s_j, v_i_bar, f_j, dept_tier = NULL, cand_tier = NULL) {
+department_utility <- function(s_j, v_i_bar, f_j, dept_tier = NULL, cand_tier = NULL) {
   quality_floor <- 0.01
   alpha <- quality_floor + (1 - quality_floor) * s_j
   (v_i_bar + 1e-8)^alpha * (f_j + 1e-8)^(1 - alpha)
@@ -101,69 +102,7 @@ safe_categorical_to_index <- function(values, levels, var_name = "unknown") {
 
 
 # =============================================================================
-# ORIGINAL calculate_f_j - kept for single-row calls (e.g. scramble fallback)
-# =============================================================================
-calculate_f_j <- function(candidate_row, department_row, questions, gamma = 2.5) {
-  if (is.data.frame(candidate_row))  candidate_row  <- as.list(candidate_row[1, ])
-  if (is.data.frame(department_row)) department_row <- as.list(department_row[1, ])
-  num_scores <- numeric(0)
-  cand_col <- candidate_row[["q_q4_cost_of_living"]]
-  dept_col <- department_row[["q4_cost_of_living"]]
-  if (!is.null(cand_col) && !is.na(cand_col) && !is.null(dept_col) && !is.na(dept_col)) {
-    cand_norm <- pmin(pmax((as.numeric(cand_col) - 60000) / 80000, 0), 1)
-    dept_norm <- pmin(pmax((as.numeric(dept_col) - 60000) / 80000, 0), 1)
-    s_col <- if (dept_norm <= cand_norm + 0.1) 1.0 else pmax(0, 1 - 1.5 * (dept_norm - cand_norm - 0.1))
-    num_scores <- c(num_scores, s_col)
-  }
-  cand_sal <- candidate_row[["q_q6_typical_salary_range"]]
-  dept_sal <- department_row[["q6_typical_salary_range"]]
-  if (!is.null(cand_sal) && !is.na(cand_sal) && !is.null(dept_sal) && !is.na(dept_sal)) {
-    cand_norm <- pmin(pmax((as.numeric(cand_sal) - 80000) / 120000, 0), 1)
-    dept_norm <- pmin(pmax((as.numeric(dept_sal) - 80000) / 120000, 0), 1)
-    s_sal <- if (dept_norm >= cand_norm - 0.1) 1.0 else pmax(0, 1 - 1.5 * (cand_norm - dept_norm - 0.1))
-    num_scores <- c(num_scores, s_sal)
-  }
-  cand_phd <- candidate_row[["q_q14_phd_student_ratio"]]
-  dept_phd <- department_row[["q14_phd_student_ratio"]]
-  if (!is.null(cand_phd) && !is.na(cand_phd) && !is.null(dept_phd) && !is.na(dept_phd)) {
-    cand_norm <- pmin(pmax((as.numeric(cand_phd) - 0.5) / 4.5, 0), 1)
-    dept_norm <- pmin(pmax((as.numeric(dept_phd) - 0.5) / 4.5, 0), 1)
-    num_scores <- c(num_scores, 1 - abs(cand_norm - dept_norm))
-  }
-  cat_scores <- numeric(0); cat_weights <- numeric(0)
-  for (q_name in names(questions$categorical)) {
-    cand_val <- candidate_row[[paste0("q_", q_name)]]
-    dept_val <- department_row[[q_name]]
-    if (is.null(cand_val) || is.na(cand_val) || is.null(dept_val) || is.na(dept_val)) next
-    if (q_name == "q2_region") {
-      cand_regions <- if(is.character(cand_val)) trimws(strsplit(cand_val, ",")[[1]]) else as.character(cand_val)
-      s_k <- as.numeric(as.character(dept_val) %in% cand_regions)
-      cat_scores <- c(cat_scores, s_k); cat_weights <- c(cat_weights, 3.0)
-    } else {
-      cand_char <- as.character(cand_val); dept_char <- as.character(dept_val)
-      if (cand_char == dept_char) { s_k <- 1.0
-      } else {
-        lvls <- questions$categorical[[q_name]]
-        cand_pos <- match(cand_char, lvls); dept_pos <- match(dept_char, lvls)
-        s_k <- if (!is.na(cand_pos) && !is.na(dept_pos)) pmax(0, 1 - abs(cand_pos - dept_pos) / (length(lvls) - 1)) else 0.5
-      }
-      weight <- switch(q_name, q1_geographic_setting = 2.0, q9_typical_teaching_load = 2.5,
-                       q7_typical_startup = 1.5, q8_guaranteed_summer = 1.5,
-                       q5_dual_career = 2.0, q12_research_culture = 1.5, 1.0)
-      cat_scores <- c(cat_scores, s_k); cat_weights <- c(cat_weights, weight)
-    }
-  }
-  num_avg <- if (length(num_scores) > 0) mean(num_scores) else 0.5
-  cat_avg <- if (length(cat_scores) > 0) sum(cat_scores * cat_weights) / sum(cat_weights) else 0.5
-  S_ij <- 0.4 * num_avg + 0.6 * cat_avg
-  f_raw <- (exp(gamma * S_ij) - 1) / (exp(gamma) - 1)
-  f <- 0.5 + 0.5 * f_raw   # remap [0,1] -> [0.5,1]
-  as.numeric(pmin(pmax(f, 0.5), 1 - 1e-6))
-}
-
-
-# =============================================================================
-# Vectorized calculate_f_j_batch with department-specific weights
+# calculate_f_j_batch — Vectorized fit score computation
 #
 # Computes f_j for ALL candidates vs ONE department in a single call.
 # Uses the department's weight_vector (generated in prepare_departments)
@@ -989,7 +928,7 @@ make_repeated_rank_draws <- function(applicant_data, L = 200, tuple_size = NULL,
   if (method == "bootstrap") {
     if (!"U_true" %in% names(applicant_data))
       applicant_data <- applicant_data %>% mutate(dept_tier=dept_tier%||%4L, cand_tier=cand_tier%||%4L,
-                                                  U_true=true_utility(s_j,v_i_bar,f_j,dept_tier,cand_tier))
+                                                  U_true=department_utility(s_j,v_i_bar,f_j,dept_tier,cand_tier))
     U_true_sub <- applicant_data$U_true[idx]; resid <- U_true_sub - U_hat
     if (all(!is.finite(resid)) || sd(resid,na.rm=TRUE)==0)
       return(list(U_draws=matrix(rep(U_hat,each=L),nrow=L,ncol=M), idx=idx, U_hat=U_hat))
@@ -1439,9 +1378,9 @@ simulate_market_year_adaptive_sequential <- function(candidates, departments, qu
     # Save pi_draws before dplyr operations strip the attribute
     pi_draws_pw <- attr(applicant_data_pw, "pi_draws")
     applicant_data_pw$f_j <- actual_f_j
-    U_det_pw <- true_utility(applicant_data_pw$s_j, applicant_data_pw$v_i_bar, applicant_data_pw$f_j_used, applicant_data_pw$dept_tier, applicant_data_pw$cand_tier)
+    U_det_pw <- department_utility(applicant_data_pw$s_j, applicant_data_pw$v_i_bar, applicant_data_pw$f_j_used, applicant_data_pw$dept_tier, applicant_data_pw$cand_tier)
     applicant_data_pw <- applicant_data_pw %>% dplyr::mutate(f_j_used=applicant_data_pw$f_j_used, U_det=U_det_pw, U_hat=U_det*pmin(pmax(pi_pred,1e-5),1-1e-5))
-    U_true_pw <- true_utility(applicant_data_pw$s_j, applicant_data_pw$v_i_bar, applicant_data_pw$f_j, applicant_data_pw$dept_tier, applicant_data_pw$cand_tier)
+    U_true_pw <- department_utility(applicant_data_pw$s_j, applicant_data_pw$v_i_bar, applicant_data_pw$f_j, applicant_data_pw$dept_tier, applicant_data_pw$cand_tier)
     applicant_data_pw$U_true <- U_true_pw; applicant_data_pw$r_true <- rank(-U_true_pw, ties.method="average"); applicant_data_pw$r_point <- rank(-applicant_data_pw$U_hat, ties.method="average")
     if (collect_ranking_panel) { rpair <- compute_pairwise_lower_ranks(applicant_data_pw, L_repeats, tuple_size, noise_method, noise_scale, alpha, pi_draws=pi_draws_pw)
     applicant_data_pw <- applicant_data_pw %>% dplyr::left_join(rpair, by="cand_id") %>% dplyr::mutate(r_pair_lb=rank_lower) %>% dplyr::select(-rank_lower) }
@@ -1479,10 +1418,12 @@ simulate_market_year_adaptive_sequential <- function(candidates, departments, qu
 
 
 # =============================================================================
-# resolve_offers_sequential
+# resolve_offers_sequential — Two-round offer resolution with scramble
 #
-# Truncated DA-like offer resolution with immediate accept/reject and scramble.
-# Candidates either accept one desirable offer per round or reject all.
+# Round 1: Each department offers its top h_j interviewed candidates;
+#   candidates accept their best offer and reject all others.
+# Round 2 (scramble): Departments with unfilled positions offer their
+#   next-best remaining interviewed candidate.
 resolve_offers_sequential <- function(interviewed_data, departments, questions,
                                       all_candidates = NULL, max_rounds = 3, seed = NULL,
                                       temperature = 0.3, noise_sd = 0.4,
@@ -2096,12 +2037,12 @@ simulate_market_year_with_learned_prior <- function(candidates, departments, que
       n_bootstrap=L_repeats, seed=j*1000+year, participation_rate=participation_rate)
     pi_draws_pw <- attr(applicant_data_pw, "pi_draws")
     applicant_data_pw$f_j <- actual_f_j
-    U_det <- true_utility(applicant_data_pw$s_j, applicant_data_pw$v_i_bar,
+    U_det <- department_utility(applicant_data_pw$s_j, applicant_data_pw$v_i_bar,
                           applicant_data_pw$f_j_used, applicant_data_pw$dept_tier, applicant_data_pw$cand_tier)
     applicant_data_pw$f_j_used <- applicant_data_pw$f_j_used
     applicant_data_pw$U_det <- U_det
     applicant_data_pw$U_hat <- U_det * pmin(pmax(applicant_data_pw$pi_pred, 1e-5), 1 - 1e-5)
-    U_true <- true_utility(applicant_data_pw$s_j, applicant_data_pw$v_i_bar,
+    U_true <- department_utility(applicant_data_pw$s_j, applicant_data_pw$v_i_bar,
                            applicant_data_pw$f_j, applicant_data_pw$dept_tier, applicant_data_pw$cand_tier)
     applicant_data_pw$U_true <- U_true
     applicant_data_pw$r_true <- rank(-U_true, ties.method="average")
@@ -2916,16 +2857,12 @@ tier_int_to_str <- function(x) {
 }
 
 # =============================================================================
-# COLOR PALETTES (grayscale-safe with distinct luminance)
+# COLOR PALETTES
 # =============================================================================
-# Tier palette: chosen for colorblind safety AND grayscale distinguishability.
-# Luminance ordering: black (0) > vermillion (0.40) > blue (0.31) > sky blue (0.62)
-# Combined with linetype + shape, all four tiers remain separable in B&W print.
-tier_colors <- c(
-  "Tier 1" = "#2C3E50",
-  "Tier 2" = "#336B5C",
-  "Tier 3" = "#C2783F",
-  "Tier 4" = "#b09446"
+# Tier palette: Acadia palette from nationalparkcolors (via paletteer)
+tier_colors <- setNames(
+  as.character(paletteer_d("nationalparkcolors::Acadia", n = 4)),
+  c("Tier 1", "Tier 2", "Tier 3", "Tier 4")
 )
 
 # Participation palette: two highly distinct values
@@ -2975,7 +2912,7 @@ participation_colors <- c(
 # =============================================================================
 # 1. INTERVIEW HEATMAP (Baseline vs Questionnaire, averaged over replicates)
 # =============================================================================
-make_fig_dept_interview_heatmap <- function(all_sim_results, year_filter = c(1, 10),
+fig_interview_heatmap <- function(all_sim_results, year_filter = c(1, 10),
                                             include_scramble = FALSE) {
   
   departments <- all_sim_results$departments %>%
@@ -3097,7 +3034,7 @@ make_fig_dept_interview_heatmap <- function(all_sim_results, year_filter = c(1, 
 # =============================================================================
 # 2. HIRING HEATMAP (Baseline vs Questionnaire, averaged over replicates)
 # =============================================================================
-make_fig_dept_hiring_heatmap <- function(all_sim_results, year_filter = c(1, 10),
+fig_hiring_heatmap <- function(all_sim_results, year_filter = c(1, 10),
                                          include_scramble = FALSE, hire_rounds = NULL) {
   
   departments <- all_sim_results$departments %>%
@@ -3216,7 +3153,7 @@ make_fig_dept_hiring_heatmap <- function(all_sim_results, year_filter = c(1, 10)
 # 3. DEPARTMENT WELFARE BY TIER (line plots, averaged over replicates)
 #    — NOW WITH TIER COLORS —
 # =============================================================================
-make_fig_department_welfare_by_tier_normalized <- function(all_sim_results,
+fig_department_welfare <- function(all_sim_results,
                                                            year_filter = c(1, 10),
                                                            include_scramble = FALSE,
                                                            hire_rounds = NULL) {
@@ -3477,7 +3414,7 @@ make_fig_department_welfare_by_tier_normalized <- function(all_sim_results,
 # 4. CANDIDATE WELFARE BY TIER (line plots, averaged over replicates)
 #    — NOW WITH TIER COLORS —
 # =============================================================================
-make_fig_candidate_welfare_by_tier_revised <- function(all_sim_results,
+fig_candidate_welfare <- function(all_sim_results,
                                                        year_filter = c(1, 10),
                                                        include_scramble = FALSE,
                                                        hire_rounds = NULL) {
@@ -3763,7 +3700,7 @@ make_fig_candidate_welfare_by_tier_revised <- function(all_sim_results,
 # 5. CANDIDATE BY PARTICIPATION (Participating vs Non-participating)
 #    — NOW WITH PARTICIPATION COLORS —
 # =============================================================================
-make_fig_candidate_by_participation <- function(all_sim_results,
+fig_participation_welfare <- function(all_sim_results,
                                                 year_filter = c(1, 10),
                                                 include_scramble = FALSE,
                                                 hire_rounds = NULL) {

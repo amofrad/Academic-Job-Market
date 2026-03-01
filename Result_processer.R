@@ -105,15 +105,15 @@ cat(sprintf("\nSaved all_sim_results.rds (%.1f MB)\n",
 # ── Generate figures ──
 cat("\nGenerating figures...\n")
 
-interview_heatmap  <- make_fig_dept_interview_heatmap(all_sim_results,
+interview_heatmap  <- fig_interview_heatmap(all_sim_results,
                         year_filter = c(1, 10), include_scramble = FALSE)
-hiring_heatmap     <- make_fig_dept_hiring_heatmap(all_sim_results,
+hiring_heatmap     <- fig_hiring_heatmap(all_sim_results,
                         year_filter = c(1, 10), include_scramble = TRUE, hire_rounds = 2)
-dept_welfare       <- make_fig_department_welfare_by_tier_normalized(all_sim_results,
+dept_welfare       <- fig_department_welfare(all_sim_results,
                         year_filter = c(1, 10), include_scramble = TRUE, hire_rounds = 2)
-cand_welfare       <- make_fig_candidate_welfare_by_tier_revised(all_sim_results,
+cand_welfare       <- fig_candidate_welfare(all_sim_results,
                         year_filter = c(1, 10), include_scramble = TRUE, hire_rounds = 2)
-cand_participation <- make_fig_candidate_by_participation(all_sim_results,
+cand_participation <- fig_participation_welfare(all_sim_results,
                         year_filter = c(1, 10), include_scramble = TRUE, hire_rounds = 2)
 
 ggsave("fig_dept_interview_heatmap.pdf",     interview_heatmap$plot,
