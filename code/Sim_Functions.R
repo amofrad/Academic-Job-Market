@@ -3156,13 +3156,13 @@ fig_department_welfare <- function(all_sim_results,
                                                            year_filter = c(1, 10),
                                                            include_scramble = FALSE,
                                                            hire_rounds = NULL) {
-  
+
   departments <- all_sim_results$departments %>%
     dplyr::select(dept_id, prestige_tier, s_j)
   yearly_hiring_schedule <- .get_hiring_schedule(all_sim_results)
   years_in_filter <- year_filter[1]:year_filter[2]
   n_departments <- nrow(departments)
-  
+
   # Quota by tier (same across replicates)
   quota_by_tier <- tibble(dept_id = 1:n_departments) %>%
     left_join(departments, by = "dept_id") %>%
@@ -3170,16 +3170,10 @@ fig_department_welfare <- function(all_sim_results,
     mutate(h_j = yearly_hiring_schedule[cbind(dept_id, year)]) %>%
     group_by(prestige_tier) %>%
     summarise(total_quota = sum(h_j), n_depts = n_distinct(dept_id), .groups = "drop")
-  
-  # Department-year quotas
-  dept_year_quotas <- tibble(dept_id = 1:n_departments) %>%
-    left_join(departments, by = "dept_id") %>%
-    crossing(year = years_in_filter) %>%
-    mutate(h_j = yearly_hiring_schedule[cbind(dept_id, year)])
-  
+
   # Extract welfare per (rate, replicate, tier)
   rate_chrs <- names(all_sim_results$sim_results)
-  
+
   welfare_by_rep <- purrr::map_dfr(rate_chrs, function(rate_chr) {
     rate <- as.numeric(rate_chr)
     df <- .get_results(all_sim_results, rate_chr, year_filter)
@@ -3190,7 +3184,7 @@ fig_department_welfare <- function(all_sim_results,
     if (!is.null(hire_rounds))
       hires <- hires %>% dplyr::filter(is.na(offer_round) | offer_round <= hire_rounds)
     if (nrow(hires) == 0) return(tibble())
-    
+
     hires %>%
       mutate(prestige_tier = tier_int_to_str(dept_tier),
              U_effective = coalesce(U_true, if ("cand_util" %in% names(.)) cand_util else NA_real_)) %>%
@@ -3209,11 +3203,11 @@ fig_department_welfare <- function(all_sim_results,
         fill_rate = ifelse(total_quota > 0, n_hires / total_quota, NA_real_)
       )
   })
-  
+
   if (nrow(welfare_by_rep) == 0) {
     message("No welfare data"); return(NULL)
   }
-  
+
   # Average across replicates
   welfare_by_tier <- welfare_by_rep %>%
     group_by(participation_rate, prestige_tier) %>%
@@ -3231,66 +3225,11 @@ fig_department_welfare <- function(all_sim_results,
               by = "prestige_tier") %>%
     mutate(prestige_tier = factor(prestige_tier,
                                   levels = c("Tier 1","Tier 2","Tier 3","Tier 4")))
-  
-  # --- Statistical tests (dept-year level, pooled across replicates) ---
-  dept_level_welfare <- purrr::map_dfr(rate_chrs, function(rate_chr) {
-    rate <- as.numeric(rate_chr)
-    df <- .get_results(all_sim_results, rate_chr, year_filter)
-    if (nrow(df) == 0) return(tibble())
-    hires <- df %>% dplyr::filter(accepted == 1)
-    if (!include_scramble)
-      hires <- hires %>% dplyr::filter(interviewed == 1 | is.na(interviewed))
-    
-    hires_agg <- hires %>%
-      mutate(U_effective = coalesce(U_true, if ("cand_util" %in% names(.)) cand_util else NA_real_)) %>%
-      group_by(replicate, dept_id, year) %>%
-      summarise(total_utility = sum(U_effective, na.rm = TRUE), n_hires = n(), .groups = "drop")
-    
-    dept_year_quotas %>%
-      crossing(replicate = unique(hires$replicate)) %>%
-      left_join(hires_agg, by = c("dept_id", "year", "replicate")) %>%
-      mutate(total_utility = coalesce(total_utility, 0),
-             n_hires = coalesce(n_hires, 0L),
-             welfare_per_slot = ifelse(h_j > 0, total_utility / h_j, NA_real_),
-             participation_rate = rate)
-  })
-  
-  cat("\n=== DEPARTMENT WELFARE GAINS BY TIER (averaged over replicates) ===\n")
-  if (!include_scramble) cat("  (scramble hires EXCLUDED)\n")
-  
-  tier_tests <- list()
-  tier_summaries <- list()
-  
-  for (tier in c("Tier 1", "Tier 2", "Tier 3", "Tier 4")) {
-    baseline_dept <- dept_level_welfare %>%
-      dplyr::filter(participation_rate == 0, prestige_tier == tier, h_j > 0) %>%
-      pull(welfare_per_slot)
-    full_dept <- dept_level_welfare %>%
-      dplyr::filter(participation_rate == 1, prestige_tier == tier, h_j > 0) %>%
-      pull(welfare_per_slot)
-    
-    if (length(baseline_dept) > 1 && length(full_dept) > 1) {
-      n_paired <- min(length(baseline_dept), length(full_dept))
-      test <- t.test(full_dept[1:n_paired], baseline_dept[1:n_paired])
-      tier_tests[[tier]] <- test
-      tier_summaries[[tier]] <- list(
-        baseline_mean = mean(baseline_dept, na.rm = TRUE),
-        full_mean = mean(full_dept, na.rm = TRUE),
-        gain = mean(full_dept, na.rm = TRUE) - mean(baseline_dept, na.rm = TRUE),
-        p_value = test$p.value
-      )
-      cat(sprintf("%s: Baseline=%.4f, Full=%.4f, Gain=%.4f (p=%.4f) %s\n",
-                  tier, mean(baseline_dept, na.rm = TRUE), mean(full_dept, na.rm = TRUE),
-                  mean(full_dept, na.rm = TRUE) - mean(baseline_dept, na.rm = TRUE),
-                  test$p.value, ifelse(test$p.value < 0.05, "\u2713", "")))
-    }
-  }
-  
-  # --- Plots (with tier colors) ---
+
+  # --- Plot: Welfare per hiring slot ---
   ribbon_alpha <- 0.15
-  
-  # Common theme for Figure 3 panels
-  fig3_theme <- theme_minimal(base_size = 14) +
+
+  plot_theme <- theme_minimal(base_size = 14) +
     theme(panel.grid.minor = element_blank(),
           panel.grid.major = element_line(color = "gray90", linewidth = 0.5),
           axis.title = element_text(size = 14, face = "bold"),
@@ -3302,38 +3241,13 @@ fig_department_welfare <- function(all_sim_results,
           legend.key.width = unit(2.5, "lines"),
           legend.spacing.x = unit(0.5, "cm"),
           plot.margin = margin(10, 10, 10, 10))
-  
-  p1 <- ggplot(welfare_by_tier, aes(x = participation_rate * 100,
-                                    y = utility_per_dept,
-                                    color = prestige_tier,
-                                    linetype = prestige_tier,
-                                    shape = prestige_tier,
-                                    group = prestige_tier)) +
-    geom_ribbon(aes(ymin = utility_per_dept - 1.96 * se_utility_per_dept,
-                    ymax = utility_per_dept + 1.96 * se_utility_per_dept,
-                    fill = prestige_tier),
-                alpha = ribbon_alpha, linetype = 0, show.legend = FALSE) +
-    geom_line(linewidth = 1.8) +
-    geom_point(aes(size = prestige_tier)) +
-    scale_color_manual(values = tier_colors) +
-    scale_fill_manual(values = tier_colors) +
-    scale_linetype_manual(values = c("solid", "solid", "solid", "solid")) +
-    scale_shape_manual(values = c(16, 17, 15, 18)) +
-    scale_size_manual(values = c(4, 4, 4, 5.5)) +
-    scale_x_continuous(breaks = c(0, 5, 20, 50, 90, 100),
-                       labels = c("0", "5", "20", "50", "90", "100")) +
-    scale_y_continuous(expand = expansion(mult = c(0.05, 0.05))) +
-    labs(x = "Market Participation Rate (%)", y = "Mean Welfare per Department",
-         color = "Department Tier", linetype = "Department Tier",
-         shape = "Department Tier", size = "Department Tier") +
-    fig3_theme
-  
-  p2 <- ggplot(welfare_by_tier, aes(x = participation_rate * 100,
-                                    y = mean_utility_per_slot,
-                                    color = prestige_tier,
-                                    linetype = prestige_tier,
-                                    shape = prestige_tier,
-                                    group = prestige_tier)) +
+
+  p <- ggplot(welfare_by_tier, aes(x = participation_rate * 100,
+                                   y = mean_utility_per_slot,
+                                   color = prestige_tier,
+                                   linetype = prestige_tier,
+                                   shape = prestige_tier,
+                                   group = prestige_tier)) +
     geom_ribbon(aes(ymin = mean_utility_per_slot - 1.96 * se_utility_per_slot,
                     ymax = mean_utility_per_slot + 1.96 * se_utility_per_slot,
                     fill = prestige_tier),
@@ -3351,82 +3265,29 @@ fig_department_welfare <- function(all_sim_results,
     labs(x = "Market Participation Rate (%)", y = "Mean Welfare per Position",
          color = "Department Tier", linetype = "Department Tier",
          shape = "Department Tier", size = "Department Tier") +
-    fig3_theme
-  
-  # Welfare gains
-  welfare_gains <- welfare_by_rep %>%
-    group_by(replicate, prestige_tier) %>%
-    mutate(baseline_upd = utility_per_dept[participation_rate == 0],
-           gain = utility_per_dept - baseline_upd) %>%
-    ungroup() %>%
-    dplyr::filter(participation_rate > 0) %>%
-    group_by(participation_rate, prestige_tier) %>%
-    summarise(
-      welfare_gain_per_dept = mean(gain, na.rm = TRUE),
-      se_gain = sd(gain, na.rm = TRUE) / sqrt(sum(!is.na(gain))),
-      .groups = "drop"
-    ) %>%
-    mutate(prestige_tier = factor(prestige_tier,
-                                  levels = c("Tier 1","Tier 2","Tier 3","Tier 4")))
-  
-  p3 <- ggplot(welfare_gains, aes(x = participation_rate * 100,
-                                  y = welfare_gain_per_dept,
-                                  color = prestige_tier,
-                                  linetype = prestige_tier,
-                                  shape = prestige_tier,
-                                  group = prestige_tier)) +
-    geom_ribbon(aes(ymin = welfare_gain_per_dept - 1.96 * se_gain,
-                    ymax = welfare_gain_per_dept + 1.96 * se_gain,
-                    fill = prestige_tier),
-                alpha = ribbon_alpha, linetype = 0, show.legend = FALSE) +
-    geom_line(linewidth = 1.8) +
-    geom_point(aes(size = prestige_tier)) +
-    geom_hline(yintercept = 0, linetype = "solid", color = "gray50", linewidth = 0.8) +
-    scale_color_manual(values = tier_colors) +
-    scale_fill_manual(values = tier_colors) +
-    scale_linetype_manual(values = c("solid", "solid", "solid", "solid")) +
-    scale_shape_manual(values = c(16, 17, 15, 18)) +
-    scale_size_manual(values = c(4, 4, 4, 5.5)) +
-    scale_x_continuous(breaks = c(5, 20, 50, 90, 100),
-                       labels = c("5", "20", "50", "90", "100")) +
-    labs(x = "Market Participation Rate (%)",
-         y = "Welfare Gain per Department vs. Baseline",
-         color = "Department Tier", linetype = "Department Tier",
-         shape = "Department Tier", size = "Department Tier") +
-    fig3_theme
-  
-  combined_plot_2 <- p1 + p2 +
-    plot_layout(ncol = 2, guides = "collect") &
-    theme(legend.position = "bottom")
-  combined_plot_3 <- p1 + p2 + p3 +
-    plot_layout(ncol = 3, guides = "collect") &
-    theme(legend.position = "bottom")
-  
-  list(plot = combined_plot_2, plot_3panel = combined_plot_3,
-       plot_total_welfare = p1, plot_welfare_per_slot = p2, plot_gains = p3,
-       tests = tier_tests, tier_summaries = tier_summaries,
-       aggregate_data = welfare_by_tier, dept_level_data = dept_level_welfare)
+    plot_theme
+
+  list(plot = p, aggregate_data = welfare_by_tier)
 }
 
 
 # =============================================================================
-# 4. CANDIDATE WELFARE BY TIER (line plots, averaged over replicates)
-#    — NOW WITH TIER COLORS —
+# 4. CANDIDATE WELFARE BY TIER (conditional, averaged over replicates)
 # =============================================================================
 fig_candidate_welfare <- function(all_sim_results,
                                                        year_filter = c(1, 10),
                                                        include_scramble = FALSE,
                                                        hire_rounds = NULL) {
-  
+
   rate_chrs <- names(all_sim_results$sim_results)
-  
+
   # Build welfare data: per (rate, replicate, quality_tier)
   welfare_by_rep <- purrr::map_dfr(rate_chrs, function(rate_chr) {
     rate <- as.numeric(rate_chr)
     roster <- .get_roster(all_sim_results, rate_chr, year_filter)
     df <- .get_results(all_sim_results, rate_chr, year_filter)
     if (nrow(df) == 0 || nrow(roster) == 0) return(tibble())
-    
+
     matches <- df %>%
       dplyr::filter(accepted == 1)
     if (!include_scramble)
@@ -3435,7 +3296,7 @@ fig_candidate_welfare <- function(all_sim_results,
       matches <- matches %>% dplyr::filter(is.na(offer_round) | offer_round <= hire_rounds)
     matches <- matches %>%
       mutate(V_ij = candidate_utility(v_i_bar, s_j, f_j, prestige_sensitivity = prestige_sensitivity))
-    
+
     # Join by replicate, year, cand_id
     roster %>%
       left_join(matches %>%
@@ -3460,11 +3321,11 @@ fig_candidate_welfare <- function(all_sim_results,
       ) %>%
       mutate(participation_rate = rate)
   })
-  
+
   if (nrow(welfare_by_rep) == 0) {
     message("No candidate welfare data"); return(NULL)
   }
-  
+
   # Average across replicates (unconditional utility: includes unmatched as zero)
   unconditional_welfare <- welfare_by_rep %>%
     group_by(participation_rate, quality_tier) %>%
@@ -3475,19 +3336,8 @@ fig_candidate_welfare <- function(all_sim_results,
     ) %>%
     mutate(quality_tier = factor(quality_tier,
                                  levels = c("Tier 1","Tier 2","Tier 3","Tier 4")))
-  
-  # Unconditional gains vs baseline
-  baseline_vals_unconditional <- unconditional_welfare %>%
-    dplyr::filter(participation_rate == 0) %>%
-    dplyr::select(quality_tier, baseline_welfare = mean_welfare)
-  
-  unconditional_gains <- unconditional_welfare %>%
-    left_join(baseline_vals_unconditional, by = "quality_tier") %>%
-    mutate(welfare_gain = mean_welfare - baseline_welfare,
-           pct_gain = ifelse(baseline_welfare > 0,
-                             (mean_welfare / baseline_welfare - 1) * 100, NA_real_))
-  
-  # Average across replicates
+
+  # Average across replicates (conditional: matched candidates only)
   conditional_welfare <- welfare_by_rep %>%
     group_by(participation_rate, quality_tier) %>%
     summarise(
@@ -3495,48 +3345,16 @@ fig_candidate_welfare <- function(all_sim_results,
       mean_welfare_if_matched = mean(mean_welfare_if_matched, na.rm = TRUE),
       se_welfare = sd(mean_welfare_if_matched, na.rm = TRUE) / sqrt(sum(!is.na(mean_welfare_if_matched))),
       mean_f_j_if_matched = mean(mean_f_j_if_matched, na.rm = TRUE),
-      se_f_j = sd(mean_f_j_if_matched, na.rm = TRUE) / sqrt(sum(!is.na(mean_f_j_if_matched))),
       mean_s_j_if_matched = mean(mean_s_j_if_matched, na.rm = TRUE),
       .groups = "drop"
     ) %>%
     mutate(quality_tier = factor(quality_tier,
                                  levels = c("Tier 1","Tier 2","Tier 3","Tier 4")))
-  
-  # Gains vs baseline
-  baseline_vals <- conditional_welfare %>%
-    dplyr::filter(participation_rate == 0) %>%
-    dplyr::select(quality_tier, baseline_welfare = mean_welfare_if_matched)
-  
-  conditional_gains <- conditional_welfare %>%
-    left_join(baseline_vals, by = "quality_tier") %>%
-    mutate(welfare_gain = mean_welfare_if_matched - baseline_welfare,
-           pct_gain = ifelse(baseline_welfare > 0,
-                             (mean_welfare_if_matched / baseline_welfare - 1) * 100, NA_real_))
-  
-  # Statistical tests
-  cat("\n=== CONDITIONAL WELFARE BY TIER (averaged over replicates) ===\n")
-  conditional_tests <- list()
-  for (tier in c("Tier 1", "Tier 2", "Tier 3", "Tier 4")) {
-    bl <- welfare_by_rep %>%
-      dplyr::filter(participation_rate == 0, quality_tier == tier) %>%
-      pull(mean_welfare_if_matched)
-    fu <- welfare_by_rep %>%
-      dplyr::filter(participation_rate == 1, quality_tier == tier) %>%
-      pull(mean_welfare_if_matched)
-    if (length(bl) >= 2 && length(fu) >= 2) {
-      test <- t.test(fu, bl)
-      conditional_tests[[tier]] <- test
-      cat(sprintf("%s: Baseline=%.4f, Full=%.4f, Gain=%.4f (p=%.4f) %s\n",
-                  tier, mean(bl, na.rm = TRUE), mean(fu, na.rm = TRUE),
-                  mean(fu, na.rm = TRUE) - mean(bl, na.rm = TRUE),
-                  test$p.value, ifelse(test$p.value < 0.05, "\u2713", "")))
-    }
-  }
-  
+
+  # --- Plot: Conditional welfare by tier ---
   ribbon_alpha <- 0.15
-  
-  # Common theme for Figure 4 panels
-  fig4_theme <- theme_minimal(base_size = 14) +
+
+  plot_theme <- theme_minimal(base_size = 14) +
     theme(panel.grid.minor = element_blank(),
           panel.grid.major = element_line(color = "gray90", linewidth = 0.5),
           axis.title = element_text(size = 14, face = "bold"),
@@ -3548,43 +3366,15 @@ fig_candidate_welfare <- function(all_sim_results,
           legend.key.width = unit(2.5, "lines"),
           legend.spacing.x = unit(0.5, "cm"),
           plot.margin = margin(10, 10, 10, 10))
-  
-  p0_unconditional <- ggplot(unconditional_welfare,
-                             aes(x = participation_rate * 100,
-                                 y = mean_welfare,
-                                 color = quality_tier,
-                                 linetype = quality_tier,
-                                 shape = quality_tier,
-                                 size = quality_tier,
-                                 group = quality_tier)) +
-    geom_ribbon(aes(ymin = mean_welfare - 1.96 * se_mean_welfare,
-                    ymax = mean_welfare + 1.96 * se_mean_welfare,
-                    fill = quality_tier),
-                alpha = ribbon_alpha, linetype = 0, show.legend = FALSE) +
-    geom_line(linewidth = 1.8) +
-    geom_point() +
-    scale_color_manual(values = tier_colors) +
-    scale_fill_manual(values = tier_colors) +
-    scale_linetype_manual(values = c("solid", "solid", "solid", "solid")) +
-    scale_shape_manual(values = c(16, 17, 15, 18)) +
-    scale_size_manual(values = c(4, 4, 4, 5.5)) +
-    scale_x_continuous(breaks = c(0, 5, 20, 50, 90, 100),
-                       labels = c("0", "5", "20", "50", "90", "100")) +
-    scale_y_continuous(expand = expansion(mult = c(0.05, 0.05))) +
-    labs(x = "Market Participation Rate (%)",
-         y = "Mean Candidate Utility (Unconditional)",
-         color = "Candidate Tier", linetype = "Candidate Tier",
-         shape = "Candidate Tier", size = "Candidate Tier") +
-    fig4_theme
-  
-  p1_conditional <- ggplot(conditional_welfare,
-                           aes(x = participation_rate * 100,
-                               y = mean_welfare_if_matched,
-                               color = quality_tier,
-                               linetype = quality_tier,
-                               shape = quality_tier,
-                               size = quality_tier,
-                               group = quality_tier)) +
+
+  p <- ggplot(conditional_welfare,
+              aes(x = participation_rate * 100,
+                  y = mean_welfare_if_matched,
+                  color = quality_tier,
+                  linetype = quality_tier,
+                  shape = quality_tier,
+                  size = quality_tier,
+                  group = quality_tier)) +
     geom_ribbon(aes(ymin = mean_welfare_if_matched - 1.96 * se_welfare,
                     ymax = mean_welfare_if_matched + 1.96 * se_welfare,
                     fill = quality_tier),
@@ -3602,96 +3392,11 @@ fig_candidate_welfare <- function(all_sim_results,
     labs(x = "Market Participation Rate (%)", y = "Mean Candidate Utility",
          color = "Candidate Tier", linetype = "Candidate Tier",
          shape = "Candidate Tier", size = "Candidate Tier") +
-    fig4_theme
-  
-  p2_gains <- conditional_gains %>%
-    dplyr::filter(participation_rate > 0, !is.na(welfare_gain)) %>%
-    ggplot(aes(x = participation_rate * 100, y = welfare_gain,
-               color = quality_tier,
-               linetype = quality_tier, shape = quality_tier, group = quality_tier)) +
-    geom_ribbon(aes(ymin = welfare_gain - 1.96 * se_welfare,
-                    ymax = welfare_gain + 1.96 * se_welfare,
-                    fill = quality_tier),
-                alpha = ribbon_alpha, linetype = 0, show.legend = FALSE) +
-    geom_line(linewidth = 1.8) +
-    geom_point(aes(size = quality_tier)) +
-    geom_hline(yintercept = 0, linetype = "solid", color = "gray50", linewidth = 0.8) +
-    scale_color_manual(values = tier_colors) +
-    scale_fill_manual(values = tier_colors) +
-    scale_linetype_manual(values = c("solid", "solid", "solid", "solid")) +
-    scale_shape_manual(values = c(16, 17, 15, 18)) +
-    scale_size_manual(values = c(4, 4, 4, 5.5)) +
-    scale_x_continuous(breaks = c(5, 20, 50, 90, 100),
-                       labels = c("5", "20", "50", "90", "100")) +
-    labs(x = "Market Participation Rate (%)", y = expression(Delta * bar(V)[ij]),
-         color = "Candidate Tier", linetype = "Candidate Tier",
-         shape = "Candidate Tier", size = "Candidate Tier") +
-    fig4_theme
-  
-  p2_unconditional_gains <- unconditional_gains %>%
-    dplyr::filter(participation_rate > 0, !is.na(welfare_gain)) %>%
-    ggplot(aes(x = participation_rate * 100, y = welfare_gain,
-               color = quality_tier,
-               linetype = quality_tier, shape = quality_tier, group = quality_tier)) +
-    geom_ribbon(aes(ymin = welfare_gain - 1.96 * se_mean_welfare,
-                    ymax = welfare_gain + 1.96 * se_mean_welfare,
-                    fill = quality_tier),
-                alpha = ribbon_alpha, linetype = 0, show.legend = FALSE) +
-    geom_line(linewidth = 1.8) +
-    geom_point(aes(size = quality_tier)) +
-    geom_hline(yintercept = 0, linetype = "solid", color = "gray50", linewidth = 0.8) +
-    scale_color_manual(values = tier_colors) +
-    scale_fill_manual(values = tier_colors) +
-    scale_linetype_manual(values = c("solid", "solid", "solid", "solid")) +
-    scale_shape_manual(values = c(16, 17, 15, 18)) +
-    scale_size_manual(values = c(4, 4, 4, 5.5)) +
-    scale_x_continuous(breaks = c(5, 20, 50, 90, 100),
-                       labels = c("5", "20", "50", "90", "100")) +
-    labs(x = "Market Participation Rate (%)",
-         y = "Mean Candidate Utility Gain vs Baseline (Unconditional)",
-         color = "Candidate Tier", linetype = "Candidate Tier",
-         shape = "Candidate Tier", size = "Candidate Tier") +
-    fig4_theme
-  
-  p3_alignment <- ggplot(conditional_welfare,
-                         aes(x = participation_rate * 100, y = mean_f_j_if_matched,
-                             color = quality_tier,
-                             linetype = quality_tier, shape = quality_tier, group = quality_tier)) +
-    geom_ribbon(aes(ymin = mean_f_j_if_matched - 1.96 * se_f_j,
-                    ymax = mean_f_j_if_matched + 1.96 * se_f_j,
-                    fill = quality_tier),
-                alpha = ribbon_alpha, linetype = 0, show.legend = FALSE) +
-    geom_line(linewidth = 1.8) +
-    geom_point(aes(size = quality_tier)) +
-    scale_color_manual(values = tier_colors) +
-    scale_fill_manual(values = tier_colors) +
-    scale_linetype_manual(values = c("solid", "solid", "solid", "solid")) +
-    scale_shape_manual(values = c(16, 17, 15, 18)) +
-    scale_size_manual(values = c(4, 4, 4, 5.5)) +
-    scale_x_continuous(breaks = c(0, 5, 20, 50, 90, 100),
-                       labels = c("0", "5", "20", "50", "90", "100")) +
-    scale_y_continuous(expand = expansion(mult = c(0.05, 0.05))) +
-    labs(x = "Market Participation Rate (%)",
-         y = expression(E * "[Alignment " * f[j] * " | Matched]"),
-         color = "Candidate Tier", linetype = "Candidate Tier",
-         shape = "Candidate Tier", size = "Candidate Tier") +
-    fig4_theme
-  
-  combined_2panel <- p1_conditional + p2_gains +
-    plot_layout(ncol = 2, guides = "collect") & theme(legend.position = "bottom")
-  combined_3panel <- p1_conditional + p2_gains + p3_alignment +
-    plot_layout(ncol = 3, guides = "collect") & theme(legend.position = "bottom")
-  
-  list(plot = combined_2panel, plot_3panel = combined_3panel,
-       plot_unconditional = p0_unconditional,
-       plot_conditional = p1_conditional, plot_gains = p2_gains,
-       plot_unconditional_gains = p2_unconditional_gains,
-       plot_alignment = p3_alignment,
+    plot_theme
+
+  list(plot = p,
        unconditional_welfare = unconditional_welfare,
-       unconditional_gains = unconditional_gains,
-       conditional_welfare = conditional_welfare,
-       conditional_gains = conditional_gains,
-       conditional_tests = conditional_tests)
+       conditional_welfare = conditional_welfare)
 }
 
 
@@ -3911,51 +3616,8 @@ fig_participation_welfare <- function(all_sim_results,
                linewidth = c(1.4, 1.4, 0.9)))) +
     fig5_theme
   
-  p3 <- ggplot(comparison_data,
-               aes(x = participation_rate * 100, y = mean_welfare_if_matched,
-                   color = participation_status,
-                   linetype = participation_status, shape = participation_status)) +
-    geom_hline(aes(yintercept = baseline_stats$baseline_mean_welfare_if_matched,
-                   linetype = "Baseline (\u03C1 = 0%)",
-                   color = "Baseline (\u03C1 = 0%)"),
-               linewidth = 0.9, inherit.aes = FALSE) +
-    geom_ribbon(aes(ymin = mean_welfare_if_matched - 1.96 * se_welfare_if_matched,
-                    ymax = mean_welfare_if_matched + 1.96 * se_welfare_if_matched,
-                    fill = participation_status,
-                    group = participation_status),
-                alpha = ribbon_alpha, linetype = 0, show.legend = FALSE) +
-    geom_line(linewidth = 1.4) +
-    geom_point(size = 3.5) +
-    scale_color_manual(
-      values = c(participation_colors, "Baseline (\u03C1 = 0%)" = "gray45"),
-      breaks = c("Participating", "Non-participating", "Baseline (\u03C1 = 0%)")) +
-    scale_fill_manual(values = participation_colors) +
-    scale_linetype_manual(
-      values = c("Participating" = "solid", "Non-participating" = "11",
-                 "Baseline (\u03C1 = 0%)" = "dashed"),
-      breaks = c("Participating", "Non-participating", "Baseline (\u03C1 = 0%)")) +
-    scale_shape_manual(
-      values = c("Participating" = 16, "Non-participating" = 17, "Baseline (\u03C1 = 0%)" = NA),
-      breaks = c("Participating", "Non-participating", "Baseline (\u03C1 = 0%)")) +
-    scale_x_continuous(breaks = c(5, 20, 50, 90), labels = c("5", "20", "50", "90")) +
-    scale_y_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0.05))) +
-    labs(x = "Market Participation Rate (%)", y = "Mean Welfare (If Matched)",
-         color = NULL, linetype = NULL, shape = NULL) +
-    guides(linetype = "none", shape = "none",
-           color = guide_legend(
-             title = NULL,
-             override.aes = list(
-               linetype = c("solid", "11", "dashed"),
-               shape = c(16, 17, NA),
-               linewidth = c(1.4, 1.4, 0.9)))) +
-    fig5_theme
-  
-  combined_2panel <- (p1 | p2) +
+  combined <- (p1 | p2) +
     plot_layout(guides = "collect") & theme(legend.position = "bottom")
-  combined_3panel <- (p1 | p2 | p3) +
-    plot_layout(guides = "collect") & theme(legend.position = "bottom")
-  
-  list(plot = combined_2panel, plot_3panel = combined_3panel,
-       plot_welfare = p1, plot_matching = p2, plot_welfare_conditional = p3,
-       data = comparison_data, baseline_stats = baseline_stats)
+
+  list(plot = combined, data = comparison_data, baseline_stats = baseline_stats)
 }

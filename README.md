@@ -54,7 +54,7 @@ torch::install_torch()
 Academic-Job-Market/
 ├── README.md
 ├── code/
-│   ├── Sim_Functions.R                 # Core simulation functions (all shared code)
+│   ├── Sim_Functions.R                 # Core simulation functions
 │   ├── BurnIn.R                        # Stage 1: Burn-in phase
 │   ├── sim_batch.R                     # Stage 2: Simulation batches (HPC-ready)
 │   ├── sim_array.sh                    # SGE job array script for HPC (Hoffman2)
@@ -70,7 +70,7 @@ Academic-Job-Market/
 ├── data/
 │   └── departments_dataset.csv         # Pre-built department dataset (101 departments)
 ├── manuscript/                         # LaTeX source and generated figures
-└── output/                             # Generated artifacts (not tracked)
+└── output/                             # Generated artifacts
 ```
 
 ## Workflow: Order of Operations

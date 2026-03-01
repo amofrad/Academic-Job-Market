@@ -116,13 +116,14 @@ cand_welfare       <- fig_candidate_welfare(all_sim_results,
 cand_participation <- fig_participation_welfare(all_sim_results,
                         year_filter = c(1, 10), include_scramble = TRUE, hire_rounds = 2)
 
+
 ggsave("manuscript/fig_dept_interview_heatmap.pdf",     interview_heatmap$plot,
        width = 10, height = 5, device = cairo_pdf)
 ggsave("manuscript/fig_dept_hiring_heatmap.pdf",        hiring_heatmap$plot,
        width = 10, height = 5, device = cairo_pdf)
-ggsave("manuscript/fig_department_welfare.pdf",         dept_welfare$plot_welfare_per_slot,
+ggsave("manuscript/fig_department_welfare.pdf",         dept_welfare$plot,
        width = 7,  height = 5, device = cairo_pdf)
-ggsave("manuscript/fig_candidate_welfare_by_tier.pdf",  cand_welfare$plot_conditional,
+ggsave("manuscript/fig_candidate_welfare_by_tier.pdf",  cand_welfare$plot,
        width = 7,  height = 5, device = cairo_pdf)
 ggsave("manuscript/fig_candidate_by_participation.pdf", cand_participation$plot,
        width = 10, height = 4, device = cairo_pdf)
@@ -132,5 +133,3 @@ saveRDS(hiring_heatmap,     "output/hiring_heatmap.rds")
 saveRDS(dept_welfare,       "output/dept_welfare.rds")
 saveRDS(cand_welfare,       "output/cand_welfare.rds")
 saveRDS(cand_participation, "output/cand_participation.rds")
-
-cat("All figures saved. Done.\n")
