@@ -23,5 +23,5 @@ fig_*.pdf
 
 # Python virtual environments (web scraping)
 usnews_scraper_env/
-USNews-Scrapper/
+/USNews-Scrapper/
 __pycache__/

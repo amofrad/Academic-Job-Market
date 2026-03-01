@@ -7,12 +7,16 @@
 # peer assessment scores, and locations.
 #
 # Prerequisites:
-#   1. Clone https://github.com/OvroAbir/USNews-Scrapper
-#   2. Run the Python scraper targeting the statistics rankings URL:
+#   1. Initialize the USNews-Scrapper submodule:
+#      git submodule update --init
+#   2. Install Python dependencies:
+#      cd USNews-Scrapper && pip install -r requirements.txt
+#   3. Run the Python scraper targeting the statistics rankings URL:
+#      cd usnews_scrapper
 #      python usnews_scrapper.py \
 #        --url="https://www.usnews.com/best-graduate-schools/top-science-schools/statistics-rankings" \
 #        -o statistics_rankings -p 2
-#   3. JSON files will be saved in USNews-Scrapper/usnews_scrapper/temp/
+#   4. JSON files will be saved in USNews-Scrapper/usnews_scrapper/temp/
 #
 # Output:
 #   usnews_statistics.csv — ranked list of statistics departments with
