@@ -52,44 +52,46 @@ torch::install_torch()
 
 ```
 Academic-Job-Market/
-├── README.md                       # This file
-├── Sim_Functions.R                 # Core simulation functions (all shared code)
-├── BurnIn.R                        # Stage 1: Burn-in phase
-├── sim_batch.R                     # Stage 2: Simulation batches (HPC-ready)
-├── sim_array.sh                    # SGE job array script for HPC (Hoffman2)
-├── Result_processer.R              # Stage 3: Combine results and generate figures
-├── departments_dataset.csv         # Pre-built department dataset (101 departments)
-├── department_generator/           # Department dataset construction
-│   ├── USNews_Rankings_Scraper.R   # Scrape and parse US News 2022 rankings
-│   ├── Department_Generator.R      # Build department attributes
-│   ├── USNews-Scrapper/            # Git submodule: Python web scraper
-│   ├── usnews_statistics.csv       # Scraped rankings (101 departments)
-│   └── supporting_data/
-│       ├── cost_of_living_us.csv   # County-level cost of living (MIT Living Wage)
-│       └── salary_data.csv         # State-level faculty salary data (NCES 2023)
+├── README.md
+├── code/
+│   ├── Sim_Functions.R                 # Core simulation functions (all shared code)
+│   ├── BurnIn.R                        # Stage 1: Burn-in phase
+│   ├── sim_batch.R                     # Stage 2: Simulation batches (HPC-ready)
+│   ├── sim_array.sh                    # SGE job array script for HPC (Hoffman2)
+│   ├── Result_processer.R              # Stage 3: Combine results and generate figures
+│   └── department_generator/           # Department dataset construction (Stage 0)
+│       ├── USNews_Rankings_Scraper.R   # Scrape and parse US News 2022 rankings
+│       ├── Department_Generator.R      # Build department attributes
+│       ├── USNews-Scrapper/            # Git submodule: Python web scraper
+│       ├── usnews_statistics.csv       # Scraped rankings (101 departments)
+│       └── supporting_data/
+│           ├── cost_of_living_us.csv   # County-level cost of living (MIT Living Wage)
+│           └── salary_data.csv         # State-level faculty salary data (NCES 2023)
+├── data/
+│   └── departments_dataset.csv         # Pre-built department dataset (101 departments)
+├── manuscript/                         # LaTeX source and generated figures
+└── output/                             # Generated artifacts (not tracked)
 ```
 
 ## Workflow: Order of Operations
 
-The simulation proceeds in three stages. `Sim_Functions.R` is sourced by all stage scripts and contains the complete set of functions.
+The simulation proceeds in three stages. All stage scripts are run from the project root directory and source `code/Sim_Functions.R`, which contains the complete set of shared functions.
 
 ### Stage 0: Department Dataset Generation (Optional)
 
-The department dataset (`departments_dataset.csv`) is provided pre-built. To regenerate it from source data:
+The department dataset (`data/departments_dataset.csv`) is provided pre-built. To regenerate it from source data:
 
 1. **Scrape and parse US News rankings** (requires Python 3.8+):
-   ```bash
-   cd department_generator/
-   Rscript USNews_Rankings_Scraper.R
-   # Output: usnews_statistics.csv
-   ```
-   This script automatically initializes the [USNews-Scrapper](https://github.com/OvroAbir/USNews-Scrapper) Git submodule, sets up a Python virtual environment, runs the web scraper, and parses the resulting JSON into a structured CSV.
+
+   Open `code/department_generator/USNews_Rankings_Scraper.R` in RStudio and run it. The script automatically initializes the [USNews-Scrapper](https://github.com/OvroAbir/USNews-Scrapper) Git submodule, sets up a Python virtual environment, runs the web scraper, and parses the resulting JSON into a structured CSV.
+
+   Output: `code/department_generator/usnews_statistics.csv`
 
 2. **Generate department attributes** by matching to College Scorecard data and estimating questionnaire responses:
-   ```bash
-   Rscript Department_Generator.R
-   # Output: ../departments_dataset.csv
-   ```
+
+   Open `code/department_generator/Department_Generator.R` in RStudio and run it.
+
+   Output: `data/departments_dataset.csv`
 
    This script:
    - Loads the US News 2022 rankings of 101 statistics departments
@@ -105,11 +107,11 @@ The department dataset (`departments_dataset.csv`) is provided pre-built. To reg
 The burn-in phase runs 20 years of baseline simulation (without strategic participation) to establish department learned priors. This must be run once before any simulation batches.
 
 ```bash
-Rscript BurnIn.R
-# Output: burn_in_artifacts.rds (~2-3 minutes)
+Rscript code/BurnIn.R
+# Output: output/burn_in_artifacts.rds (~2-3 minutes)
 ```
 
-**Key parameters** (set in `BurnIn.R`):
+**Key parameters** (set in `code/BurnIn.R`):
 - `n_candidates = 300` — candidates per cohort per year
 - `burn_in_years = 20` — years of burn-in
 - `sim_years = 10` — years of simulation (determines hiring schedule)
@@ -124,32 +126,32 @@ Each batch processes 20 independent replicates for all participation rates. Run 
 ```bash
 # Run sequentially (~15-25 hours total):
 for i in $(seq 1 10); do
-  Rscript sim_batch.R $i
+  Rscript code/sim_batch.R $i
 done
 
 # Or submit as an HPC job array for parallel execution (~1.5-2.5 hours total).
 # The paper's results were generated on the UCLA Hoffman2 cluster using
 # SGE job arrays with 20 cores and 4 GB per core per task:
-# qsub -t 1-10 -pe shared 20 -l h_rt=24:00:00,h_data=4G sim_array.sh
+# qsub -t 1-10 -pe shared 20 -l h_rt=24:00:00,h_data=4G code/sim_array.sh
 ```
 
 Each batch:
-1. Loads `burn_in_artifacts.rds`
+1. Loads `output/burn_in_artifacts.rds`
 2. Reconstructs neural network models from saved historical data
 3. Runs 20 replicates in parallel (via `future::multisession` with 20 workers)
 4. For each replicate, simulates 10 years of job market operation across all participation rates
-5. Saves results to `sim_batch_<TASK_ID>.rds`
+5. Saves results to `output/sim_batch_<TASK_ID>.rds`
 
 ### Stage 3: Combine Results and Generate Figures
 
 ```bash
-Rscript Result_processer.R
+Rscript code/Result_processer.R
 ```
 
 This script:
 1. Loads all 10 batch files and the burn-in artifacts
-2. Merges results into a single `all_sim_results.rds` structure
-3. Generates five publication-quality PDF figures:
+2. Merges results into a single `output/all_sim_results.rds` structure
+3. Generates five publication-quality PDF figures in `manuscript/`:
    - `fig_dept_interview_heatmap.pdf` — Interview allocation across department and candidate tiers
    - `fig_dept_hiring_heatmap.pdf` — Hiring outcomes across tiers
    - `fig_department_welfare.pdf` — Department welfare by tier (normalized per hiring slot)
@@ -224,23 +226,23 @@ To reproduce all results from the paper:
 
 ```bash
 # Step 1: Burn-in (run once, ~2-3 minutes)
-Rscript BurnIn.R
+Rscript code/BurnIn.R
 
 # Step 2: Simulation batches (10 batches x 20 replicates = 200 total)
 # ~1.5-2.5 hours per batch; run in parallel on HPC for fastest results
 for i in $(seq 1 10); do
-  Rscript sim_batch.R $i
+  Rscript code/sim_batch.R $i
 done
 
 # Step 3: Combine and generate figures
-Rscript Result_processer.R
+Rscript code/Result_processer.R
 ```
 
-The department dataset (`departments_dataset.csv`) is provided and does not need to be regenerated unless modifications to the department construction are desired.
+The department dataset (`data/departments_dataset.csv`) is provided and does not need to be regenerated unless modifications to the department construction are desired.
 
 ## Notes on Reproducibility
 
-- All random number generation is seeded. The master seed (`base_seed = 14`) is set in `BurnIn.R` and propagated through all stages.
+- All random number generation is seeded. The master seed (`base_seed = 14`) is set in `code/BurnIn.R` and propagated through all stages.
 - Torch models are non-deterministic across different hardware/CUDA versions. Results may differ slightly across platforms but should be qualitatively consistent.
 - The `future` package is used for parallelism. Set `future::plan(future::sequential)` to run single-threaded for debugging.
 

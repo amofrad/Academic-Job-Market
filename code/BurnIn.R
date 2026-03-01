@@ -5,15 +5,15 @@
 # Runs the burn-in phase of the academic job market simulation to establish
 # department learned priors. Saves all artifacts needed by sim_batch.R.
 #
-# Usage:
-#   Rscript BurnIn.R
+# Usage (from project root):
+#   Rscript code/BurnIn.R
 #
 # Output:
-#   burn_in_artifacts.rds — serialized list containing departments, historical
-#     data, hiring schedules, and configuration parameters.
+#   output/burn_in_artifacts.rds — serialized list containing departments,
+#     historical data, hiring schedules, and configuration parameters.
 # =============================================================================
 
-source("Sim_Functions.R")
+source("code/Sim_Functions.R")
 
 cat("=== BURN-IN STAGE ===\n")
 cat("Time:", format(Sys.time()), "\n\n")
@@ -35,7 +35,7 @@ set.seed(base_seed)
 torch::torch_manual_seed(base_seed)
 
 # ── Load and prepare departments ──
-departments_final <- read_csv("departments_dataset.csv")
+departments_final <- read_csv("data/departments_dataset.csv")
 departments_raw   <- departments_final %>% mutate(dept_id = row_number())
 departments       <- prepare_departments(departments_raw, questions, seed = base_seed)
 n_departments     <- nrow(departments)
@@ -99,7 +99,7 @@ burn_in_artifacts <- list(
   )
 )
 
-saveRDS(burn_in_artifacts, "burn_in_artifacts.rds", compress = "gzip")
-cat(sprintf("Saved burn_in_artifacts.rds (%.1f MB)\n",
-            file.size("burn_in_artifacts.rds") / 1e6))
+saveRDS(burn_in_artifacts, "output/burn_in_artifacts.rds", compress = "gzip")
+cat(sprintf("Saved output/burn_in_artifacts.rds (%.1f MB)\n",
+            file.size("output/burn_in_artifacts.rds") / 1e6))
 cat("Burn-in stage complete.\n")

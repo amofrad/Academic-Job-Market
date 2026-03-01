@@ -15,6 +15,6 @@ echo "Host: $(hostname)"
 echo "Cores: $NSLOTS"
 
 apptainer exec $H2_CONTAINER_LOC/h2-rstudio_4.4.2.sif \
-    Rscript sim_batch.R $SGE_TASK_ID
+    Rscript code/sim_batch.R $SGE_TASK_ID
 
 echo "End: $(date)"

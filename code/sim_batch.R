@@ -5,20 +5,20 @@
 # Each task processes a batch of 20 replicates across all participation rates.
 # Designed for HPC job arrays: 10 tasks yield 200 total replicates.
 #
-# Usage:
-#   Rscript sim_batch.R <TASK_ID>
+# Usage (from project root):
+#   Rscript code/sim_batch.R <TASK_ID>
 #
 # Arguments:
 #   TASK_ID — integer (1-10); determines replicate range:
 #     Task 1 -> replicates 1-20, Task 2 -> 21-40, ..., Task 10 -> 181-200
 #
 # Input:
-#   burn_in_artifacts.rds — output from BurnIn.R (Stage 1)
+#   output/burn_in_artifacts.rds — output from BurnIn.R (Stage 1)
 #
 # Output:
-#   sim_batch_<TASK_ID>.rds — batch results for this task's replicates
+#   output/sim_batch_<TASK_ID>.rds — batch results for this task's replicates
 # =============================================================================
-source("Sim_Functions.R")
+source("code/Sim_Functions.R")
 
 # ── Parse task ID ──
 args    <- commandArgs(trailingOnly = TRUE)
@@ -34,8 +34,8 @@ cat(sprintf("=== SIM BATCH: Task %d | Replicates %d-%d ===\n",
 cat("Time:", format(Sys.time()), "\n\n")
 
 # ── Load burn-in artifacts ──
-cat("Loading burn_in_artifacts.rds...\n")
-artifacts <- readRDS("burn_in_artifacts.rds")
+cat("Loading output/burn_in_artifacts.rds...\n")
+artifacts <- readRDS("output/burn_in_artifacts.rds")
 
 departments                <- artifacts$departments
 burn_in_historical         <- artifacts$burn_in_historical
@@ -207,7 +207,7 @@ batch_results <- list(
   )
 )
 
-out_file <- sprintf("sim_batch_%d.rds", task_id)
+out_file <- sprintf("output/sim_batch_%d.rds", task_id)
 saveRDS(batch_results, out_file, compress = "gzip")
 cat(sprintf("Saved %s (%.1f MB)\n", out_file, file.size(out_file) / 1e6))
 cat("Done.\n")

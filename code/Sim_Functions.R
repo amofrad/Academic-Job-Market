@@ -108,7 +108,7 @@ safe_categorical_to_index <- function(values, levels, var_name = "unknown") {
 # to weight each questionnaire dimension, implementing department-specific
 # normalized weights {w_tilde_jk}.
 # =============================================================================
-compute_f_j <- function(candidates_df, dept_row, questions, gamma = 1.4) {
+compute_f_j <- function(candidates_df, dept_row, questions, gamma = 2.5) {
   n <- nrow(candidates_df)
   if (n == 0) return(numeric(0))
   if (is.data.frame(dept_row)) dept_row <- as.list(dept_row[1, ])

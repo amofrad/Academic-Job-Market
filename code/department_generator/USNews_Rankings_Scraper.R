@@ -29,7 +29,7 @@ library(jsonlite)
 # =============================================================================
 if (!dir.exists("USNews-Scrapper/usnews_scrapper")) {
   cat("Initializing USNews-Scrapper submodule...\n")
-  status <- system("cd .. && git submodule update --init department_generator/USNews-Scrapper")
+  status <- system("cd ../.. && git submodule update --init code/department_generator/USNews-Scrapper")
   if (status != 0) stop("Failed to initialize submodule. Ensure Git is installed.")
 }
 

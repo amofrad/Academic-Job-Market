@@ -5,29 +5,29 @@
 # Merges all sim_batch_*.rds files into a single all_sim_results structure
 # and produces publication-quality PDF figures.
 #
-# Usage:
-#   Rscript Result_processer.R
+# Usage (from project root):
+#   Rscript code/Result_processer.R
 #
 # Input:
-#   burn_in_artifacts.rds        — output from BurnIn.R (Stage 1)
-#   sim_batch_1.rds ... sim_batch_10.rds — output from sim_batch.R (Stage 2)
+#   output/burn_in_artifacts.rds        — output from BurnIn.R (Stage 1)
+#   output/sim_batch_1.rds ... sim_batch_10.rds — output from sim_batch.R (Stage 2)
 #
 # Output:
-#   all_sim_results.rds          — combined simulation results
-#   fig_dept_interview_heatmap.pdf
-#   fig_dept_hiring_heatmap.pdf
-#   fig_department_welfare.pdf
-#   fig_candidate_welfare_by_tier.pdf
-#   fig_candidate_by_participation.pdf
+#   output/all_sim_results.rds          — combined simulation results
+#   manuscript/fig_dept_interview_heatmap.pdf
+#   manuscript/fig_dept_hiring_heatmap.pdf
+#   manuscript/fig_department_welfare.pdf
+#   manuscript/fig_candidate_welfare_by_tier.pdf
+#   manuscript/fig_candidate_by_participation.pdf
 # =============================================================================
-source("Sim_Functions.R")
+source("code/Sim_Functions.R")
 
 cat("=== COMBINING RESULTS ===\n")
 
 n_batches <- 10L
 
 # ── Load burn-in artifacts ──
-artifacts   <- readRDS("burn_in_artifacts.rds")
+artifacts   <- readRDS("output/burn_in_artifacts.rds")
 departments <- artifacts$departments
 cfg         <- artifacts$config
 
@@ -40,7 +40,7 @@ merged <- setNames(
 )
 
 for (b in 1:n_batches) {
-  f <- sprintf("sim_batch_%d.rds", b)
+  f <- sprintf("output/sim_batch_%d.rds", b)
   if (!file.exists(f)) { cat(sprintf("WARNING: %s not found, skipping\n", f)); next }
   cat(sprintf("Loading %s...\n", f))
   batch <- readRDS(f)
@@ -98,9 +98,9 @@ for (rc in rate_keys) {
   cat(sprintf("  Rate %5s: %d result rows, %d replicates\n", rc, nr, n_rep))
 }
 
-saveRDS(all_sim_results, "all_sim_results.rds", compress = "gzip")
-cat(sprintf("\nSaved all_sim_results.rds (%.1f MB)\n",
-            file.size("all_sim_results.rds") / 1e6))
+saveRDS(all_sim_results, "output/all_sim_results.rds", compress = "gzip")
+cat(sprintf("\nSaved output/all_sim_results.rds (%.1f MB)\n",
+            file.size("output/all_sim_results.rds") / 1e6))
 
 # ── Generate figures ──
 cat("\nGenerating figures...\n")
@@ -116,21 +116,21 @@ cand_welfare       <- fig_candidate_welfare(all_sim_results,
 cand_participation <- fig_participation_welfare(all_sim_results,
                         year_filter = c(1, 10), include_scramble = TRUE, hire_rounds = 2)
 
-ggsave("fig_dept_interview_heatmap.pdf",     interview_heatmap$plot,
+ggsave("manuscript/fig_dept_interview_heatmap.pdf",     interview_heatmap$plot,
        width = 10, height = 5, device = cairo_pdf)
-ggsave("fig_dept_hiring_heatmap.pdf",        hiring_heatmap$plot,
+ggsave("manuscript/fig_dept_hiring_heatmap.pdf",        hiring_heatmap$plot,
        width = 10, height = 5, device = cairo_pdf)
-ggsave("fig_department_welfare.pdf",         dept_welfare$plot_welfare_per_slot,
+ggsave("manuscript/fig_department_welfare.pdf",         dept_welfare$plot_welfare_per_slot,
        width = 7,  height = 5, device = cairo_pdf)
-ggsave("fig_candidate_welfare_by_tier.pdf",  cand_welfare$plot_conditional,
+ggsave("manuscript/fig_candidate_welfare_by_tier.pdf",  cand_welfare$plot_conditional,
        width = 7,  height = 5, device = cairo_pdf)
-ggsave("fig_candidate_by_participation.pdf", cand_participation$plot,
+ggsave("manuscript/fig_candidate_by_participation.pdf", cand_participation$plot,
        width = 10, height = 4, device = cairo_pdf)
 
-saveRDS(interview_heatmap,  "interview_heatmap.rds")
-saveRDS(hiring_heatmap,     "hiring_heatmap.rds")
-saveRDS(dept_welfare,       "dept_welfare.rds")
-saveRDS(cand_welfare,       "cand_welfare.rds")
-saveRDS(cand_participation, "cand_participation.rds")
+saveRDS(interview_heatmap,  "output/interview_heatmap.rds")
+saveRDS(hiring_heatmap,     "output/hiring_heatmap.rds")
+saveRDS(dept_welfare,       "output/dept_welfare.rds")
+saveRDS(cand_welfare,       "output/cand_welfare.rds")
+saveRDS(cand_participation, "output/cand_participation.rds")
 
 cat("All figures saved. Done.\n")

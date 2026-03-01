@@ -15,7 +15,7 @@
 #   supporting_data/salary_data.csv
 #
 # Output:
-#   ../departments_dataset.csv — 101 departments with all questionnaire attributes
+#   ../../data/departments_dataset.csv — 101 departments with all questionnaire attributes
 #
 # Required packages: dplyr, tidyverse, collegeScorecard, stringdist
 # =============================================================================
@@ -1207,5 +1207,5 @@ departments_final <- departments_final %>%
                 everything())
 
 # ── Save final dataset ──
-write_csv(departments_final, "../departments_dataset.csv")
+write_csv(departments_final, "../../data/departments_dataset.csv")
 cat(sprintf("\nSaved ../departments_dataset.csv (%d departments)\n", nrow(departments_final)))
