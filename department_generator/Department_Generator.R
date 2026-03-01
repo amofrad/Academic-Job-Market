@@ -15,10 +15,14 @@
 #   supporting_data/salary_data.csv
 #
 # Output:
-#   departments_dataset.csv — 101 departments with all questionnaire attributes
+#   ../departments_dataset.csv — 101 departments with all questionnaire attributes
 #
 # Required packages: dplyr, tidyverse, collegeScorecard, stringdist
 # =============================================================================
+
+# Set working directory to this script's location
+setwd(dirname(rstudioapi::getSourceEditorContext()$path))
+
 library(dplyr)
 library(tidyverse)
 library(collegeScorecard)
@@ -1190,5 +1194,5 @@ departments_final %>%
   print()
 
 # ── Save final dataset ──
-write_csv(departments_final, "departments_dataset.csv")
-cat(sprintf("\nSaved departments_dataset.csv (%d departments)\n", nrow(departments_final)))
+write_csv(departments_final, "../departments_dataset.csv")
+cat(sprintf("\nSaved ../departments_dataset.csv (%d departments)\n", nrow(departments_final)))
