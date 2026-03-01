@@ -56,6 +56,7 @@ Academic-Job-Market/
 ├── Sim_Functions.R                 # Core simulation functions (all shared code)
 ├── BurnIn.R                        # Stage 1: Burn-in phase
 ├── sim_batch.R                     # Stage 2: Simulation batches (HPC-ready)
+├── sim_array.sh                    # SGE job array script for HPC (Hoffman2)
 ├── Result_processer.R              # Stage 3: Combine results and generate figures
 ├── departments_dataset.csv         # Pre-built department dataset (101 departments)
 ├── department_generator/           # Department dataset construction
