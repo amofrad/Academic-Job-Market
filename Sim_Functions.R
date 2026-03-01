@@ -58,7 +58,7 @@ candidate_utility <- function(v_i_bar, s_j, f_j, cand_tier = NULL,
 }
 
 department_utility <- function(s_j, v_i_bar, f_j, dept_tier = NULL, cand_tier = NULL) {
-  quality_floor <- 0.01
+  quality_floor <- 0.0
   alpha <- quality_floor + (1 - quality_floor) * s_j
   (v_i_bar + 1e-8)^alpha * (f_j + 1e-8)^(1 - alpha)
 }

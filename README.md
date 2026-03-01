@@ -126,14 +126,16 @@ for i in $(seq 1 10); do
   Rscript sim_batch.R $i
 done
 
-# Or submit as HPC job array for parallel execution (~1.5-2.5 hours total):
-# sbatch --array=1-10 run_sim.slurm
+# Or submit as an HPC job array for parallel execution (~1.5-2.5 hours total).
+# The paper's results were generated on the UCLA Hoffman2 cluster using
+# SGE job arrays with 20 cores and 4 GB per core per task:
+# qsub -t 1-10 -pe shared 20 -l h_rt=24:00:00,h_data=4G sim_array.sh
 ```
 
 Each batch:
 1. Loads `burn_in_artifacts.rds`
 2. Reconstructs neural network models from saved historical data
-3. Runs 20 replicates in parallel (via `future::multisession`)
+3. Runs 20 replicates in parallel (via `future::multisession` with 20 workers)
 4. For each replicate, simulates 10 years of job market operation across all participation rates
 5. Saves results to `sim_batch_<TASK_ID>.rds`
 

@@ -12,18 +12,19 @@
 #   burn_in_artifacts.rds — serialized list containing departments, historical
 #     data, hiring schedules, and configuration parameters.
 # =============================================================================
+
 source("Sim_Functions.R")
 
 cat("=== BURN-IN STAGE ===\n")
 cat("Time:", format(Sys.time()), "\n\n")
 
 # ── Configuration ──
-base_seed           <- 14
+base_seed           <- 12
 n_candidates        <- 300
-burn_in_years       <- 20
+burn_in_years       <- 10
 sim_years           <- 10
 alpha               <- 0.05
-L_repeats           <- 100
+L_repeats           <- 20
 max_offer_rounds    <- 2
 noise_method        <- "bootstrap"
 noise_scale         <- NULL
