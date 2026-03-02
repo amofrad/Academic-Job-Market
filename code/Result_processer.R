@@ -102,6 +102,13 @@ saveRDS(all_sim_results, "../output/all_sim_results.rds", compress = "gzip")
 cat(sprintf("\nSaved output/all_sim_results.rds (%.1f MB)\n",
             file.size("../output/all_sim_results.rds") / 1e6))
 
+# ── Clean up batch files ──
+for (b in 1:n_batches) {
+  f <- sprintf("../output/sim_batch_%d.rds", b)
+  if (file.exists(f)) file.remove(f)
+}
+cat(sprintf("Removed %d batch files\n", n_batches))
+
 # ── Generate figures ──
 cat("\nGenerating figures...\n")
 
