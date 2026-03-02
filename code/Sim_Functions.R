@@ -46,16 +46,24 @@ assign_tiers_from_quantiles <- function(x, cutpoints = c(0.10, 0.25, 0.50),
       labels = rev(tier_labels), include.lowest = TRUE, right = TRUE)
 }
 
+#candidate_utility <- function(v_i_bar, s_j, f_j, cand_tier = NULL,
+#                              prestige_sensitivity = NULL) {
+#  if (is.null(prestige_sensitivity)) {
+#    beta <- pmin(0.90, pmax(0.3, 0.3 + 0.2 * v_i_bar))
+#  } else {
+#    beta <- prestige_sensitivity
+#  }
+#  V_ij <- (s_j + 1e-8)^beta * (f_j + 1e-8)^(1 - beta)
+#  pmin(pmax(V_ij, 1e-6), 1 - 1e-6)
+#}
+
 candidate_utility <- function(v_i_bar, s_j, f_j, cand_tier = NULL,
                               prestige_sensitivity = NULL) {
-  if (is.null(prestige_sensitivity)) {
-    beta <- pmin(0.90, pmax(0.3, 0.3 + 0.2 * v_i_bar))
-  } else {
-    beta <- prestige_sensitivity
-  }
-  V_ij <- (s_j + 1e-8)^beta * (f_j + 1e-8)^(1 - beta)
+
+  V_ij <- (s_j + 1e-8)^v_i_bar * (f_j + 1e-8)^(1 - v_i_bar)
   pmin(pmax(V_ij, 1e-6), 1 - 1e-6)
 }
+
 
 department_utility <- function(s_j, v_i_bar, f_j, dept_tier = NULL, cand_tier = NULL) {
   quality_floor <- 0.0
@@ -108,7 +116,7 @@ safe_categorical_to_index <- function(values, levels, var_name = "unknown") {
 # to weight each questionnaire dimension, implementing department-specific
 # normalized weights {w_tilde_jk}.
 # =============================================================================
-compute_f_j <- function(candidates_df, dept_row, questions, gamma = 2.5) {
+compute_f_j <- function(candidates_df, dept_row, questions, gamma = 2.0) {
   n <- nrow(candidates_df)
   if (n == 0) return(numeric(0))
   if (is.data.frame(dept_row)) dept_row <- as.list(dept_row[1, ])

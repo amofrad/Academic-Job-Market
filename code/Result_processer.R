@@ -27,7 +27,7 @@ cat("=== COMBINING RESULTS ===\n")
 n_batches <- 10L
 
 # ── Load burn-in artifacts ──
-artifacts   <- readRDS("output/burn_in_artifacts.rds")
+artifacts   <- readRDS("../output/burn_in_artifacts.rds")
 departments <- artifacts$departments
 cfg         <- artifacts$config
 
@@ -40,7 +40,7 @@ merged <- setNames(
 )
 
 for (b in 1:n_batches) {
-  f <- sprintf("output/sim_batch_%d.rds", b)
+  f <- sprintf("../output/sim_batch_%d.rds", b)
   if (!file.exists(f)) { cat(sprintf("WARNING: %s not found, skipping\n", f)); next }
   cat(sprintf("Loading %s...\n", f))
   batch <- readRDS(f)
@@ -98,9 +98,9 @@ for (rc in rate_keys) {
   cat(sprintf("  Rate %5s: %d result rows, %d replicates\n", rc, nr, n_rep))
 }
 
-saveRDS(all_sim_results, "output/all_sim_results.rds", compress = "gzip")
+saveRDS(all_sim_results, "../output/all_sim_results.rds", compress = "gzip")
 cat(sprintf("\nSaved output/all_sim_results.rds (%.1f MB)\n",
-            file.size("output/all_sim_results.rds") / 1e6))
+            file.size("../output/all_sim_results.rds") / 1e6))
 
 # ── Generate figures ──
 cat("\nGenerating figures...\n")
@@ -117,19 +117,19 @@ cand_participation <- fig_participation_welfare(all_sim_results,
                         year_filter = c(1, 10), include_scramble = TRUE, hire_rounds = 2)
 
 
-ggsave("manuscript/fig/fig_dept_interview_heatmap.pdf",     interview_heatmap$plot,
+ggsave("../manuscript/fig/fig_dept_interview_heatmap.pdf",     interview_heatmap$plot,
        width = 10, height = 5, device = cairo_pdf)
-ggsave("manuscript/fig/fig_dept_hiring_heatmap.pdf",        hiring_heatmap$plot,
+ggsave("../manuscript/fig/fig_dept_hiring_heatmap.pdf",        hiring_heatmap$plot,
        width = 10, height = 5, device = cairo_pdf)
-ggsave("manuscript/fig/fig_department_welfare.pdf",         dept_welfare$plot,
+ggsave("../manuscript/fig/fig_department_welfare.pdf",         dept_welfare$plot,
        width = 7,  height = 5, device = cairo_pdf)
-ggsave("manuscript/fig/fig_candidate_welfare_by_tier.pdf",  cand_welfare$plot,
+ggsave("../manuscript/fig/fig_candidate_welfare_by_tier.pdf",  cand_welfare$plot,
        width = 7,  height = 5, device = cairo_pdf)
-ggsave("manuscript/fig/fig_candidate_by_participation.pdf", cand_participation$plot,
+ggsave("../manuscript/fig/fig_candidate_by_participation.pdf", cand_participation$plot,
        width = 10, height = 4, device = cairo_pdf)
 
-saveRDS(interview_heatmap,  "output/interview_heatmap.rds")
-saveRDS(hiring_heatmap,     "output/hiring_heatmap.rds")
-saveRDS(dept_welfare,       "output/dept_welfare.rds")
-saveRDS(cand_welfare,       "output/cand_welfare.rds")
-saveRDS(cand_participation, "output/cand_participation.rds")
+saveRDS(interview_heatmap,  "../output/interview_heatmap.rds")
+saveRDS(hiring_heatmap,     "../output/hiring_heatmap.rds")
+saveRDS(dept_welfare,       "../output/dept_welfare.rds")
+saveRDS(cand_welfare,       "../output/cand_welfare.rds")
+saveRDS(cand_participation, "../output/cand_participation.rds")
