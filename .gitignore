@@ -20,6 +20,7 @@ cand_participation.rds
 
 # Generated PDF figures
 fig_*.pdf
+procedure.pdf
 
 # LaTeX source (not tracked)
 *.tex
