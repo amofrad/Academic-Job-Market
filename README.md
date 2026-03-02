@@ -1,4 +1,4 @@
-# Replication Code: A Statistical Market-Design Framework for the Academic Job Market for New Statisticians
+# A Statistical Market-Design Framework for the Academic Job Market for New Statisticians
 
 This repository contains the replication code and data for:
 
