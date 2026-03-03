@@ -46,30 +46,58 @@ assign_tiers_from_quantiles <- function(x, cutpoints = c(0.10, 0.25, 0.50),
       labels = rev(tier_labels), include.lowest = TRUE, right = TRUE)
 }
 
-#candidate_utility <- function(v_i_bar, s_j, f_j, cand_tier = NULL,
-#                              prestige_sensitivity = NULL) {
-#  if (is.null(prestige_sensitivity)) {
-#    beta <- pmin(0.90, pmax(0.3, 0.3 + 0.2 * v_i_bar))
-#  } else {
-#    beta <- prestige_sensitivity
-#  }
-#  V_ij <- (s_j + 1e-8)^beta * (f_j + 1e-8)^(1 - beta)
-#  pmin(pmax(V_ij, 1e-6), 1 - 1e-6)
-#}
-
 candidate_utility <- function(v_i_bar, s_j, f_j, cand_tier = NULL,
                               prestige_sensitivity = NULL) {
-
-  V_ij <- (s_j + 1e-8)^v_i_bar * (f_j + 1e-8)^(1 - v_i_bar)
+  # Cobb-Douglas: V = s_j^beta * f_j^(1-beta)
+  #   beta = 0.05 + 0.15*v_i_bar  (higher-quality candidates value prestige more)
+  # CT1 (v~0.87): beta~0.18, 82% fit / 18% prestige
+  # CT4 (v~0.48): beta~0.12, 88% fit / 12% prestige
+  beta <- pmin(0.05 + 0.15 * v_i_bar, 0.9)
+  s <- s_j + 1e-8
+  f <- f_j + 1e-8
+  V_ij <- s^beta * f^(1 - beta)
   pmin(pmax(V_ij, 1e-6), 1 - 1e-6)
 }
 
 
 department_utility <- function(s_j, v_i_bar, f_j, dept_tier = NULL, cand_tier = NULL) {
-  quality_floor <- 0.0
-  alpha <- quality_floor + (1 - quality_floor) * s_j
-  (v_i_bar + 1e-8)^alpha * (f_j + 1e-8)^(1 - alpha)
+  # Cobb-Douglas: U = v^alpha * f^(1-alpha)
+  #   alpha = 0.10 + 0.40*s_j^2  (top depts weight quality more, lower depts rely on fit)
+  # DT1 (s~0.87): alpha~0.40, 60% fit / 40% quality
+  # DT4 (s~0.28): alpha~0.13, 87% fit / 13% quality
+  alpha <- pmin(0.10 + 0.40 * s_j^2, 0.9)
+  v <- v_i_bar + 1e-8
+  f <- f_j + 1e-8
+  U <- v^alpha * f^(1 - alpha)
+  pmin(pmax(U, 1e-6), 1 - 1e-6)
 }
+
+# --- Previous utility forms (commented out) ---
+#
+# # Constant alpha=0.7, low beta (quality-dominant but CT1 loses in DA):
+# # department_utility: alpha = 0.7
+# # candidate_utility: beta = 0.2 + 0.1*v
+#
+# # Gentle slope alpha (Cov marginal for CT4, narrow range):
+# # department_utility: alpha = 0.45 + 0.10*s_j, range [0.46, 0.55]
+# # candidate_utility: beta = v_i_bar, V = s^v * f^(1-v)
+#
+# # Constant alpha=0.5 (Cov guaranteed but no s_j heterogeneity):
+# # department_utility: alpha = 0.5, U = v^0.5 * f^0.5
+#
+# # Bounded alpha with slope 0.4 (Cov fails for CT4):
+# # department_utility: alpha = 0.3 + 0.4*s_j, U = v^alpha * f^(1-alpha)
+#
+# # CES (alpha=beta=0.5, rho=s_j/v_i_bar):
+# # candidate_utility: V = [0.5*s^v + 0.5*f^v]^(1/v)
+# # department_utility: U = [0.5*v^s + 0.5*f^s]^(1/s)
+#
+# # CD ratio-based weights:
+# # candidate_utility: beta = v/(v+s), V = s^beta * f^(1-beta)
+# # department_utility: alpha = s/(s+v), U = v^alpha * f^(1-alpha)
+#
+# # CD with unbounded s_j (Cov fails for Tiers 3-4):
+# # department_utility: U = v^(s_j) * f^(1-s_j)
 
 questions <- list(
   numerical = c("q4_cost_of_living", "q6_typical_salary_range", "q14_phd_student_ratio"),
@@ -116,7 +144,7 @@ safe_categorical_to_index <- function(values, levels, var_name = "unknown") {
 # to weight each questionnaire dimension, implementing department-specific
 # normalized weights {w_tilde_jk}.
 # =============================================================================
-compute_f_j <- function(candidates_df, dept_row, questions, gamma = 2.0) {
+compute_f_j <- function(candidates_df, dept_row, questions, gamma = 1.5) {
   n <- nrow(candidates_df)
   if (n == 0) return(numeric(0))
   if (is.data.frame(dept_row)) dept_row <- as.list(dept_row[1, ])
@@ -254,6 +282,17 @@ s_k <- as.numeric(grepl(dept_tok, cand_str, fixed = TRUE))
   cat_share <- total_cat_w / total_w
   
   S_ij <- num_share * num_avg + cat_share * cat_avg
+
+  # Per-department normalization: rescale S_ij to [0, 1] within this department
+  # so every department sees candidates spanning the full alignment range.
+  # Without this, categorical score floors (~0.5) and weighted averaging
+  # compress S_ij to roughly [0.4, 0.95], yielding f_j SD ~ 0.05.
+  S_min <- min(S_ij, na.rm = TRUE)
+  S_max <- max(S_ij, na.rm = TRUE)
+  if (S_max - S_min > eps) {
+    S_ij <- (S_ij - S_min) / (S_max - S_min)
+  }
+
   f_raw <- (exp(gamma * S_ij) - 1) / (exp(gamma) - 1)
   f <- 0.5 + 0.5 * f_raw   # remap [0,1] -> [0.5,1]
   pmin(pmax(f, 0.5), 1 - eps)
@@ -273,30 +312,18 @@ generate_candidates_new <- function(n_candidates, questions, seed = NULL) {
   ) %>% mutate(v_i_bar = (v_i1 * v_i2 * v_i3)^(1/3))
   
   candidates <- candidates %>%
-    mutate(quality_pctl = percent_rank(v_i_bar),
-           within_tier_rank = case_when(
-             quality_pctl >= 0.90 ~ (1 - quality_pctl) / 0.10,
-             quality_pctl >= 0.75 ~ (0.90 - quality_pctl) / 0.15,
-             quality_pctl >= 0.50 ~ (0.75 - quality_pctl) / 0.25,
-             TRUE ~ (0.50 - quality_pctl) / 0.50))
-  
+    mutate(quality_pctl = percent_rank(v_i_bar))
+
   n <- n_candidates; v_pctl <- candidates$quality_pctl
-  within_rank <- candidates$within_tier_rank
-  flexibility <- 0.3 + 0.7 * within_rank
 
-  # Add idiosyncratic preference heterogeneity (uncorrelated with quality)
-  # KEY INSIGHT: HIGH-quality candidates get HIGH-VARIANCE preferences (benefit most from personalized matching)
-  #              LOW-quality candidates get LOW-VARIANCE preferences (concentrated around 0.5)
+  # Preference heterogeneity: fully independent of quality (v_i_bar)
+  # All candidates draw from the same distributions regardless of tier
+  flexibility <- runif(n, 0.3, 1.0)
 
-  # Shape parameters: high quality → (1,1) = uniform = max variance; low quality → (5,5) = concentrated
-  # More aggressive formula: alpha = 1 + 4*(1-v_pctl)^2
-  alpha_param <- 1 + 4 * (1 - v_pctl)^2  # Tier 1 (~0.9): ~1.04, Tier 4 (~0.3): ~2.96
-  beta_param <- alpha_param  # Symmetric beta distribution
-
-  # Generate preferences with quality-dependent variance
-  teaching_focus <- rbeta(n, alpha_param, beta_param)      # 0 = research-focused, 1 = teaching-focused
-  location_priority <- rbeta(n, alpha_param, beta_param)   # 0 = location-indifferent, 1 = location-crucial
-  collab_preference <- rbeta(n, alpha_param, beta_param)   # 0 = independent, 1 = collaborative
+  # Idiosyncratic preference dimensions — Beta(2,2) gives moderate variance for all candidates
+  teaching_focus <- rbeta(n, 2, 2)      # 0 = research-focused, 1 = teaching-focused
+  location_priority <- rbeta(n, 2, 2)   # 0 = location-indifferent, 1 = location-crucial
+  collab_preference <- rbeta(n, 2, 2)   # 0 = independent, 1 = collaborative
 
   # Helper: fully vectorized weighted sampling (no apply)
   vsample <- function(choices, prob_matrix) {
@@ -313,11 +340,11 @@ generate_candidates_new <- function(n_candidates, questions, seed = NULL) {
   
   # Numerical questions (already vectorized)
   candidates$q_q6_typical_salary_range <- pmax(80000, pmin(180000,
-                                                           80000 + 60000 * v_pctl^1.2 - flexibility * 15000 + rnorm(n, 0, 12000)))
+                                                           80000 + 60000 * runif(n) + rnorm(n, 0, 12000)))
   candidates$q_q4_cost_of_living <- pmax(60000, pmin(140000,
-                                                     70000 + 40000 * v_pctl + flexibility * 20000 + rnorm(n, 0, 15000)))
+                                                     70000 + 40000 * runif(n) + rnorm(n, 0, 15000)))
   candidates$q_q14_phd_student_ratio <- pmax(0.5, pmin(5.0,
-                                                       1.0 + 2.5 * runif(n) + 0.5 * v_pctl + rnorm(n, 0, 0.5)))
+                                                       1.0 + 2.5 * runif(n) + rnorm(n, 0, 0.5)))
   
   # Geographic setting (vectorized) - now includes location_priority and collab_preference
   pm <- cbind(
@@ -349,11 +376,11 @@ generate_candidates_new <- function(n_candidates, questions, seed = NULL) {
   candidates$q_q9_typical_teaching_load <- vsample(c("A","B","C","D"), pm)
   
   # Startup (vectorized)
-  pm <- cbind((0.05+0.1*flexibility)*(1-0.3*v_pctl)+0.05*0.3*v_pctl,
-              (0.15+0.1*flexibility)*(1-0.3*v_pctl)+0.10*0.3*v_pctl,
-              0.30*(1-0.3*v_pctl)+0.25*0.3*v_pctl,
-              (0.30-0.1*flexibility)*(1-0.3*v_pctl)+0.30*0.3*v_pctl,
-              (0.20-0.1*flexibility)*(1-0.3*v_pctl)+0.30*0.3*v_pctl)
+  pm <- cbind(0.05 + 0.1 * flexibility,
+              0.15 + 0.1 * flexibility,
+              rep(0.30, n),
+              0.30 - 0.1 * flexibility,
+              0.20 - 0.1 * flexibility)
   pm <- pmax(pm, 0.02)
   candidates$q_q7_typical_startup <- vsample(c("A","B","C","D","E"), pm)
   
@@ -388,18 +415,13 @@ generate_candidates_new <- function(n_candidates, questions, seed = NULL) {
   candidates$q_q12_research_culture <- vsample(c("A","B","C","D","E"), pm)
   
   # Publication venues (vectorized)
-  pm <- cbind(pmax(0.05-0.04*v_pctl,0.02), pmax(0.15-0.05*v_pctl,0.02), pmax(0.30,0.02),
-              pmax(0.30+0.05*v_pctl,0.02), pmax(0.20+0.04*v_pctl,0.02))
+  pm <- cbind(rep(0.05, n), rep(0.15, n), rep(0.30, n),
+              rep(0.30, n), rep(0.20, n))
   candidates$q_q13_publication_venues <- vsample(c("A","B","C","D","E"), pm)
   
   candidates$q_q15_medical_school_proximity <- sample(c("0","1"), n, replace=TRUE, prob=c(0.60,0.40))
 
-  # Prestige sensitivity: convex function ensures ALL candidates are primarily fit-focused
-  # This allows fit improvements at lower-tier departments to dominate prestige concerns
-  # With these low values, Tier 2-4 depts with good fit can match/exceed Tier 1 depts with mediocre fit
-  candidates$prestige_sensitivity <- 0.02 + 0.10 * (candidates$v_i_bar)^2
-
-  candidates %>% dplyr::select(-quality_pctl, -within_tier_rank)
+  candidates %>% dplyr::select(-quality_pctl)
 }
 
 
@@ -926,7 +948,7 @@ make_repeated_rank_draws <- function(applicant_data, L = 200, tuple_size = NULL,
   if (!is.null(seed)) set.seed(seed)
   method <- match.arg(method); n <- nrow(applicant_data)
   if (!"U_det" %in% names(applicant_data))
-    applicant_data <- applicant_data %>% mutate(U_det = exp(s_j*log(v_i_bar+1e-8)+(1-s_j)*log(f_j+1e-8)))
+    applicant_data <- applicant_data %>% mutate(U_det = department_utility(s_j, v_i_bar, f_j))
   mu <- pmin(pmax(applicant_data$pi_pred, 1e-5), 1-1e-5)
   Uhat_full <- applicant_data$U_det * mu
   if (is.null(tuple_size)) idx <- seq_len(n) else { M_use <- min(tuple_size, n); idx <- order(Uhat_full, decreasing=TRUE)[seq_len(M_use)] }
@@ -1012,9 +1034,9 @@ compute_pairwise_lower_ranks <- function(applicant_data, L_repeats=20, tuple_siz
                                          pi_draws=NULL) {
   noise_method <- match.arg(noise_method)
   if (!"U_det" %in% names(applicant_data) || !"U_hat" %in% names(applicant_data))
-    applicant_data <- applicant_data %>% mutate(U_det=exp(s_j*log(v_i_bar+1e-8)+(1-s_j)*log(f_j+1e-8)),
+    applicant_data <- applicant_data %>% mutate(U_det=department_utility(s_j, v_i_bar, f_j),
                                                 U_hat=U_det*pmin(pmax(pi_pred,1e-5),1-1e-5))
-  
+
   # Resolve pi_draws: explicit argument > attribute > fallback to legacy
   
   if (is.null(pi_draws)) pi_draws <- attr(applicant_data, "pi_draws")
@@ -1070,7 +1092,7 @@ select_interviews_sure_screening <- function(applicant_data, k_j, h_j, alpha=0.0
   noise_method <- match.arg(noise_method); n <- nrow(applicant_data)
   if (n == 0L) return(integer()); if (n <= k_j) return(applicant_data$cand_id)
   if (!"U_det" %in% names(applicant_data) || !"U_hat" %in% names(applicant_data))
-    applicant_data <- applicant_data %>% dplyr::mutate(U_det=exp(s_j*log(v_i_bar+1e-8)+(1-s_j)*log(f_j+1e-8)),
+    applicant_data <- applicant_data %>% dplyr::mutate(U_det=department_utility(s_j, v_i_bar, f_j),
                                                        U_hat=U_det*pmin(pmax(pi_pred,1e-5),1-1e-5))
   rank_tbl <- compute_pairwise_lower_ranks(applicant_data, L_repeats, tuple_size, noise_method, noise_scale, alpha, seed, pi_draws=pi_draws)
   applicant_data <- applicant_data %>% dplyr::select(-dplyr::any_of(c("rank_lower","pair_score","mean_rank"))) %>%
@@ -1445,16 +1467,8 @@ resolve_offers_sequential <- function(interviewed_data, departments, questions,
   
   # ── Candidate utilities (deterministic for offer-choice comparisons) ──
   if (verbose) cat("  Calculating candidate utilities with unified f_j...\n")
-  if ("prestige_sensitivity" %in% names(interviewed_data)) {
-    interviewed_data <- interviewed_data %>%
-      dplyr::mutate(cand_util = candidate_utility(v_i_bar, s_j, f_j,
-                                                  cand_tier  = cand_tier,
-                                                  prestige_sensitivity = prestige_sensitivity))
-  } else {
-    interviewed_data <- interviewed_data %>%
-      dplyr::mutate(cand_util = candidate_utility(v_i_bar, s_j, f_j,
-                                                  cand_tier = cand_tier))
-  }
+  interviewed_data <- interviewed_data %>%
+    dplyr::mutate(cand_util = candidate_utility(v_i_bar, s_j, f_j))
   
   # Department quotas and indexed vectors
   dept_quota <- interviewed_data %>%
@@ -2289,10 +2303,7 @@ run_job_market_sim_with_learned_prior <- function(departments, questions, n_cand
           filter(accepted == 1) %>%
           mutate(cand_tier_str = tier_int_to_str_local(cand_tier),
                  dept_tier_str = tier_int_to_str_local(dept_tier),
-                 V_ij = if("prestige_sensitivity" %in% names(.))
-                          candidate_utility(v_i_bar, s_j, f_j, prestige_sensitivity = prestige_sensitivity)
-                        else
-                          candidate_utility(v_i_bar, s_j, f_j))
+                 V_ij = candidate_utility(v_i_bar, s_j, f_j))
         cand_tier_metrics <- hires %>%
           group_by(cand_tier_str) %>%
           summarise(n_hired = n(), mean_V = mean(V_ij, na.rm = TRUE),
@@ -3280,6 +3291,310 @@ fig_department_welfare <- function(all_sim_results,
 
 
 # =============================================================================
+# 3b. DEPARTMENT WELFARE PER HIRE (line plots, averaged over replicates)
+# =============================================================================
+fig_department_welfare_per_hire <- function(all_sim_results,
+                                           year_filter = c(1, 10),
+                                           include_scramble = FALSE,
+                                           hire_rounds = NULL) {
+
+  departments <- all_sim_results$departments %>%
+    dplyr::select(dept_id, prestige_tier, s_j)
+  yearly_hiring_schedule <- .get_hiring_schedule(all_sim_results)
+  years_in_filter <- year_filter[1]:year_filter[2]
+  n_departments <- nrow(departments)
+
+  quota_by_tier <- tibble(dept_id = 1:n_departments) %>%
+    left_join(departments, by = "dept_id") %>%
+    crossing(year = years_in_filter) %>%
+    mutate(h_j = yearly_hiring_schedule[cbind(dept_id, year)]) %>%
+    group_by(prestige_tier) %>%
+    summarise(total_quota = sum(h_j), n_depts = n_distinct(dept_id), .groups = "drop")
+
+  rate_chrs <- names(all_sim_results$sim_results)
+
+  welfare_by_rep <- purrr::map_dfr(rate_chrs, function(rate_chr) {
+    rate <- as.numeric(rate_chr)
+    df <- .get_results(all_sim_results, rate_chr, year_filter)
+    if (nrow(df) == 0) return(tibble())
+    hires <- df %>% dplyr::filter(accepted == 1)
+    if (!include_scramble)
+      hires <- hires %>% dplyr::filter(interviewed == 1 | is.na(interviewed))
+    if (!is.null(hire_rounds))
+      hires <- hires %>% dplyr::filter(is.na(offer_round) | offer_round <= hire_rounds)
+    if (nrow(hires) == 0) return(tibble())
+
+    hires %>%
+      mutate(prestige_tier = tier_int_to_str(dept_tier),
+             U_effective = coalesce(U_true, if ("cand_util" %in% names(.)) cand_util else NA_real_)) %>%
+      group_by(replicate, prestige_tier) %>%
+      summarise(
+        n_hires = n(),
+        mean_utility_per_hire = mean(U_effective, na.rm = TRUE),
+        .groups = "drop"
+      ) %>%
+      left_join(quota_by_tier, by = "prestige_tier") %>%
+      mutate(participation_rate = rate)
+  })
+
+  if (nrow(welfare_by_rep) == 0) { message("No welfare data"); return(NULL) }
+
+  welfare_by_tier <- welfare_by_rep %>%
+    group_by(participation_rate, prestige_tier) %>%
+    summarise(
+      mean_utility_per_hire = mean(mean_utility_per_hire, na.rm = TRUE),
+      se_utility_per_hire = sd(mean_utility_per_hire, na.rm = TRUE) / sqrt(sum(!is.na(mean_utility_per_hire))),
+      n_hires = mean(n_hires, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    left_join(quota_by_tier %>% dplyr::select(prestige_tier, total_quota, n_depts),
+              by = "prestige_tier") %>%
+    mutate(prestige_tier = factor(prestige_tier,
+                                  levels = c("Tier 1","Tier 2","Tier 3","Tier 4")))
+
+  ribbon_alpha <- 0.15
+  plot_theme <- theme_minimal(base_size = 14) +
+    theme(panel.grid.minor = element_blank(),
+          panel.grid.major = element_line(color = "gray90", linewidth = 0.5),
+          axis.title = element_text(size = 14, face = "bold"),
+          axis.text = element_text(size = 12),
+          legend.position = "bottom",
+          legend.title = element_text(size = 14, face = "bold"),
+          legend.text = element_text(size = 13),
+          legend.key.size = unit(1.5, "lines"),
+          legend.key.width = unit(2.5, "lines"),
+          legend.spacing.x = unit(0.5, "cm"),
+          plot.margin = margin(10, 10, 10, 10))
+
+  p <- ggplot(welfare_by_tier, aes(x = participation_rate * 100,
+                                   y = mean_utility_per_hire,
+                                   color = prestige_tier,
+                                   linetype = prestige_tier,
+                                   shape = prestige_tier,
+                                   group = prestige_tier)) +
+    geom_ribbon(aes(ymin = mean_utility_per_hire - 1.96 * se_utility_per_hire,
+                    ymax = mean_utility_per_hire + 1.96 * se_utility_per_hire,
+                    fill = prestige_tier),
+                alpha = ribbon_alpha, linetype = 0, show.legend = FALSE) +
+    geom_line(linewidth = 1.8) +
+    geom_point(aes(size = prestige_tier)) +
+    scale_color_manual(values = tier_colors) +
+    scale_fill_manual(values = tier_colors) +
+    scale_linetype_manual(values = c("solid", "solid", "solid", "solid")) +
+    scale_shape_manual(values = c(16, 17, 15, 18)) +
+    scale_size_manual(values = c(4, 4, 4, 5.5)) +
+    scale_x_continuous(breaks = c(0, 5, 20, 50, 90, 100),
+                       labels = c("0", "5", "20", "50", "90", "100")) +
+    scale_y_continuous(expand = expansion(mult = c(0.05, 0.05))) +
+    labs(x = "Market Participation Rate (%)", y = "Mean Welfare per Hire",
+         color = "Department Tier", linetype = "Department Tier",
+         shape = "Department Tier", size = "Department Tier") +
+    plot_theme
+
+  list(plot = p, aggregate_data = welfare_by_tier)
+}
+
+
+# =============================================================================
+# 3c. DEPARTMENT WELFARE PER DEPARTMENT (line plots, averaged over replicates)
+# =============================================================================
+fig_department_welfare_per_dept <- function(all_sim_results,
+                                           year_filter = c(1, 10),
+                                           include_scramble = FALSE,
+                                           hire_rounds = NULL) {
+
+  departments <- all_sim_results$departments %>%
+    dplyr::select(dept_id, prestige_tier, s_j)
+  yearly_hiring_schedule <- .get_hiring_schedule(all_sim_results)
+  years_in_filter <- year_filter[1]:year_filter[2]
+  n_departments <- nrow(departments)
+
+  quota_by_tier <- tibble(dept_id = 1:n_departments) %>%
+    left_join(departments, by = "dept_id") %>%
+    crossing(year = years_in_filter) %>%
+    mutate(h_j = yearly_hiring_schedule[cbind(dept_id, year)]) %>%
+    group_by(prestige_tier) %>%
+    summarise(total_quota = sum(h_j), n_depts = n_distinct(dept_id), .groups = "drop")
+
+  rate_chrs <- names(all_sim_results$sim_results)
+
+  welfare_by_rep <- purrr::map_dfr(rate_chrs, function(rate_chr) {
+    rate <- as.numeric(rate_chr)
+    df <- .get_results(all_sim_results, rate_chr, year_filter)
+    if (nrow(df) == 0) return(tibble())
+    hires <- df %>% dplyr::filter(accepted == 1)
+    if (!include_scramble)
+      hires <- hires %>% dplyr::filter(interviewed == 1 | is.na(interviewed))
+    if (!is.null(hire_rounds))
+      hires <- hires %>% dplyr::filter(is.na(offer_round) | offer_round <= hire_rounds)
+    if (nrow(hires) == 0) return(tibble())
+
+    hires %>%
+      mutate(prestige_tier = tier_int_to_str(dept_tier),
+             U_effective = coalesce(U_true, if ("cand_util" %in% names(.)) cand_util else NA_real_)) %>%
+      group_by(replicate, prestige_tier) %>%
+      summarise(
+        n_hires = n(),
+        total_utility = sum(U_effective, na.rm = TRUE),
+        .groups = "drop"
+      ) %>%
+      left_join(quota_by_tier, by = "prestige_tier") %>%
+      mutate(
+        participation_rate = rate,
+        utility_per_dept = ifelse(n_depts > 0, total_utility / n_depts, NA_real_)
+      )
+  })
+
+  if (nrow(welfare_by_rep) == 0) { message("No welfare data"); return(NULL) }
+
+  welfare_by_tier <- welfare_by_rep %>%
+    group_by(participation_rate, prestige_tier) %>%
+    summarise(
+      utility_per_dept = mean(utility_per_dept, na.rm = TRUE),
+      se_utility_per_dept = sd(utility_per_dept, na.rm = TRUE) / sqrt(sum(!is.na(utility_per_dept))),
+      n_hires = mean(n_hires, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    left_join(quota_by_tier %>% dplyr::select(prestige_tier, total_quota, n_depts),
+              by = "prestige_tier") %>%
+    mutate(prestige_tier = factor(prestige_tier,
+                                  levels = c("Tier 1","Tier 2","Tier 3","Tier 4")))
+
+  ribbon_alpha <- 0.15
+  plot_theme <- theme_minimal(base_size = 14) +
+    theme(panel.grid.minor = element_blank(),
+          panel.grid.major = element_line(color = "gray90", linewidth = 0.5),
+          axis.title = element_text(size = 14, face = "bold"),
+          axis.text = element_text(size = 12),
+          legend.position = "bottom",
+          legend.title = element_text(size = 14, face = "bold"),
+          legend.text = element_text(size = 13),
+          legend.key.size = unit(1.5, "lines"),
+          legend.key.width = unit(2.5, "lines"),
+          legend.spacing.x = unit(0.5, "cm"),
+          plot.margin = margin(10, 10, 10, 10))
+
+  p <- ggplot(welfare_by_tier, aes(x = participation_rate * 100,
+                                   y = utility_per_dept,
+                                   color = prestige_tier,
+                                   linetype = prestige_tier,
+                                   shape = prestige_tier,
+                                   group = prestige_tier)) +
+    geom_ribbon(aes(ymin = utility_per_dept - 1.96 * se_utility_per_dept,
+                    ymax = utility_per_dept + 1.96 * se_utility_per_dept,
+                    fill = prestige_tier),
+                alpha = ribbon_alpha, linetype = 0, show.legend = FALSE) +
+    geom_line(linewidth = 1.8) +
+    geom_point(aes(size = prestige_tier)) +
+    scale_color_manual(values = tier_colors) +
+    scale_fill_manual(values = tier_colors) +
+    scale_linetype_manual(values = c("solid", "solid", "solid", "solid")) +
+    scale_shape_manual(values = c(16, 17, 15, 18)) +
+    scale_size_manual(values = c(4, 4, 4, 5.5)) +
+    scale_x_continuous(breaks = c(0, 5, 20, 50, 90, 100),
+                       labels = c("0", "5", "20", "50", "90", "100")) +
+    scale_y_continuous(expand = expansion(mult = c(0.05, 0.05))) +
+    labs(x = "Market Participation Rate (%)", y = "Mean Welfare per Department",
+         color = "Department Tier", linetype = "Department Tier",
+         shape = "Department Tier", size = "Department Tier") +
+    plot_theme
+
+  list(plot = p, aggregate_data = welfare_by_tier)
+}
+
+
+# =============================================================================
+# 3d. DEPARTMENT WELFARE PER OFFER EXTENDED (line plots, averaged over replicates)
+# =============================================================================
+fig_department_welfare_per_offer <- function(all_sim_results,
+                                            year_filter = c(1, 10),
+                                            include_scramble = FALSE,
+                                            hire_rounds = NULL) {
+
+  departments <- all_sim_results$departments %>%
+    dplyr::select(dept_id, prestige_tier, s_j)
+  rate_chrs <- names(all_sim_results$sim_results)
+
+  welfare_by_rep <- purrr::map_dfr(rate_chrs, function(rate_chr) {
+    rate <- as.numeric(rate_chr)
+    df <- .get_results(all_sim_results, rate_chr, year_filter)
+    if (nrow(df) == 0) return(tibble())
+    offers <- df %>% dplyr::filter(offered == 1)
+    if (!include_scramble)
+      offers <- offers %>% dplyr::filter(interviewed == 1 | is.na(interviewed))
+    if (!is.null(hire_rounds))
+      offers <- offers %>% dplyr::filter(is.na(offer_round) | offer_round <= hire_rounds)
+    if (nrow(offers) == 0) return(tibble())
+
+    offers %>%
+      mutate(prestige_tier = tier_int_to_str(dept_tier),
+             U_effective = coalesce(U_true, if ("cand_util" %in% names(.)) cand_util else NA_real_)) %>%
+      group_by(replicate, prestige_tier) %>%
+      summarise(
+        n_offers = n(),
+        mean_utility_per_offer = mean(U_effective, na.rm = TRUE),
+        .groups = "drop"
+      ) %>%
+      mutate(participation_rate = rate)
+  })
+
+  if (nrow(welfare_by_rep) == 0) { message("No welfare data"); return(NULL) }
+
+  welfare_by_tier <- welfare_by_rep %>%
+    group_by(participation_rate, prestige_tier) %>%
+    summarise(
+      mean_utility_per_offer = mean(mean_utility_per_offer, na.rm = TRUE),
+      se_utility_per_offer = sd(mean_utility_per_offer, na.rm = TRUE) / sqrt(sum(!is.na(mean_utility_per_offer))),
+      n_offers = mean(n_offers, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    mutate(prestige_tier = factor(prestige_tier,
+                                  levels = c("Tier 1","Tier 2","Tier 3","Tier 4")))
+
+  ribbon_alpha <- 0.15
+  plot_theme <- theme_minimal(base_size = 14) +
+    theme(panel.grid.minor = element_blank(),
+          panel.grid.major = element_line(color = "gray90", linewidth = 0.5),
+          axis.title = element_text(size = 14, face = "bold"),
+          axis.text = element_text(size = 12),
+          legend.position = "bottom",
+          legend.title = element_text(size = 14, face = "bold"),
+          legend.text = element_text(size = 13),
+          legend.key.size = unit(1.5, "lines"),
+          legend.key.width = unit(2.5, "lines"),
+          legend.spacing.x = unit(0.5, "cm"),
+          plot.margin = margin(10, 10, 10, 10))
+
+  p <- ggplot(welfare_by_tier, aes(x = participation_rate * 100,
+                                   y = mean_utility_per_offer,
+                                   color = prestige_tier,
+                                   linetype = prestige_tier,
+                                   shape = prestige_tier,
+                                   group = prestige_tier)) +
+    geom_ribbon(aes(ymin = mean_utility_per_offer - 1.96 * se_utility_per_offer,
+                    ymax = mean_utility_per_offer + 1.96 * se_utility_per_offer,
+                    fill = prestige_tier),
+                alpha = ribbon_alpha, linetype = 0, show.legend = FALSE) +
+    geom_line(linewidth = 1.8) +
+    geom_point(aes(size = prestige_tier)) +
+    scale_color_manual(values = tier_colors) +
+    scale_fill_manual(values = tier_colors) +
+    scale_linetype_manual(values = c("solid", "solid", "solid", "solid")) +
+    scale_shape_manual(values = c(16, 17, 15, 18)) +
+    scale_size_manual(values = c(4, 4, 4, 5.5)) +
+    scale_x_continuous(breaks = c(0, 5, 20, 50, 90, 100),
+                       labels = c("0", "5", "20", "50", "90", "100")) +
+    scale_y_continuous(expand = expansion(mult = c(0.05, 0.05))) +
+    labs(x = "Market Participation Rate (%)", y = "Mean Welfare per Offer Extended",
+         color = "Department Tier", linetype = "Department Tier",
+         shape = "Department Tier", size = "Department Tier") +
+    plot_theme
+
+  list(plot = p, aggregate_data = welfare_by_tier)
+}
+
+
+# =============================================================================
 # 4. CANDIDATE WELFARE BY TIER (conditional, averaged over replicates)
 # =============================================================================
 fig_candidate_welfare <- function(all_sim_results,
@@ -3303,7 +3618,7 @@ fig_candidate_welfare <- function(all_sim_results,
     if (!is.null(hire_rounds))
       matches <- matches %>% dplyr::filter(is.na(offer_round) | offer_round <= hire_rounds)
     matches <- matches %>%
-      mutate(V_ij = candidate_utility(v_i_bar, s_j, f_j, prestige_sensitivity = prestige_sensitivity))
+      mutate(V_ij = candidate_utility(v_i_bar, s_j, f_j))
 
     # Join by replicate, year, cand_id
     roster %>%
@@ -3409,6 +3724,204 @@ fig_candidate_welfare <- function(all_sim_results,
 
 
 # =============================================================================
+# 4b. CANDIDATE WELFARE BY TIER (unconditional: unmatched = 0)
+# =============================================================================
+fig_candidate_welfare_unconditional <- function(all_sim_results,
+                                                year_filter = c(1, 10),
+                                                include_scramble = FALSE,
+                                                hire_rounds = NULL) {
+
+  rate_chrs <- names(all_sim_results$sim_results)
+
+  welfare_by_rep <- purrr::map_dfr(rate_chrs, function(rate_chr) {
+    rate <- as.numeric(rate_chr)
+    roster <- .get_roster(all_sim_results, rate_chr, year_filter)
+    df <- .get_results(all_sim_results, rate_chr, year_filter)
+    if (nrow(df) == 0 || nrow(roster) == 0) return(tibble())
+
+    matches <- df %>% dplyr::filter(accepted == 1)
+    if (!include_scramble)
+      matches <- matches %>% dplyr::filter(interviewed == 1 | is.na(interviewed))
+    if (!is.null(hire_rounds))
+      matches <- matches %>% dplyr::filter(is.na(offer_round) | offer_round <= hire_rounds)
+    matches <- matches %>%
+      mutate(V_ij = candidate_utility(v_i_bar, s_j, f_j))
+
+    roster %>%
+      left_join(matches %>%
+                  group_by(replicate, year, cand_id) %>%
+                  slice(1) %>%
+                  summarise(welfare = first(V_ij), .groups = "drop"),
+                by = c("replicate", "year", "cand_id")) %>%
+      mutate(welfare = coalesce(welfare, 0)) %>%
+      group_by(replicate, quality_tier) %>%
+      summarise(
+        n_cand = n(),
+        mean_welfare = mean(welfare, na.rm = TRUE),
+        .groups = "drop"
+      ) %>%
+      mutate(participation_rate = rate)
+  })
+
+  if (nrow(welfare_by_rep) == 0) {
+    message("No candidate welfare data"); return(NULL)
+  }
+
+  unconditional_welfare <- welfare_by_rep %>%
+    group_by(participation_rate, quality_tier) %>%
+    summarise(
+      mean_welfare = mean(mean_welfare, na.rm = TRUE),
+      se_mean_welfare = sd(mean_welfare, na.rm = TRUE) / sqrt(sum(!is.na(mean_welfare))),
+      .groups = "drop"
+    ) %>%
+    mutate(quality_tier = factor(quality_tier,
+                                 levels = c("Tier 1","Tier 2","Tier 3","Tier 4")))
+
+  ribbon_alpha <- 0.15
+  plot_theme <- theme_minimal(base_size = 14) +
+    theme(panel.grid.minor = element_blank(),
+          panel.grid.major = element_line(color = "gray90", linewidth = 0.5),
+          axis.title = element_text(size = 14, face = "bold"),
+          axis.text = element_text(size = 12),
+          legend.position = "bottom",
+          legend.title = element_text(size = 14, face = "bold"),
+          legend.text = element_text(size = 13),
+          legend.key.size = unit(1.5, "lines"),
+          legend.key.width = unit(2.5, "lines"),
+          legend.spacing.x = unit(0.5, "cm"),
+          plot.margin = margin(10, 10, 10, 10))
+
+  p <- ggplot(unconditional_welfare,
+              aes(x = participation_rate * 100,
+                  y = mean_welfare,
+                  color = quality_tier,
+                  linetype = quality_tier,
+                  shape = quality_tier,
+                  size = quality_tier,
+                  group = quality_tier)) +
+    geom_ribbon(aes(ymin = mean_welfare - 1.96 * se_mean_welfare,
+                    ymax = mean_welfare + 1.96 * se_mean_welfare,
+                    fill = quality_tier),
+                alpha = ribbon_alpha, linetype = 0, show.legend = FALSE) +
+    geom_line(linewidth = 1.8) +
+    geom_point() +
+    scale_color_manual(values = tier_colors) +
+    scale_fill_manual(values = tier_colors) +
+    scale_linetype_manual(values = c("solid", "solid", "solid", "solid")) +
+    scale_shape_manual(values = c(16, 17, 15, 18)) +
+    scale_size_manual(values = c(4, 4, 4, 5.5)) +
+    scale_x_continuous(breaks = c(0, 5, 20, 50, 90, 100),
+                       labels = c("0", "5", "20", "50", "90", "100")) +
+    scale_y_continuous(expand = expansion(mult = c(0.05, 0.05))) +
+    labs(x = "Market Participation Rate (%)", y = "Mean Candidate Utility (Unconditional)",
+         color = "Candidate Tier", linetype = "Candidate Tier",
+         shape = "Candidate Tier", size = "Candidate Tier") +
+    plot_theme
+
+  list(plot = p, unconditional_welfare = unconditional_welfare)
+}
+
+
+# =============================================================================
+# 4c. CANDIDATE WELFARE — % CHANGE FROM BASELINE (unconditional)
+# =============================================================================
+fig_candidate_welfare_pct_change <- function(all_sim_results,
+                                             year_filter = c(1, 10),
+                                             include_scramble = FALSE,
+                                             hire_rounds = NULL) {
+
+  rate_chrs <- names(all_sim_results$sim_results)
+
+  welfare_by_rep <- purrr::map_dfr(rate_chrs, function(rate_chr) {
+    rate <- as.numeric(rate_chr)
+    roster <- .get_roster(all_sim_results, rate_chr, year_filter)
+    df <- .get_results(all_sim_results, rate_chr, year_filter)
+    if (nrow(df) == 0 || nrow(roster) == 0) return(tibble())
+
+    matches <- df %>% dplyr::filter(accepted == 1)
+    if (!include_scramble)
+      matches <- matches %>% dplyr::filter(interviewed == 1 | is.na(interviewed))
+    if (!is.null(hire_rounds))
+      matches <- matches %>% dplyr::filter(is.na(offer_round) | offer_round <= hire_rounds)
+    matches <- matches %>%
+      dplyr::mutate(V_ij = candidate_utility(v_i_bar, s_j, f_j))
+
+    roster %>%
+      dplyr::left_join(matches %>%
+                dplyr::group_by(replicate, year, cand_id) %>%
+                dplyr::slice(1) %>%
+                dplyr::summarise(welfare = dplyr::first(V_ij), .groups = "drop"),
+              by = c("replicate", "year", "cand_id")) %>%
+      dplyr::mutate(welfare = coalesce(welfare, 0)) %>%
+      dplyr::group_by(replicate, quality_tier) %>%
+      dplyr::summarise(n_cand = n(),
+                       mean_welfare = mean(welfare, na.rm = TRUE),
+                       .groups = "drop") %>%
+      dplyr::mutate(participation_rate = rate)
+  })
+
+  if (nrow(welfare_by_rep) == 0) {
+    message("No candidate welfare data"); return(NULL)
+  }
+
+  # Average across replicates
+  unconditional_welfare <- welfare_by_rep %>%
+    dplyr::group_by(participation_rate, quality_tier) %>%
+    dplyr::summarise(
+      mean_welfare = mean(mean_welfare, na.rm = TRUE),
+      se_mean_welfare = sd(mean_welfare, na.rm = TRUE) / sqrt(sum(!is.na(mean_welfare))),
+      .groups = "drop") %>%
+    dplyr::mutate(quality_tier = factor(quality_tier,
+                                        levels = c("Tier 1","Tier 2","Tier 3","Tier 4")))
+
+  # Compute baseline (rho=0) per tier
+  baseline <- unconditional_welfare %>%
+    dplyr::filter(participation_rate == 0)
+  baseline_map <- setNames(baseline$mean_welfare, as.character(baseline$quality_tier))
+
+  normed <- unconditional_welfare %>%
+    dplyr::mutate(
+      baseline = baseline_map[as.character(quality_tier)],
+      pct_change = (mean_welfare - baseline) / baseline * 100
+    )
+
+  tier_colors <- c("Tier 1" = "#1b9e77", "Tier 2" = "#d95f02",
+                   "Tier 3" = "#7570b3", "Tier 4" = "#e7298a")
+  ribbon_alpha <- 0.15
+
+  plot_theme <- theme_minimal(base_size = 14) +
+    theme(panel.grid.minor = element_blank(),
+          panel.grid.major = element_line(color = "gray90", linewidth = 0.5),
+          axis.title = element_text(size = 14, face = "bold"),
+          axis.text = element_text(size = 12),
+          legend.position = "bottom",
+          legend.title = element_text(size = 14, face = "bold"),
+          legend.text = element_text(size = 13),
+          legend.key.size = unit(1.5, "lines"),
+          legend.key.width = unit(2.5, "lines"),
+          legend.spacing.x = unit(0.5, "cm"),
+          plot.margin = margin(10, 10, 10, 10))
+
+  p <- ggplot(normed, aes(x = participation_rate * 100, y = pct_change,
+                           color = quality_tier, shape = quality_tier,
+                           group = quality_tier)) +
+    geom_hline(yintercept = 0, linetype = "dashed", color = "gray50") +
+    geom_line(linewidth = 1.8) +
+    geom_point(size = 4) +
+    scale_color_manual(values = tier_colors) +
+    scale_shape_manual(values = c(16, 17, 15, 18)) +
+    scale_x_continuous(breaks = sort(unique(normed$participation_rate * 100))) +
+    scale_y_continuous(expand = expansion(mult = c(0.05, 0.05))) +
+    labs(x = "Market Participation Rate (%)",
+         y = "% Change in Expected Utility from Baseline",
+         color = "Candidate Tier", shape = "Candidate Tier") +
+    plot_theme
+
+  list(plot = p, data = normed, unconditional_welfare = unconditional_welfare)
+}
+
+
+# =============================================================================
 # 5. CANDIDATE BY PARTICIPATION (Participating vs Non-participating)
 #    — NOW WITH PARTICIPATION COLORS —
 # =============================================================================
@@ -3434,7 +3947,7 @@ fig_participation_welfare <- function(all_sim_results,
   if (!is.null(hire_rounds))
     bl_results <- bl_results %>% dplyr::filter(is.na(offer_round) | offer_round <= hire_rounds)
   bl_results <- bl_results %>%
-    mutate(V_ij = candidate_utility(v_i_bar, s_j, f_j, prestige_sensitivity = prestige_sensitivity))
+    mutate(V_ij = candidate_utility(v_i_bar, s_j, f_j))
   
   bl_per_rep <- bl_roster %>%
     left_join(bl_results %>%
@@ -3475,7 +3988,7 @@ fig_participation_welfare <- function(all_sim_results,
       df <- df %>% dplyr::filter(interviewed == 1 | is.na(interviewed))
     if (!is.null(hire_rounds))
       df <- df %>% dplyr::filter(is.na(offer_round) | offer_round <= hire_rounds)
-    df <- df %>% mutate(V_ij = candidate_utility(v_i_bar, s_j, f_j, prestige_sensitivity = prestige_sensitivity))
+    df <- df %>% mutate(V_ij = candidate_utility(v_i_bar, s_j, f_j))
     
     matched_agg <- df %>%
       group_by(replicate, year, cand_id) %>%
