@@ -29,7 +29,7 @@ cat("=== COMBINING RESULTS ===\n")
 n_batches <- 10L
 
 # ── Load burn-in artifacts ──
-artifacts   <- readRDS("../output/burn_in_artifacts.rds")
+artifacts   <- readRDS("output/burn_in_artifacts.rds")
 departments <- artifacts$departments
 cfg         <- artifacts$config
 
@@ -119,26 +119,26 @@ interview_heatmap   <- fig_interview_heatmap(all_sim_results,
 hiring_heatmap      <- fig_hiring_heatmap(all_sim_results,
                          year_filter = c(1, 10), include_scramble = TRUE, hire_rounds = 2)
 
-
-# Candidate Results:
 cand_welfare        <- fig_candidate_welfare(all_sim_results,
                          year_filter = c(1, 10), include_scramble = TRUE, hire_rounds = 2)
 
 cand_welfare_uncond <- fig_candidate_welfare_unconditional(all_sim_results,
                          year_filter = c(1, 10), include_scramble = TRUE, hire_rounds = 2)
 
-
-
-# Department Results:
 dept_welfare        <- fig_department_welfare(all_sim_results,
                          year_filter = c(1, 10), include_scramble = TRUE, hire_rounds = 2)
 
 dept_welfare_offer  <- fig_department_welfare_per_offer(all_sim_results,
                          year_filter = c(1, 10), include_scramble = TRUE, hire_rounds = 2)
 
-
 cand_participation  <- fig_participation_welfare(all_sim_results,
                          year_filter = c(1, 10), include_scramble = TRUE, hire_rounds = 2)
+
+# Stability analysis 
+blocking_pairs <- count_blocking_pairs(all_sim_results,
+                                       hiring_schedule = artifacts$yearly_hiring_schedule_sim,
+                                       rates = cfg$participation_rates, year_filter = 1:10,
+                                        max_replicates = 200)
 
 
 ggsave("../manuscript/fig/fig_dept_interview_heatmap.pdf", interview_heatmap$plot,
@@ -155,7 +155,8 @@ ggsave("../manuscript/fig/fig_candidate_welfare_unconditional.pdf", cand_welfare
        width = 7,  height = 5, device = cairo_pdf)
 ggsave("manuscript/fig/fig_dept_welfare_per_offer.pdf",         dept_welfare_offer$plot,
        width = 7,  height = 5, device = cairo_pdf)
-
+ggsave("manuscript/fig/fig_blocking_pairs.pdf", blocking_pairs$plot,
+       width = 7, height = 5, device = cairo_pdf)
 
 saveRDS(interview_heatmap,   "output/interview_heatmap.rds")
 saveRDS(hiring_heatmap,      "output/hiring_heatmap.rds")
@@ -164,6 +165,17 @@ saveRDS(cand_welfare,        "output/cand_welfare.rds")
 saveRDS(cand_participation,  "output/cand_participation.rds")
 saveRDS(cand_welfare_uncond, "output/cand_welfare_uncond.rds")
 saveRDS(dept_welfare_offer,  "output/dept_welfare_offer.rds")
+saveRDS(blocking_pairs, "output/blocking_pairs.rds")
+
+
+
+
+
+
+
+
+
+
 
 
 

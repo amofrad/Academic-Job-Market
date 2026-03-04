@@ -3850,3 +3850,285 @@ fig_participation_welfare <- function(all_sim_results,
 
   list(plot = combined, data = comparison_data, baseline_stats = baseline_stats)
 }
+
+
+# =============================================================================
+# count_blocking_pairs — Blocking pair analysis for baseline vs questionnaire
+#
+# Standard blocking pair definition for a one-to-one matching with unfilled
+# positions and shortlisting.  A pair (d, c) blocks matching mu when:
+#
+#   1. d has an open position in year y  (h_j = 1)
+#   2. c is eligible for d under the shortlist rule (tier-based)
+#   3. (d, c) is not in mu
+#   4. d strictly prefers c to mu(d):
+#        - if d is filled:   U(d,c) > U(d, mu(d))
+#        - if d is unfilled: always satisfied (d prefers any hire to vacancy)
+#   5. c strictly prefers d to mu(c):
+#        - if c is matched:  V(c,d) > V(c, mu(c))
+#        - if c is unmatched: always satisfied (c prefers any job to none)
+#
+# Metric: average number of blocking pairs per hiring position.
+#
+# Returns list(plot, data, summary).
+# =============================================================================
+count_blocking_pairs <- function(all_sim_results,
+                                 hiring_schedule,
+                                 rates = c(0, 1),
+                                 year_filter = NULL,
+                                 max_replicates = NULL) {
+
+  departments   <- all_sim_results$departments
+  cfg           <- all_sim_results$config
+  n_candidates  <- cfg$n_candidates
+  burn_in_years <- cfg$burn_in_years
+  base_seed     <- cfg$base_seed
+  sim_years     <- cfg$sim_years
+  n_departments <- nrow(departments)
+
+  if (is.null(year_filter)) year_filter <- 1:sim_years
+
+  rep_ids <- sort(unique(
+    all_sim_results$sim_results[[as.character(rates[1])]]$results$replicate))
+  if (!is.null(max_replicates)) rep_ids <- head(rep_ids, max_replicates)
+
+  out <- vector("list", length(rep_ids) * length(year_filter) * length(rates))
+  k <- 0L
+
+  for (rep in rep_ids) {
+    cat(sprintf("\r  Blocking pairs: replicate %d / %d", rep, max(rep_ids)))
+    rep_seed <- base_seed + rep * 10000L
+
+    # Regenerate candidate cohorts (deterministic via saved seeds)
+    yearly_cohorts <- vector("list", sim_years)
+    for (yr in 1:sim_years)
+      yearly_cohorts[[yr]] <- generate_candidates(
+        n_candidates, questions, seed = rep_seed + burn_in_years + yr)
+
+    for (yr in year_filter) {
+      cohort       <- yearly_cohorts[[yr]]
+      hiring_depts <- which(hiring_schedule[, yr] == 1L)
+      n_hiring     <- length(hiring_depts)
+      if (n_hiring == 0L) next
+
+      # Assign candidate quality tiers (same as simulation)
+      cand_tiers <- assign_tiers_from_quantiles(
+        cohort$v_i_bar, cutpoints = c(0.10, 0.25, 0.50))
+
+      # Shortlist eligibility: which candidates each dept considers
+      # Tier 1 -> Tier 1 only; Tier 2 -> 1-2; Tier 3 -> 1-3; Tier 4 -> all
+      allow_map <- list(
+        "Tier 1" = "Tier 1",
+        "Tier 2" = c("Tier 1", "Tier 2"),
+        "Tier 3" = c("Tier 1", "Tier 2", "Tier 3"),
+        "Tier 4" = c("Tier 1", "Tier 2", "Tier 3", "Tier 4"))
+      # eligible[i, d] = TRUE if dept d would consider candidate i
+      eligible <- matrix(FALSE, n_candidates, n_hiring)
+      for (idx in seq_along(hiring_depts)) {
+        pt <- as.character(
+          departments$prestige_tier[hiring_depts[idx]] %||% "Tier 4")
+        allowed <- allow_map[[pt]] %||% allow_map[["Tier 4"]]
+        eligible[, idx] <- as.character(cand_tiers) %in% allowed
+      }
+
+      # f_j, U, V matrices for all (candidate, hiring-dept) pairs
+      s_j_vec <- departments$s_j[hiring_depts]
+      v_i_vec <- cohort$v_i_bar
+      fj_mat  <- matrix(NA_real_, n_candidates, n_hiring)
+      U_mat   <- matrix(NA_real_, n_candidates, n_hiring)
+      V_mat   <- matrix(NA_real_, n_candidates, n_hiring)
+      for (idx in seq_along(hiring_depts)) {
+        fj_mat[, idx] <- compute_f_j(
+          cohort, departments[hiring_depts[idx], , drop = FALSE], questions)
+        U_mat[, idx] <- department_utility(
+          s_j_vec[idx], v_i_vec, fj_mat[, idx])
+        V_mat[, idx] <- candidate_utility(
+          v_i_vec, s_j_vec[idx], fj_mat[, idx])
+      }
+
+      for (rate in rates) {
+        # --- Extract matching mu for this (replicate, year, rate) ---
+        matches <- all_sim_results$sim_results[[as.character(rate)]]$results %>%
+          dplyr::filter(replicate == rep, year == yr, accepted == 1L)
+        n_matches <- nrow(matches)
+
+        dept_hire  <- rep(NA_integer_, n_hiring)
+        cand_match <- rep(NA_integer_, n_candidates)
+        for (r in seq_len(n_matches)) {
+          d_idx <- match(matches$dept_id[r],
+                         departments$dept_id[hiring_depts])
+          if (!is.na(d_idx)) {
+            dept_hire[d_idx]              <- matches$cand_id[r]
+            cand_match[matches$cand_id[r]] <- d_idx
+          }
+        }
+
+        # Thresholds: utility of current partner (0 if unfilled/unmatched)
+        dept_threshold <- numeric(n_hiring)
+        for (d in seq_len(n_hiring))
+          if (!is.na(dept_hire[d]))
+            dept_threshold[d] <- U_mat[dept_hire[d], d]
+
+        cand_threshold <- numeric(n_candidates)
+        for (i in seq_len(n_candidates))
+          if (!is.na(cand_match[i]))
+            cand_threshold[i] <- V_mat[i, cand_match[i]]
+
+        # --- Count blocking pairs per position, with shortlist rule ---
+        # For each position d, count how many eligible candidates c
+        # form a blocking pair with d.
+        dept_bp_count <- integer(n_hiring)
+
+        for (d in seq_len(n_hiring)) {
+          bp <- eligible[, d] &
+            (U_mat[, d] > dept_threshold[d]) &
+            (V_mat[, d] > cand_threshold)
+          if (!is.na(dept_hire[d])) bp[dept_hire[d]] <- FALSE
+          dept_bp_count[d] <- sum(bp)
+        }
+
+        total_bp         <- sum(dept_bp_count)
+        n_eligible_pairs <- sum(eligible)
+
+        # Per-tier aggregation
+        dept_tier_vec <- as.character(
+          departments$prestige_tier[hiring_depts])
+        tier_labels <- c("Tier 1","Tier 2","Tier 3","Tier 4")
+        tier_bp    <- setNames(numeric(4), tier_labels)
+        tier_elig  <- setNames(numeric(4), tier_labels)
+        tier_ndept <- setNames(numeric(4), tier_labels)
+        for (tl in tier_labels) {
+          idx <- which(dept_tier_vec == tl)
+          tier_bp[[tl]]    <- sum(dept_bp_count[idx])
+          tier_elig[[tl]]  <- sum(eligible[, idx])
+          tier_ndept[[tl]] <- length(idx)
+        }
+
+        k <- k + 1L
+        out[[k]] <- tibble::tibble(
+          participation_rate = rate,
+          replicate          = rep,
+          year               = yr,
+          n_blocking_pairs   = total_bp,
+          n_eligible_pairs   = n_eligible_pairs,
+          n_hiring_depts     = n_hiring,
+          n_filled           = sum(!is.na(dept_hire)),
+          n_matches          = n_matches,
+          bp_t1 = tier_bp[1], elig_t1 = tier_elig[1], nd_t1 = tier_ndept[1],
+          bp_t2 = tier_bp[2], elig_t2 = tier_elig[2], nd_t2 = tier_ndept[2],
+          bp_t3 = tier_bp[3], elig_t3 = tier_elig[3], nd_t3 = tier_ndept[3],
+          bp_t4 = tier_bp[4], elig_t4 = tier_elig[4], nd_t4 = tier_ndept[4]
+        )
+      }
+    }
+  }
+  cat("\n")
+  data <- dplyr::bind_rows(out[1:k])
+
+  # --- Blocking pair rate: fraction of eligible pairings that block ---
+  data <- data %>%
+    dplyr::mutate(
+      bp_rate = n_blocking_pairs / n_eligible_pairs)
+
+  # --- Summary: average across years, grouped by participation rate ---
+  # First average each replicate across years, then summarise across reps
+  rep_avg <- data %>%
+    dplyr::group_by(participation_rate, replicate) %>%
+    dplyr::summarise(
+      bp_rate_avg = mean(bp_rate), .groups = "drop")
+
+  summary_tbl <- rep_avg %>%
+    dplyr::group_by(participation_rate) %>%
+    dplyr::summarise(
+      mean_bp_rate = mean(bp_rate_avg),
+      se_bp_rate   = sd(bp_rate_avg) / sqrt(dplyr::n()),
+      .groups = "drop")
+
+  # --- Figure ---
+  plot_theme <- theme_minimal(base_size = 14) +
+    theme(panel.grid.minor   = element_blank(),
+          panel.grid.major   = element_line(color = "gray90",
+                                            linewidth = 0.5),
+          axis.title         = element_text(size = 14, face = "bold"),
+          axis.text          = element_text(size = 12),
+          plot.margin        = margin(10, 10, 10, 10))
+
+  p <- ggplot(summary_tbl,
+              aes(x = participation_rate,
+                  y = mean_bp_rate)) +
+    geom_ribbon(aes(
+      ymin = mean_bp_rate - 1.96 * se_bp_rate,
+      ymax = mean_bp_rate + 1.96 * se_bp_rate),
+      alpha = 0.15, fill = "#377EB8") +
+    geom_line(linewidth = 1.2, color = "#377EB8") +
+    geom_point(size = 3, color = "#377EB8") +
+    scale_x_continuous(
+      breaks = sort(unique(summary_tbl$participation_rate)),
+      labels = scales::percent_format(accuracy = 1),
+      name = "Participation Rate") +
+    scale_y_continuous(
+      labels = scales::percent_format(accuracy = 0.1),
+      name = "Blocking Pair Rate (% of Eligible Pairings)") +
+    plot_theme
+
+  # --- Per-tier plot ---
+  # Normalize by (n_depts_in_tier * n_candidates) — full candidate set
+  tier_long <- data %>%
+    dplyr::transmute(
+      participation_rate, replicate, year,
+      `Tier 1` = bp_t1 / (nd_t1 * n_candidates),
+      `Tier 2` = bp_t2 / (nd_t2 * n_candidates),
+      `Tier 3` = bp_t3 / (nd_t3 * n_candidates),
+      `Tier 4` = bp_t4 / (nd_t4 * n_candidates)) %>%
+    tidyr::pivot_longer(
+      cols = starts_with("Tier"),
+      names_to = "dept_tier",
+      values_to = "bp_rate_tier") %>%
+    dplyr::group_by(participation_rate, replicate, dept_tier) %>%
+    dplyr::summarise(
+      bp_rate_avg = mean(bp_rate_tier, na.rm = TRUE),
+      .groups = "drop")
+
+  tier_summary <- tier_long %>%
+    dplyr::group_by(participation_rate, dept_tier) %>%
+    dplyr::summarise(
+      mean_bp_rate = mean(bp_rate_avg),
+      se_bp_rate   = sd(bp_rate_avg) / sqrt(dplyr::n()),
+      .groups = "drop") %>%
+    dplyr::mutate(
+      dept_tier = factor(dept_tier,
+                         levels = c("Tier 1","Tier 2",
+                                    "Tier 3","Tier 4")))
+
+  tier_colors <- c("Tier 1" = "#E41A1C", "Tier 2" = "#377EB8",
+                    "Tier 3" = "#4DAF4A", "Tier 4" = "#984EA3")
+
+  p_tier <- ggplot(tier_summary,
+                   aes(x = participation_rate,
+                       y = mean_bp_rate,
+                       color = dept_tier, shape = dept_tier,
+                       fill = dept_tier)) +
+    geom_ribbon(aes(
+      ymin = mean_bp_rate - 1.96 * se_bp_rate,
+      ymax = mean_bp_rate + 1.96 * se_bp_rate),
+      alpha = 0.10, color = NA) +
+    geom_line(linewidth = 1.2) +
+    geom_point(size = 3) +
+    scale_x_continuous(
+      breaks = sort(unique(tier_summary$participation_rate)),
+      labels = scales::percent_format(accuracy = 1),
+      name = "Participation Rate") +
+    scale_y_continuous(
+      labels = scales::percent_format(accuracy = 0.1),
+      name = "Blocking Pair Rate (% of All Pairings)") +
+    scale_color_manual(values = tier_colors) +
+    scale_fill_manual(values = tier_colors) +
+    scale_shape_manual(values = c(16, 17, 15, 18)) +
+    labs(color = NULL, fill = NULL, shape = NULL) +
+    plot_theme +
+    theme(legend.position = "bottom")
+
+  list(plot = p, plot_tier = p_tier,
+       data = data, summary = summary_tbl,
+       tier_summary = tier_summary)
+}
