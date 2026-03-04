@@ -49,10 +49,19 @@ assign_tiers_from_quantiles <- function(x, cutpoints = c(0.10, 0.25, 0.50),
 candidate_utility <- function(v_i_bar, s_j, f_j, cand_tier = NULL,
                               prestige_sensitivity = NULL) {
   # Cobb-Douglas: V = s_j^beta * f_j^(1-beta)
-  #   beta = 0.05 + 0.15*v_i_bar  (higher-quality candidates value prestige more)
-  # CT1 (v~0.87): beta~0.18, 82% fit / 18% prestige
-  # CT4 (v~0.48): beta~0.12, 88% fit / 12% prestige
-  beta <- pmin(0.05 + 0.15 * v_i_bar, 0.9)
+  # Tier-gap-aware: beta increases when dept prestige exceeds candidate quality
+  #   beta_base = 0.30 + 0.35*v_i_bar  (higher-quality candidates value prestige more)
+  #   prestige_gap = s_j - v_i_bar  (positive when dept is "above" candidate)
+  #   beta = beta_base + 0.30 * prestige_gap
+  # Intuition: CT1 candidate offered by DT1 → high beta (accept for prestige)
+  #            CT1 candidate offered by DT3 → lower beta (need good fit to accept)
+  # CT1 (v~0.87) at DT1 (s~0.87): beta_base~0.60, gap~0,    beta~0.60
+  # CT1 (v~0.87) at DT3 (s~0.40): beta_base~0.60, gap~-0.47, beta~0.46
+  # CT4 (v~0.48) at DT4 (s~0.28): beta_base~0.47, gap~-0.20, beta~0.41
+  # CT4 (v~0.48) at DT1 (s~0.87): beta_base~0.47, gap~+0.39, beta~0.59
+  beta_base <- pmin(0.30 + 0.35 * v_i_bar, 0.9)
+  prestige_gap <- s_j - v_i_bar
+  beta <- pmin(0.9, pmax(0.05, beta_base + 0.30 * prestige_gap))
   s <- s_j + 1e-8
   f <- f_j + 1e-8
   V_ij <- s^beta * f^(1 - beta)
@@ -60,17 +69,49 @@ candidate_utility <- function(v_i_bar, s_j, f_j, cand_tier = NULL,
 }
 
 
+#CT4 <- 0.478
+#CT3 <- 0.669
+#CT2 <- 0.764
+#CT1 <- 0.859
+
+#DT1 <- 0.872
+#DT2 <- 0.732
+#DT3 <- 0.534
+#DT4 <- 0.276
+
+#f_try <- 0.5
+
+#candidate_utility(CT4, DT1, f_try)
+#candidate_utility(CT4, DT2, f_try)
+#candidate_utility(CT4, DT3, f_try) 
+#candidate_utility(CT4, DT4, f_try)
+#candidate_utility(CT3, DT1, f_try) 
+#candidate_utility(CT3, DT2, f_try) 
+#candidate_utility(CT3, DT3, f_try)
+#candidate_utility(CT3, DT4, f_try) 
+#candidate_utility(CT2, DT1, f_try) 
+
+#department_utility(DT2, CT1, 0.7)
+
+
+
 department_utility <- function(s_j, v_i_bar, f_j, dept_tier = NULL, cand_tier = NULL) {
   # Cobb-Douglas: U = v^alpha * f^(1-alpha)
-  #   alpha = 0.10 + 0.40*s_j^2  (top depts weight quality more, lower depts rely on fit)
-  # DT1 (s~0.87): alpha~0.40, 60% fit / 40% quality
-  # DT4 (s~0.28): alpha~0.13, 87% fit / 13% quality
-  alpha <- pmin(0.10 + 0.40 * s_j^2, 0.9)
+  # All departments prioritize quality (alpha > 0.5), with top depts most quality-focused.
+  #   alpha = 0.50 + 0.40*s_j  (linear in s_j, steeper slope for DT1 dominance)
+  # DT1 (s~0.87): alpha~0.85 → 85% quality / 15% fit
+  # DT2 (s~0.73): alpha~0.79 → 79% quality / 21% fit
+  # DT3 (s~0.53): alpha~0.71 → 71% quality / 29% fit
+  # DT4 (s~0.28): alpha~0.61 → 61% quality / 39% fit
+  alpha <- pmin(0.50 + 0.40 * s_j, 0.9)
   v <- v_i_bar + 1e-8
   f <- f_j + 1e-8
   U <- v^alpha * f^(1 - alpha)
   pmin(pmax(U, 1e-6), 1 - 1e-6)
 }
+
+
+
 
 # --- Previous utility forms (commented out) ---
 #
@@ -316,14 +357,18 @@ generate_candidates_new <- function(n_candidates, questions, seed = NULL) {
 
   n <- n_candidates; v_pctl <- candidates$quality_pctl
 
-  # Preference heterogeneity: fully independent of quality (v_i_bar)
-  # All candidates draw from the same distributions regardless of tier
-  flexibility <- runif(n, 0.3, 1.0)
+  # Preference heterogeneity: quality-correlated shifts on key dimensions
+  # v_centered = v_i_bar - 0.62 (mean of Beta(2,1.1)^(1/3) geometric mean)
+  # High-quality candidates: less flexible, less teaching-focused, more location-picky
+  # Low-quality candidates: more flexible, more open to teaching, less location-picky
+  # Shifts are moderate (0.20-0.25) so preferences remain heterogeneous within tiers
+  v_centered <- candidates$v_i_bar - 0.62
+  flexibility <- pmin(1.0, pmax(0.2, runif(n, 0.3, 1.0) - 0.25 * v_centered))
 
-  # Idiosyncratic preference dimensions — Beta(2,2) gives moderate variance for all candidates
-  teaching_focus <- rbeta(n, 2, 2)      # 0 = research-focused, 1 = teaching-focused
-  location_priority <- rbeta(n, 2, 2)   # 0 = location-indifferent, 1 = location-crucial
-  collab_preference <- rbeta(n, 2, 2)   # 0 = independent, 1 = collaborative
+  # Idiosyncratic preference dimensions with quality-correlated shifts
+  teaching_focus <- pmin(0.95, pmax(0.05, rbeta(n, 2, 2) - 0.20 * v_centered))
+  location_priority <- pmin(0.95, pmax(0.05, rbeta(n, 2, 2) + 0.20 * v_centered))
+  collab_preference <- rbeta(n, 2, 2)   # 0 = independent, 1 = collaborative (stays independent)
 
   # Helper: fully vectorized weighted sampling (no apply)
   vsample <- function(choices, prob_matrix) {
@@ -1659,10 +1704,13 @@ run_burn_in_phase <- function(departments, questions, n_candidates = 500, burn_i
                               noise_method = "bootstrap", noise_scale = 0.15,
                               cand_tier_cutpoints = c(0.10, 0.25, 0.50),
                               max_offer_rounds = 5, print_diagnostics = TRUE,
-                              return_yearly_objects = FALSE) {
+                              return_yearly_objects = FALSE,
+                              retrain_interval = 3L, min_offered_to_train = 10L) {
   set.seed(seed); torch::torch_manual_seed(seed); n_departments <- nrow(departments)
-  cat("\n", strrep("=", 70), "\nBURN-IN PHASE: Learning Priors\n", strrep("=", 70), "\n")
+  cat("\n", strrep("=", 70), "\nBURN-IN PHASE: Learning Priors (Incremental)\n", strrep("=", 70), "\n")
   cat(sprintf("Running %d years of baseline simulation...\n", burn_in_years))
+  cat(sprintf("  Incremental retraining every %d years (min %d offered obs)\n",
+              retrain_interval, min_offered_to_train))
   if (is.null(yearly_hiring_schedule))
     yearly_hiring_schedule <- generate_yearly_hiring_schedule(n_departments, burn_in_years, departments, seed + 500)
   if (is.null(yearly_candidate_cohorts)) {
@@ -1670,7 +1718,17 @@ run_burn_in_phase <- function(departments, questions, n_candidates = 500, burn_i
     for (year in 1:burn_in_years)
       yearly_candidate_cohorts[[year]] <- generate_candidates_new(n_candidates, questions, seed = seed + year)
   }
-  mdl <- purrr::map(1:n_departments, ~initialize_department_model(questions, include_fit = FALSE, include_questions = FALSE))
+
+  # Models learn P(accept | s_j, v_i_bar, f_j) from outcomes.
+  # During burn-in, departments learn that fit matters for acceptance
+  # through interviews and offer outcomes (realistic institutional
+  # knowledge). However, at PREDICTION time with participation_rate=0,
+  # f_j_used = 0.5 for all candidates — so fit cannot discriminate
+  # among new applicants. The questionnaire's value is providing
+  # candidate-specific f_j at prediction time.
+  mdl <- purrr::map(1:n_departments,
+    ~initialize_department_model(questions, include_fit = TRUE, include_questions = FALSE))
+
   res_all <- list(); cand_roster_all <- list()
   for (year in 1:burn_in_years) {
     cat(sprintf("\n--- Burn-in Year %d/%d ---\n", year, burn_in_years))
@@ -1686,33 +1744,61 @@ run_burn_in_phase <- function(departments, questions, n_candidates = 500, burn_i
                                                     noise_scale = noise_scale, shortlist_enabled = TRUE, collect_ranking_panel = FALSE,
                                                     cand_tier_col = "quality_tier", max_offer_rounds = max_offer_rounds, seed = year)
     res_all[[year]] <- out$results
+
+    # Accumulate learning data — keep real f_j (do NOT overwrite with v_i_bar)
     for (j in 1:n_departments) {
       if (!is.null(out$learning_data_pairwise[[j]]) && nrow(out$learning_data_pairwise[[j]]) > 0) {
-        ld <- out$learning_data_pairwise[[j]]
-        ld$f_j <- ld$v_i_bar
-        mdl[[j]]$historical_data <- bind_rows(mdl[[j]]$historical_data, ld)
+        mdl[[j]]$historical_data <- bind_rows(mdl[[j]]$historical_data,
+                                              out$learning_data_pairwise[[j]])
       }
     }
-  }
-  cat("\n", strrep("=", 70), "\nTraining models on burn-in data...\n", strrep("=", 70), "\n")
-  for (j in 1:n_departments) {
-    n_obs <- nrow(mdl[[j]]$historical_data)
-    if (n_obs >= 10) {
-      mdl[[j]] <- train_department_model(mdl[[j]], mdl[[j]]$historical_data,
-                                         n_epochs = 100, include_fit = FALSE, include_questions = FALSE, seed = j * 1000)
-      cat(sprintf("  Dept %d: Trained on %d observations\n", j, n_obs))
-    } else {
-      cat(sprintf("  Dept %d: Insufficient data (%d obs)\n", j, n_obs))
+
+    # Incremental retraining: retrain models every retrain_interval years
+    if (year %% retrain_interval == 0L) {
+      n_retrained <- 0L
+      for (j in 1:n_departments) {
+        n_offered <- if (nrow(mdl[[j]]$historical_data) > 0 && "offered" %in% names(mdl[[j]]$historical_data))
+          sum(mdl[[j]]$historical_data$offered == 1L, na.rm = TRUE) else 0L
+        if (n_offered >= min_offered_to_train) {
+          mdl[[j]] <- tryCatch(
+            train_department_model(mdl[[j]], mdl[[j]]$historical_data,
+                                   n_epochs = 60, include_fit = TRUE,
+                                   include_questions = FALSE,
+                                   seed = j * 1000 + year),
+            error = function(e) mdl[[j]])
+          n_retrained <- n_retrained + 1L
+        }
+      }
+      cat(sprintf("  [Year %d] Retrained %d/%d department models\n",
+                  year, n_retrained, n_departments))
     }
   }
+
+  # Final training pass on all accumulated data
+  cat("\n", strrep("=", 70), "\nFinal training on all burn-in data...\n", strrep("=", 70), "\n")
+  for (j in 1:n_departments) {
+    n_offered <- if (nrow(mdl[[j]]$historical_data) > 0 && "offered" %in% names(mdl[[j]]$historical_data))
+      sum(mdl[[j]]$historical_data$offered == 1L, na.rm = TRUE) else 0L
+    if (n_offered >= min_offered_to_train) {
+      mdl[[j]] <- tryCatch(
+        train_department_model(mdl[[j]], mdl[[j]]$historical_data,
+                               n_epochs = 100, include_fit = TRUE,
+                               include_questions = FALSE, seed = j * 1000),
+        error = function(e) mdl[[j]])
+      cat(sprintf("  Dept %d: Trained on %d observations (%d offered)\n",
+                  j, nrow(mdl[[j]]$historical_data), n_offered))
+    } else {
+      cat(sprintf("  Dept %d: Insufficient offered data (%d offered)\n", j, n_offered))
+    }
+  }
+
   total_hires <- sum(vapply(res_all, function(r) sum(r$accepted == 1, na.rm = TRUE), numeric(1)))
   total_offers <- sum(vapply(res_all, function(r) sum(r$offered == 1, na.rm = TRUE), numeric(1)))
   cat(sprintf("\nBurn-in complete. Offers: %d | Hires: %d | Yield: %.1f%%\n",
               total_offers, total_hires, 100 * total_hires / max(total_offers, 1)))
-  
-  # Also store the raw historical data per department for sim-phase seeding
+
   burn_in_historical <- purrr::map(mdl, ~.x$historical_data)
-  
+
   burn_in_out <- list(
     trained_models = mdl,
     burn_in_results = bind_rows(res_all),
@@ -1745,14 +1831,21 @@ predict_acceptance_probability_with_learned_prior <- function(dept_model, applic
                                                               participation_rate = NULL) {
   if (!is.null(seed)) { set.seed(seed); torch::torch_manual_seed(seed) }
   is_baseline <- is.null(participation_rate) || participation_rate == 0 || !include_fit
+  blend_denom <- if (is_baseline) 40 else 15
   n_applicants <- nrow(applicant_data)
   
   # ── Step 1: Compute learned prior from burn-in model (point estimate) ──
+  # The prior model learned P(accept | s_j, v_i_bar, f_j) from burn-in
+  # outcomes. During burn-in prediction, f_j_used=0.5 for all candidates
+  # so f_j could not discriminate. The prior uses whatever features were
+  # included during burn-in training (respects prior_include_fit).
   if (!is.null(learned_prior_model) && learned_prior_model$is_trained) {
-    prior_data <- applicant_data %>% dplyr::mutate(f_j = v_i_bar)
+    prior_include_fit <- isTRUE(learned_prior_model$include_fit)
+    prior_include_questions <- isTRUE(learned_prior_model$include_questions)
     nn_data_prior <- tryCatch(
-      prepare_nn_data(prior_data, learned_prior_model$questions,
-                      include_fit = FALSE, include_questions = FALSE),
+      prepare_nn_data(applicant_data, learned_prior_model$questions,
+                      include_fit = prior_include_fit,
+                      include_questions = prior_include_questions),
       error = function(e) NULL)
     if (!is.null(nn_data_prior)) {
       learned_prior_model$model$eval()
@@ -1797,7 +1890,7 @@ predict_acceptance_probability_with_learned_prior <- function(dept_model, applic
         pi_model <- as.numeric(torch_sigmoid(lo)$squeeze()$to(device = "cpu"))
       })
       pi_model <- pmin(pmax(pi_model, 1e-5), 1 - 1e-5)
-      mw <- pmin(1, n_hist / 40)
+      mw <- pmin(1, n_hist / blend_denom)
       pi_blended <- mw * pi_model + (1 - mw) * pi_prior
     } else {
       pi_blended <- pmax(0.10, pmin(0.90, pi_prior + rnorm(n_applicants, 0, 0.02)))
@@ -1808,7 +1901,7 @@ predict_acceptance_probability_with_learned_prior <- function(dept_model, applic
   }
   
   # ── Step 4: Full bootstrap (>= 10 obs) ──
-  mw <- pmin(1, n_hist / 40)
+  mw <- pmin(1, n_hist / blend_denom)
   pi_draws_matrix <- matrix(NA_real_, nrow = n_bootstrap, ncol = n_applicants)
   
   # ── Cache INFERENCE data ONCE ──
@@ -2167,22 +2260,18 @@ run_job_market_sim_with_learned_prior <- function(departments, questions, n_cand
   }
   cand_roster_all <- list(); rank_all <- list(); diag_all <- list()
   
-  # ── Issue 5 fix: Initialize sim-phase models with burn-in data ──
-  # Instead of starting from scratch, seed each department's model with
-  # the historical data accumulated during burn-in. This means:
-  # - Baseline: model has (s_j, v_i_bar) observations, trains with include_fit=FALSE
-  # - Questionnaire: model has same baseline observations PLUS new fit-informed
-  #   observations will be added each year. The model trains with include_fit=TRUE,
-  #   so it can learn the fit->acceptance relationship as data accumulates.
+  # ── Initialize sim-phase models ──
+  # Sim-phase models always include fit (include_fit=TRUE) to match
+  # the burn-in prior's feature space. At rho=0, f_j_used=0.5 for
+  # all candidates so fit cannot discriminate; at rho>0, actual f_j
+  # is available for participants. Questionnaire features
+  # (include_questions) are only enabled for questionnaire scenarios.
   # Sim-phase models start with EMPTY historical data.
   # Burn-in knowledge enters only through the learned_prior_models
   # (which provide pi_prior in predict_acceptance_probability_with_learned_prior).
-  # This avoids contaminating the questionnaire model with burn-in records
-  
-  # where f_j = v_i_bar, which would mask the true fit signal.
   mdl <- purrr::map(1:n_departments, function(j) {
     initialize_department_model(questions,
-                                include_fit = !is_baseline,
+                                include_fit = TRUE,
                                 include_questions = !is_baseline)
   })
   
@@ -2362,10 +2451,11 @@ run_job_market_sim_with_learned_prior <- function(departments, questions, n_cand
     for (j in 1:n_departments) {
       if (!is.null(out$learning_data_pairwise[[j]]) && nrow(out$learning_data_pairwise[[j]]) > 0) {
         mdl[[j]]$historical_data <- bind_rows(mdl[[j]]$historical_data, out$learning_data_pairwise[[j]])
-        if (nrow(mdl[[j]]$historical_data) >= 5)
+        n_offered_j <- sum(mdl[[j]]$historical_data$offered == 1L, na.rm = TRUE)
+        if (n_offered_j >= 5)
           mdl[[j]] <- tryCatch(
             train_department_model(mdl[[j]], mdl[[j]]$historical_data, n_epochs = 10,
-                                   include_fit = !is_baseline, include_questions = !is_baseline,
+                                   include_fit = TRUE, include_questions = !is_baseline,
                                    seed = j * 1000 + year),
             error = function(e) mdl[[j]])
       }
@@ -2386,25 +2476,27 @@ run_job_market_sim_with_learned_prior <- function(departments, questions, n_cand
 
 
 
-reconstruct_learned_prior_models <- function(burn_in_historical, questions, seed = 123) {
+reconstruct_learned_prior_models <- function(burn_in_historical, questions, seed = 123,
+                                             min_offered_to_train = 10L) {
   set.seed(seed); torch::torch_manual_seed(seed)
   n_depts <- length(burn_in_historical)
   models <- vector("list", n_depts)
   for (j in seq_len(n_depts)) {
     mdl_j <- initialize_department_model(
       questions,
-      include_fit = FALSE,
+      include_fit = TRUE,
       include_questions = FALSE
     )
     hist_data <- burn_in_historical[[j]]
     if (!is.null(hist_data) && is.data.frame(hist_data)) {
       mdl_j$historical_data <- hist_data
-      if (nrow(hist_data) >= 10) {
+      n_offered <- sum(hist_data$offered == 1L, na.rm = TRUE)
+      if (n_offered >= min_offered_to_train) {
         mdl_j <- tryCatch(
           train_department_model(
             mdl_j, hist_data,
             n_epochs = 100,
-            include_fit = FALSE,
+            include_fit = TRUE,
             include_questions = FALSE,
             seed = j * 1000 + seed
           ),
@@ -2440,7 +2532,7 @@ reconstruct_from_weights <- function(weight_list, historical_list, questions, se
   models <- vector("list", n_depts)
   for (j in seq_len(n_depts)) {
     mdl_j <- initialize_department_model(
-      questions, include_fit = FALSE, include_questions = FALSE
+      questions, include_fit = TRUE, include_questions = FALSE
     )
     if (!is.null(historical_list) && j <= length(historical_list)) {
       hist_data <- historical_list[[j]]

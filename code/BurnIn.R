@@ -19,17 +19,17 @@ cat("=== BURN-IN STAGE ===\n")
 cat("Time:", format(Sys.time()), "\n\n")
 
 # ── Configuration ──
-base_seed           <- 12
+base_seed           <- 14
 n_candidates        <- 300
-burn_in_years       <- 10
+burn_in_years       <- 20
 sim_years           <- 10
 alpha               <- 0.05
-L_repeats           <- 20
+L_repeats           <- 100
 max_offer_rounds    <- 2
 noise_method        <- "bootstrap"
 noise_scale         <- NULL
 cand_tier_cutpoints <- c(0.10, 0.25, 0.50)
-participation_rates <- c(0, 0.05, 0.2, 0.5, 0.9, 1.00)
+participation_rates <- c(0, 0.05, 0.2, 0.5, 0.9, 1.00)#c(0, 0.05, 0.2, 0.5, 0.9, 1.00)
 
 set.seed(base_seed)
 torch::torch_manual_seed(base_seed)
