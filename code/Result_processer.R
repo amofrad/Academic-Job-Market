@@ -18,10 +18,9 @@
 #   manuscript/fig/fig_dept_hiring_heatmap.pdf
 #   manuscript/fig/fig_department_welfare.pdf
 #   manuscript/fig/fig_candidate_welfare_by_tier.pdf
-#   manuscript/fig/fig_candidate_by_participation.pdf
-#   manuscript/fig/fig_dept_welfare_per_hire.pdf
-#   manuscript/fig/fig_dept_welfare_per_dept.pdf
 #   manuscript/fig/fig_candidate_welfare_unconditional.pdf
+#   manuscript/fig/fig_candidate_by_participation.pdf
+#   manuscript/fig/fig_dept_welfare_per_offer.pdf
 # =============================================================================
 source("code/Sim_Functions.R")
 
@@ -121,7 +120,6 @@ hiring_heatmap      <- fig_hiring_heatmap(all_sim_results,
                          year_filter = c(1, 10), include_scramble = TRUE, hire_rounds = 2)
 
 
-
 # Candidate Results:
 cand_welfare        <- fig_candidate_welfare(all_sim_results,
                          year_filter = c(1, 10), include_scramble = TRUE, hire_rounds = 2)
@@ -129,57 +127,44 @@ cand_welfare        <- fig_candidate_welfare(all_sim_results,
 cand_welfare_uncond <- fig_candidate_welfare_unconditional(all_sim_results,
                          year_filter = c(1, 10), include_scramble = TRUE, hire_rounds = 2)
 
-cand_participation  <- fig_participation_welfare(all_sim_results,
-                         year_filter = c(1, 10), include_scramble = TRUE, hire_rounds = 2)
-cand_welfare_pct   <- fig_candidate_welfare_pct_change(all_sim_results,
-                         year_filter = c(1, 10), include_scramble = TRUE, hire_rounds = 2)
 
 
 # Department Results:
 dept_welfare        <- fig_department_welfare(all_sim_results,
                          year_filter = c(1, 10), include_scramble = TRUE, hire_rounds = 2)
 
-dept_welfare_hire   <- fig_department_welfare_per_hire(all_sim_results,
-                         year_filter = c(1, 10), include_scramble = TRUE, hire_rounds = 2)
-
-dept_welfare_dept   <- fig_department_welfare_per_dept(all_sim_results,
-                         year_filter = c(1, 10), include_scramble = TRUE, hire_rounds = 2)
-
 dept_welfare_offer  <- fig_department_welfare_per_offer(all_sim_results,
                          year_filter = c(1, 10), include_scramble = TRUE, hire_rounds = 2)
 
 
-ggsave("../manuscript/fig/fig_dept_interview_heatmap.pdf",          interview_heatmap$plot,
+cand_participation  <- fig_participation_welfare(all_sim_results,
+                         year_filter = c(1, 10), include_scramble = TRUE, hire_rounds = 2)
+
+
+ggsave("../manuscript/fig/fig_dept_interview_heatmap.pdf", interview_heatmap$plot,
        width = 10, height = 5, device = cairo_pdf)
-ggsave("../manuscript/fig/fig_dept_hiring_heatmap.pdf",             hiring_heatmap$plot,
+ggsave("../manuscript/fig/fig_dept_hiring_heatmap.pdf",  hiring_heatmap$plot,
        width = 10, height = 5, device = cairo_pdf)
-ggsave("../manuscript/fig/fig_department_welfare.pdf",              dept_welfare$plot,
+ggsave("../manuscript/fig/fig_department_welfare.pdf", dept_welfare$plot,
        width = 7,  height = 5, device = cairo_pdf)
-ggsave("../manuscript/fig/fig_candidate_welfare_by_tier.pdf",       cand_welfare$plot,
+ggsave("manuscript/fig/fig_candidate_welfare_by_tier.pdf", cand_welfare$plot,
        width = 7,  height = 5, device = cairo_pdf)
-ggsave("../manuscript/fig/fig_candidate_by_participation.pdf",      cand_participation$plot,
+ggsave("../manuscript/fig/fig_candidate_by_participation.pdf",  cand_participation$plot,
        width = 10, height = 4, device = cairo_pdf)
-ggsave("../manuscript/fig/fig_dept_welfare_per_hire.pdf",           dept_welfare_hire$plot,
-       width = 7,  height = 5, device = cairo_pdf)
-ggsave("../manuscript/fig/fig_dept_welfare_per_dept.pdf",           dept_welfare_dept$plot,
-       width = 7,  height = 5, device = cairo_pdf)
 ggsave("../manuscript/fig/fig_candidate_welfare_unconditional.pdf", cand_welfare_uncond$plot,
        width = 7,  height = 5, device = cairo_pdf)
-ggsave("../manuscript/fig/fig_dept_welfare_per_offer.pdf",         dept_welfare_offer$plot,
+ggsave("manuscript/fig/fig_dept_welfare_per_offer.pdf",         dept_welfare_offer$plot,
        width = 7,  height = 5, device = cairo_pdf)
-ggsave("../manuscript/fig/fig_candidate_welfare_pct_change.pdf",  cand_welfare_pct$plot,
-       width = 10, height = 6, device = cairo_pdf)
+
 
 saveRDS(interview_heatmap,   "output/interview_heatmap.rds")
 saveRDS(hiring_heatmap,      "output/hiring_heatmap.rds")
 saveRDS(dept_welfare,        "output/dept_welfare.rds")
 saveRDS(cand_welfare,        "output/cand_welfare.rds")
 saveRDS(cand_participation,  "output/cand_participation.rds")
-saveRDS(dept_welfare_hire,   "output/dept_welfare_hire.rds")
-saveRDS(dept_welfare_dept,   "output/dept_welfare_dept.rds")
 saveRDS(cand_welfare_uncond, "output/cand_welfare_uncond.rds")
 saveRDS(dept_welfare_offer,  "output/dept_welfare_offer.rds")
-saveRDS(cand_welfare_pct,   "output/cand_welfare_pct.rds")
+
 
 
 total_change <- hiring_heatmap$data %>%

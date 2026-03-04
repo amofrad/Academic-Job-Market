@@ -125,7 +125,8 @@ Rscript code/BurnIn.R
 - `sim_years = 10` — years of simulation (determines hiring schedule)
 - `base_seed = 14` — master random seed
 - `L_repeats = 100` — bootstrap replicates for ranking uncertainty
-- `participation_rates = c(0, 0.05, 0.2, 0.5, 0.9, 1.0)` — participation rates $\rho$ to evaluate
+- `max_offer_rounds = 2` — one regular offer round plus a scramble round
+- `participation_rates = c(0, 0.05, 0.2, 0.5, 0.9, 1.0)` — participation rates to evaluate
 
 ### Stage 2: Simulation Batches
 
@@ -210,7 +211,7 @@ The simulation is built on the following core components. Notation follows the p
 | Function | Description |
 |----------|-------------|
 | `candidate_utility()` | Candidate utility $V_{ij}$ over department prestige and fit |
-| `department_utility()` | Department utility $U_{ji}$ over candidate quality and alignment (Cobb-Douglas specification) |
+| `department_utility()` | Department utility $U_{ji}$ over candidate quality and fit |
 | `compute_f_j()` | Vectorized alignment score $f_{ji}$ computation (questionnaire-based) |
 | `generate_candidates_new()` | Generate candidate cohorts with heterogeneous preferences |
 | `prepare_departments()` | Initialize department attributes ($s_j$, weight vectors, questionnaire responses) |
