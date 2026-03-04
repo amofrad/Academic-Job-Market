@@ -124,7 +124,7 @@ Rscript code/BurnIn.R
 - `burn_in_years = 20` — years of burn-in
 - `sim_years = 10` — years of simulation (determines hiring schedule)
 - `base_seed = 14` — master random seed
-- `L_repeats = 100` — bootstrap replicates for ranking uncertainty
+- `n_bootstrap = 100` — bootstrap replicates for ranking uncertainty
 - `max_offer_rounds = 2` — one regular offer round plus a scramble round
 - `participation_rates = c(0, 0.05, 0.2, 0.5, 0.9, 1.0)` — participation rates to evaluate
 
@@ -213,7 +213,7 @@ The simulation is built on the following core components. Notation follows the p
 | `candidate_utility()` | Candidate utility $V_{ij}$ over department prestige and fit |
 | `department_utility()` | Department utility $U_{ji}$ over candidate quality and fit |
 | `compute_f_j()` | Vectorized alignment score $f_{ji}$ computation (questionnaire-based) |
-| `generate_candidates_new()` | Generate candidate cohorts with heterogeneous preferences |
+| `generate_candidates()` | Generate candidate cohorts with heterogeneous preferences |
 | `prepare_departments()` | Initialize department attributes ($s_j$, weight vectors, questionnaire responses) |
 | `acceptance_net` | Torch neural network for estimating acceptance probability $\pi_{ji}$ |
 | `predict_acceptance_probability()` | Bootstrap acceptance prediction $\hat{\pi}_{ji}$ |

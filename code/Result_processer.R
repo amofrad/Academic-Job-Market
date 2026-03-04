@@ -72,7 +72,7 @@ all_sim_results <- list(
     base_seed             = cfg$base_seed,
     n_replicates          = n_batches * 20L,
     alpha                 = cfg$alpha,
-    L_repeats             = cfg$L_repeats,
+    n_bootstrap             = cfg$n_bootstrap,
     print_sim_diagnostics = FALSE,
     collect_rank_panel    = FALSE,
     keep_diagnostics      = FALSE

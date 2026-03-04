@@ -24,10 +24,8 @@ n_candidates        <- 300
 burn_in_years       <- 20
 sim_years           <- 10
 alpha               <- 0.05
-L_repeats           <- 100
+n_bootstrap           <- 50
 max_offer_rounds    <- 2
-noise_method        <- "bootstrap"
-noise_scale         <- NULL
 cand_tier_cutpoints <- c(0.10, 0.25, 0.50)
 participation_rates <- c(0, 0.05, 0.2, 0.5, 0.9, 1.00)#c(0, 0.05, 0.2, 0.5, 0.9, 1.00)
 
@@ -51,7 +49,7 @@ start_time <- Sys.time()
 
 yearly_candidate_cohorts_burn_in <- vector("list", burn_in_years)
 for (year in 1:burn_in_years)
-  yearly_candidate_cohorts_burn_in[[year]] <- generate_candidates_new(
+  yearly_candidate_cohorts_burn_in[[year]] <- generate_candidates(
     n_candidates, questions, seed = base_seed + year)
 
 burn_in <- run_burn_in_phase(
@@ -63,9 +61,7 @@ burn_in <- run_burn_in_phase(
   yearly_hiring_schedule   = yearly_hiring_schedule_burn_in,
   seed                     = base_seed,
   alpha                    = alpha,
-  L_repeats                = L_repeats,
-  noise_method             = noise_method,
-  noise_scale              = noise_scale,
+  n_bootstrap              = n_bootstrap,
   cand_tier_cutpoints      = cand_tier_cutpoints,
   max_offer_rounds         = max_offer_rounds,
   return_yearly_objects     = FALSE)
@@ -90,10 +86,8 @@ burn_in_artifacts <- list(
     burn_in_years       = burn_in_years,
     sim_years           = sim_years,
     alpha               = alpha,
-    L_repeats           = L_repeats,
+    n_bootstrap         = n_bootstrap,
     max_offer_rounds    = max_offer_rounds,
-    noise_method        = noise_method,
-    noise_scale         = noise_scale,
     cand_tier_cutpoints = cand_tier_cutpoints,
     participation_rates = participation_rates
   )

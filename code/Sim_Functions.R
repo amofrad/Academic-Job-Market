@@ -284,9 +284,9 @@ s_k <- as.numeric(grepl(dept_tok, cand_str, fixed = TRUE))
 
 
 # =============================================================================
-# OPTIMIZED generate_candidates_new - Vectorized categorical sampling
+# generate_candidates — Vectorized categorical sampling
 # =============================================================================
-generate_candidates_new <- function(n_candidates, questions, seed = NULL) {
+generate_candidates <- function(n_candidates, questions, seed = NULL) {
   if (!is.null(seed)) set.seed(seed)
   candidates <- tibble(
     cand_id = 1:n_candidates,
@@ -931,33 +931,26 @@ predict_acceptance_probability <- function(dept_model, applicant_data, n_bootstr
 # propagates pi_draws directly via compute_pairwise_lower_ranks.
 # =============================================================================
 make_repeated_rank_draws <- function(applicant_data, L = 200, tuple_size = NULL,
-                                     method = c("bootstrap","gumbel","gaussian"),
-                                     noise_scale = 0.15, seed = NULL) {
+                                     seed = NULL) {
   if (!is.null(seed)) set.seed(seed)
-  method <- match.arg(method); n <- nrow(applicant_data)
+  n <- nrow(applicant_data)
   if (!"U_det" %in% names(applicant_data))
     applicant_data <- applicant_data %>% mutate(U_det = department_utility(s_j, v_i_bar, f_j))
   mu <- pmin(pmax(applicant_data$pi_pred, 1e-5), 1-1e-5)
   Uhat_full <- applicant_data$U_det * mu
   if (is.null(tuple_size)) idx <- seq_len(n) else { M_use <- min(tuple_size, n); idx <- order(Uhat_full, decreasing=TRUE)[seq_len(M_use)] }
   M <- length(idx); U_hat <- Uhat_full[idx]
-  
-  if (method == "bootstrap") {
-    if (!"U_true" %in% names(applicant_data))
-      applicant_data <- applicant_data %>% mutate(dept_tier=dept_tier%||%4L, cand_tier=cand_tier%||%4L,
-                                                  U_true=department_utility(s_j,v_i_bar,f_j,dept_tier,cand_tier))
-    U_true_sub <- applicant_data$U_true[idx]; resid <- U_true_sub - U_hat
-    if (all(!is.finite(resid)) || sd(resid,na.rm=TRUE)==0)
-      return(list(U_draws=matrix(rep(U_hat,each=L),nrow=L,ncol=M), idx=idx, U_hat=U_hat))
-    # VECTORIZED: sample all at once via matrix indexing
-    boot_idx <- sample.int(M, size=M*L, replace=TRUE)
-    eps_mat <- matrix(resid[boot_idx], nrow=L, ncol=M)
-    U_draws <- sweep(eps_mat, 2, U_hat, "+"); U_draws[U_draws<0] <- 0
-    return(list(U_draws=U_draws, idx=idx, U_hat=U_hat))
-  }
-  base <- matrix(rep(U_hat, each=L), nrow=L)
-  if (method == "gumbel") { U_draws <- base + noise_scale*(-log(-log(matrix(runif(L*M),nrow=L,ncol=M))))
-  } else { U_draws <- base + noise_scale*matrix(rnorm(L*M),nrow=L,ncol=M); U_draws[U_draws<0] <- 0 }
+
+  if (!"U_true" %in% names(applicant_data))
+    applicant_data <- applicant_data %>% mutate(dept_tier=dept_tier%||%4L, cand_tier=cand_tier%||%4L,
+                                                U_true=department_utility(s_j,v_i_bar,f_j,dept_tier,cand_tier))
+  U_true_sub <- applicant_data$U_true[idx]; resid <- U_true_sub - U_hat
+  if (all(!is.finite(resid)) || sd(resid,na.rm=TRUE)==0)
+    return(list(U_draws=matrix(rep(U_hat,each=L),nrow=L,ncol=M), idx=idx, U_hat=U_hat))
+  # VECTORIZED: sample all at once via matrix indexing
+  boot_idx <- sample.int(M, size=M*L, replace=TRUE)
+  eps_mat <- matrix(resid[boot_idx], nrow=L, ncol=M)
+  U_draws <- sweep(eps_mat, 2, U_hat, "+"); U_draws[U_draws<0] <- 0
   list(U_draws=U_draws, idx=idx, U_hat=U_hat)
 }
 
@@ -1016,11 +1009,9 @@ compute_c_alpha_from_draws <- function(U_hat, U_draws, alpha = 0.05, ridge = 0.0
 # =============================================================================
 # compute_pairwise_lower_ranks — Vectorized pairwise ranking with uncertainty
 # =============================================================================
-compute_pairwise_lower_ranks <- function(applicant_data, L_repeats=20, tuple_size=NULL,
-                                         noise_method=c("bootstrap","gumbel","gaussian"),
-                                         noise_scale=0.15, alpha=0.05, seed=NULL,
+compute_pairwise_lower_ranks <- function(applicant_data, n_bootstrap=20, tuple_size=NULL,
+                                         alpha=0.05, seed=NULL,
                                          pi_draws=NULL) {
-  noise_method <- match.arg(noise_method)
   if (!"U_det" %in% names(applicant_data) || !"U_hat" %in% names(applicant_data))
     applicant_data <- applicant_data %>% mutate(U_det=department_utility(s_j, v_i_bar, f_j),
                                                 U_hat=U_det*pmin(pmax(pi_pred,1e-5),1-1e-5))
@@ -1043,8 +1034,8 @@ compute_pairwise_lower_ranks <- function(applicant_data, L_repeats=20, tuple_siz
     U_draws <- sweep(pi_draws_sub, 2, U_det_sub, "*")
   } else {
     # Legacy fallback (residual bootstrap) — used only when no pi_draws available
-    repack <- make_repeated_rank_draws(applicant_data, L=L_repeats, tuple_size=tuple_size,
-                                       method=noise_method, noise_scale=noise_scale, seed=seed)
+    repack <- make_repeated_rank_draws(applicant_data, L=n_bootstrap, tuple_size=tuple_size,
+                                       seed=seed)
     idx <- repack$idx; U_draws <- repack$U_draws; U_hat <- repack$U_hat
   }
   cand_ids <- applicant_data$cand_id[idx]; M <- length(U_hat)
@@ -1074,15 +1065,14 @@ compute_pairwise_lower_ranks <- function(applicant_data, L_repeats=20, tuple_siz
 }
 
 
-select_interviews_sure_screening <- function(applicant_data, k_j, h_j, alpha=0.05, L_repeats=20,
-                                             tuple_size=NULL, noise_method=c("bootstrap","gumbel","gaussian"),
-                                             noise_scale=0.15, seed=NULL, tier_width=0.1, pi_draws=NULL) {
-  noise_method <- match.arg(noise_method); n <- nrow(applicant_data)
+select_interviews_sure_screening <- function(applicant_data, k_j, h_j, alpha=0.05, n_bootstrap=20,
+                                             tuple_size=NULL, seed=NULL, tier_width=0.1, pi_draws=NULL) {
+  n <- nrow(applicant_data)
   if (n == 0L) return(integer()); if (n <= k_j) return(applicant_data$cand_id)
   if (!"U_det" %in% names(applicant_data) || !"U_hat" %in% names(applicant_data))
     applicant_data <- applicant_data %>% dplyr::mutate(U_det=department_utility(s_j, v_i_bar, f_j),
                                                        U_hat=U_det*pmin(pmax(pi_pred,1e-5),1-1e-5))
-  rank_tbl <- compute_pairwise_lower_ranks(applicant_data, L_repeats, tuple_size, noise_method, noise_scale, alpha, seed, pi_draws=pi_draws)
+  rank_tbl <- compute_pairwise_lower_ranks(applicant_data, n_bootstrap, tuple_size, alpha, seed, pi_draws=pi_draws)
   applicant_data <- applicant_data %>% dplyr::select(-dplyr::any_of(c("rank_lower","pair_score","mean_rank"))) %>%
     dplyr::left_join(rank_tbl %>% dplyr::select(cand_id,rank_lower,pair_score,mean_rank), by="cand_id")
   sure_idx <- which(applicant_data$rank_lower <= k_j)
@@ -1344,8 +1334,8 @@ add_dept_info_to_learning_data <- function(ld_selected, dept_info) {
 # =============================================================================
 simulate_market_year_adaptive_sequential <- function(candidates, departments, questions, year,
                                                      dept_models_pairwise, participants_this_year, yearly_hiring_schedule,
-                                                     participation_rate=0, alpha=0.05, L_repeats=20, tuple_size=NULL,
-                                                     noise_method="bootstrap", noise_scale=0.15, shortlist_enabled=TRUE,
+                                                     participation_rate=0, alpha=0.05, n_bootstrap=20, tuple_size=NULL,
+                                                     shortlist_enabled=TRUE,
                                                      collect_ranking_panel=TRUE, cand_tier_col="quality_tier", max_offer_rounds=5, seed=NULL,
                                                      verbose=TRUE) {
   if (!is.null(seed)) set.seed(seed)
@@ -1391,7 +1381,7 @@ simulate_market_year_adaptive_sequential <- function(candidates, departments, qu
     actual_f_j <- applicant_data_pw$f_j; ad_tmp <- applicant_data_pw; ad_tmp$f_j <- applicant_data_pw$f_j_used
     for (q in questions$numerical) ad_tmp[[q]] <- dept[[q]]
     for (qn in names(questions$categorical)) ad_tmp[[qn]] <- as.character(dept[[qn]])
-    applicant_data_pw <- predict_acceptance_probability(dept_models_pairwise[[j]], ad_tmp, n_bootstrap=L_repeats, seed=j*1000+year, participation_rate=participation_rate)
+    applicant_data_pw <- predict_acceptance_probability(dept_models_pairwise[[j]], ad_tmp, n_bootstrap=n_bootstrap, seed=j*1000+year, participation_rate=participation_rate)
     # Save pi_draws before dplyr operations strip the attribute
     pi_draws_pw <- attr(applicant_data_pw, "pi_draws")
     applicant_data_pw$f_j <- actual_f_j
@@ -1399,9 +1389,9 @@ simulate_market_year_adaptive_sequential <- function(candidates, departments, qu
     applicant_data_pw <- applicant_data_pw %>% dplyr::mutate(f_j_used=applicant_data_pw$f_j_used, U_det=U_det_pw, U_hat=U_det*pmin(pmax(pi_pred,1e-5),1-1e-5))
     U_true_pw <- department_utility(applicant_data_pw$s_j, applicant_data_pw$v_i_bar, applicant_data_pw$f_j, applicant_data_pw$dept_tier, applicant_data_pw$cand_tier)
     applicant_data_pw$U_true <- U_true_pw; applicant_data_pw$r_true <- rank(-U_true_pw, ties.method="average"); applicant_data_pw$r_point <- rank(-applicant_data_pw$U_hat, ties.method="average")
-    if (collect_ranking_panel) { rpair <- compute_pairwise_lower_ranks(applicant_data_pw, L_repeats, tuple_size, noise_method, noise_scale, alpha, pi_draws=pi_draws_pw)
+    if (collect_ranking_panel) { rpair <- compute_pairwise_lower_ranks(applicant_data_pw, n_bootstrap, tuple_size, alpha, pi_draws=pi_draws_pw)
     applicant_data_pw <- applicant_data_pw %>% dplyr::left_join(rpair, by="cand_id") %>% dplyr::mutate(r_pair_lb=rank_lower) %>% dplyr::select(-rank_lower) }
-    interviewed_ids_pw <- select_interviews_sure_screening(applicant_data_pw, k_j=k_j_this_year, h_j=h_j_this_year, alpha=alpha, L_repeats=L_repeats, tuple_size=tuple_size, noise_method=noise_method, noise_scale=noise_scale, pi_draws=pi_draws_pw)
+    interviewed_ids_pw <- select_interviews_sure_screening(applicant_data_pw, k_j=k_j_this_year, h_j=h_j_this_year, alpha=alpha, n_bootstrap=n_bootstrap, tuple_size=tuple_size, pi_draws=pi_draws_pw)
     applicant_data_pw$interviewed_flag <- as.integer(applicant_data_pw$cand_id %in% interviewed_ids_pw)
     if (collect_ranking_panel) {
       rank_panel_chunks[[j]] <- applicant_data_pw %>%
@@ -1643,8 +1633,7 @@ resolve_offers_sequential <- function(interviewed_data, departments, questions,
 # =============================================================================
 run_burn_in_phase <- function(departments, questions, n_candidates = 500, burn_in_years = 10,
                               yearly_candidate_cohorts = NULL, yearly_hiring_schedule = NULL, seed = 123,
-                              alpha = 0.05, L_repeats = 20, tuple_size = NULL,
-                              noise_method = "bootstrap", noise_scale = 0.15,
+                              alpha = 0.05, n_bootstrap = 20, tuple_size = NULL,
                               cand_tier_cutpoints = c(0.10, 0.25, 0.50),
                               max_offer_rounds = 5, print_diagnostics = TRUE,
                               return_yearly_objects = FALSE,
@@ -1659,7 +1648,7 @@ run_burn_in_phase <- function(departments, questions, n_candidates = 500, burn_i
   if (is.null(yearly_candidate_cohorts)) {
     yearly_candidate_cohorts <- vector("list", burn_in_years)
     for (year in 1:burn_in_years)
-      yearly_candidate_cohorts[[year]] <- generate_candidates_new(n_candidates, questions, seed = seed + year)
+      yearly_candidate_cohorts[[year]] <- generate_candidates(n_candidates, questions, seed = seed + year)
   }
 
   # Models learn P(accept | s_j, v_i_bar, f_j) from outcomes.
@@ -1683,8 +1672,8 @@ run_burn_in_phase <- function(departments, questions, n_candidates = 500, burn_i
     out <- simulate_market_year_adaptive_sequential(candidates, departments, questions, year,
                                                     dept_models_pairwise = mdl, participants_this_year = integer(0),
                                                     yearly_hiring_schedule = yearly_hiring_schedule, participation_rate = 0, alpha = alpha,
-                                                    L_repeats = L_repeats, tuple_size = tuple_size, noise_method = noise_method,
-                                                    noise_scale = noise_scale, shortlist_enabled = TRUE, collect_ranking_panel = FALSE,
+                                                    n_bootstrap = n_bootstrap, tuple_size = tuple_size,
+                                                    shortlist_enabled = TRUE, collect_ranking_panel = FALSE,
                                                     cand_tier_col = "quality_tier", max_offer_rounds = max_offer_rounds, seed = year)
     res_all[[year]] <- out$results
 
@@ -1997,8 +1986,8 @@ select_interviews_sure_screening_precomputed <- function(
 # =============================================================================
 simulate_market_year_with_learned_prior <- function(candidates, departments, questions, year,
                                                     dept_models_pairwise, learned_prior_models, participants_this_year,
-                                                    yearly_hiring_schedule, participation_rate=0, alpha=0.05, L_repeats=20, tuple_size=NULL,
-                                                    noise_method="bootstrap", noise_scale=0.15, shortlist_enabled=TRUE, collect_ranking_panel=TRUE,
+                                                    yearly_hiring_schedule, participation_rate=0, alpha=0.05, n_bootstrap=20, tuple_size=NULL,
+                                                    shortlist_enabled=TRUE, collect_ranking_panel=TRUE,
                                                     cand_tier_col="quality_tier", max_offer_rounds=5, seed=NULL,
                                                     verbose=TRUE, precomputed_fj=NULL) {
   if (!is.null(seed)) set.seed(seed)
@@ -2091,7 +2080,7 @@ simulate_market_year_with_learned_prior <- function(candidates, departments, que
     for (qn in names(questions$categorical)) ad_tmp[[qn]] <- as.character(dept[[qn]])
     applicant_data_pw <- predict_acceptance_probability_with_learned_prior(
       dept_models_pairwise[[j]], ad_tmp, learned_prior_model=learned_prior_models[[j]],
-      n_bootstrap=L_repeats, seed=j*1000+year, participation_rate=participation_rate)
+      n_bootstrap=n_bootstrap, seed=j*1000+year, participation_rate=participation_rate)
     pi_draws_pw <- attr(applicant_data_pw, "pi_draws")
     applicant_data_pw$f_j <- actual_f_j
     U_det <- department_utility(applicant_data_pw$s_j, applicant_data_pw$v_i_bar,
@@ -2104,8 +2093,8 @@ simulate_market_year_with_learned_prior <- function(candidates, departments, que
     applicant_data_pw$U_true <- U_true
     applicant_data_pw$r_true <- rank(-U_true, ties.method="average")
     applicant_data_pw$r_point <- rank(-applicant_data_pw$U_hat, ties.method="average")
-    rpair <- compute_pairwise_lower_ranks(applicant_data_pw, L_repeats, tuple_size,
-                                          noise_method, noise_scale, alpha, pi_draws=pi_draws_pw)
+    rpair <- compute_pairwise_lower_ranks(applicant_data_pw, n_bootstrap, tuple_size,
+                                          alpha, pi_draws=pi_draws_pw)
     # Merge rpair using base R match instead of dplyr::left_join
     rpair_idx <- match(applicant_data_pw$cand_id, rpair$cand_id)
     applicant_data_pw$r_pair_lb <- rpair$rank_lower[rpair_idx]
@@ -2181,8 +2170,7 @@ run_job_market_sim_with_learned_prior <- function(departments, questions, n_cand
                                                   yearly_hiring_schedule_burn_in = NULL, yearly_hiring_schedule_sim = NULL,
                                                   learned_prior_models = NULL,
                                                   burn_in_historical = NULL,
-                                                  seed = 123, alpha = 0.05, L_repeats = 20, tuple_size = NULL,
-                                                  noise_method = "bootstrap", noise_scale = 0.15,
+                                                  seed = 123, alpha = 0.05, n_bootstrap = 20, tuple_size = NULL,
                                                   cand_tier_cutpoints = c(0.10, 0.25, 0.50),
                                                   max_offer_rounds = 5, print_diagnostics = FALSE,
                                                   return_dept_models = FALSE,
@@ -2199,7 +2187,7 @@ run_job_market_sim_with_learned_prior <- function(departments, questions, n_cand
   if (is.null(yearly_candidate_cohorts_sim)) {
     yearly_candidate_cohorts_sim <- vector("list", sim_years)
     for (year in 1:sim_years)
-      yearly_candidate_cohorts_sim[[year]] <- generate_candidates_new(n_candidates, questions, seed = seed + burn_in_years + year)
+      yearly_candidate_cohorts_sim[[year]] <- generate_candidates(n_candidates, questions, seed = seed + burn_in_years + year)
   }
   cand_roster_all <- list(); rank_all <- list(); diag_all <- list()
   
@@ -2260,8 +2248,8 @@ run_job_market_sim_with_learned_prior <- function(departments, questions, n_cand
                                                    dept_models_pairwise = mdl, learned_prior_models = learned_prior_models,
                                                    participants_this_year = participants,
                                                    yearly_hiring_schedule = yearly_hiring_schedule_sim,
-                                                   participation_rate = participation_rate, alpha = alpha, L_repeats = L_repeats,
-                                                   tuple_size = tuple_size, noise_method = noise_method, noise_scale = noise_scale,
+                                                   participation_rate = participation_rate, alpha = alpha, n_bootstrap = n_bootstrap,
+                                                   tuple_size = tuple_size,
                                                    shortlist_enabled = TRUE, collect_ranking_panel = collect_ranking_panel, cand_tier_col = "quality_tier",
                                                    max_offer_rounds = max_offer_rounds, seed = year,
                                                    verbose = verbose, precomputed_fj = year_fj)
@@ -2509,10 +2497,8 @@ run_multi_replicate_simulation <- function(
     base_seed          = 42,
     n_replicates       = 10,
     alpha              = 0.05,
-    L_repeats          = 20,
+    n_bootstrap          = 20,
     max_offer_rounds   = 3,
-    noise_method       = "bootstrap",
-    noise_scale        = 0.15,
     cand_tier_cutpoints = c(0.10, 0.25, 0.50),
     tuple_size         = NULL,
     print_sim_diagnostics = FALSE,
@@ -2556,7 +2542,7 @@ run_multi_replicate_simulation <- function(
   burn_in_seed <- base_seed
   yearly_candidate_cohorts_burn_in <- vector("list", burn_in_years)
   for (year in 1:burn_in_years)
-    yearly_candidate_cohorts_burn_in[[year]] <- generate_candidates_new(
+    yearly_candidate_cohorts_burn_in[[year]] <- generate_candidates(
       n_candidates, questions, seed = burn_in_seed + year)
   
   burn_in <- run_burn_in_phase(
@@ -2564,9 +2550,8 @@ run_multi_replicate_simulation <- function(
     n_candidates = n_candidates, burn_in_years = burn_in_years,
     yearly_candidate_cohorts = yearly_candidate_cohorts_burn_in,
     yearly_hiring_schedule = yearly_hiring_schedule_burn_in,
-    seed = burn_in_seed, alpha = alpha, L_repeats = L_repeats,
-    tuple_size = tuple_size, noise_method = noise_method,
-    noise_scale = noise_scale, cand_tier_cutpoints = cand_tier_cutpoints,
+    seed = burn_in_seed, alpha = alpha, n_bootstrap = n_bootstrap,
+    tuple_size = tuple_size, cand_tier_cutpoints = cand_tier_cutpoints,
     max_offer_rounds = max_offer_rounds,
     return_yearly_objects = FALSE)
   
@@ -2640,7 +2625,7 @@ run_multi_replicate_simulation <- function(
     # Fresh candidate cohorts for sim phase only
     yearly_candidate_cohorts_sim <- vector("list", sim_years)
     for (year in 1:sim_years)
-      yearly_candidate_cohorts_sim[[year]] <- generate_candidates_new(
+      yearly_candidate_cohorts_sim[[year]] <- generate_candidates(
         n_candidates, questions, seed = rep_seed + burn_in_years + year)
 
     # Strategic participation: score each cohort by pool alignment + quality
@@ -2698,9 +2683,8 @@ run_multi_replicate_simulation <- function(
         yearly_participation_sets_sim = yearly_participation_sets_sim,
         yearly_hiring_schedule_sim = yearly_hiring_schedule_sim,
         learned_prior_models = learned_prior_models_rep,
-        seed = rep_seed, alpha = alpha, L_repeats = L_repeats,
-        tuple_size = tuple_size, noise_method = noise_method,
-        noise_scale = noise_scale, cand_tier_cutpoints = cand_tier_cutpoints,
+        seed = rep_seed, alpha = alpha, n_bootstrap = n_bootstrap,
+        tuple_size = tuple_size, cand_tier_cutpoints = cand_tier_cutpoints,
         max_offer_rounds = max_offer_rounds,
         print_diagnostics = print_sim_diagnostics,
         return_dept_models = FALSE,
@@ -2818,7 +2802,7 @@ run_multi_replicate_simulation <- function(
       n_candidates = n_candidates, burn_in_years = burn_in_years,
       sim_years = sim_years, participation_rates = participation_rates,
       base_seed = base_seed, n_replicates = n_replicates,
-      alpha = alpha, L_repeats = L_repeats,
+      alpha = alpha, n_bootstrap = n_bootstrap,
       print_sim_diagnostics = print_sim_diagnostics,
       collect_rank_panel = collect_rank_panel,
       keep_diagnostics = keep_diagnostics,

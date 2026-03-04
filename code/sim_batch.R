@@ -47,10 +47,8 @@ n_candidates        <- cfg$n_candidates
 burn_in_years       <- cfg$burn_in_years
 sim_years           <- cfg$sim_years
 alpha               <- cfg$alpha
-L_repeats           <- cfg$L_repeats
+n_bootstrap         <- cfg$n_bootstrap
 max_offer_rounds    <- cfg$max_offer_rounds
-noise_method        <- cfg$noise_method
-noise_scale         <- cfg$noise_scale
 cand_tier_cutpoints <- cfg$cand_tier_cutpoints
 participation_rates <- cfg$participation_rates
 
@@ -86,7 +84,7 @@ run_one_replicate <- function(rep) {
   # Generate candidate cohorts for simulation phase
   yearly_candidate_cohorts_sim <- vector("list", sim_years)
   for (year in 1:sim_years)
-    yearly_candidate_cohorts_sim[[year]] <- generate_candidates_new(
+    yearly_candidate_cohorts_sim[[year]] <- generate_candidates(
       n_candidates, questions, seed = rep_seed + burn_in_years + year)
 
   # Compute participation assignments per year
@@ -132,9 +130,7 @@ run_one_replicate <- function(rep) {
       learned_prior_models         = lpm,
       seed                = rep_seed,
       alpha               = alpha,
-      L_repeats           = L_repeats,
-      noise_method        = noise_method,
-      noise_scale         = noise_scale,
+      n_bootstrap         = n_bootstrap,
       cand_tier_cutpoints = cand_tier_cutpoints,
       max_offer_rounds    = max_offer_rounds,
       print_diagnostics        = FALSE,
