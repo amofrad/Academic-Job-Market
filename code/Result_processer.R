@@ -134,11 +134,13 @@ dept_welfare_offer  <- fig_department_welfare_per_offer(all_sim_results,
 cand_participation  <- fig_participation_welfare(all_sim_results,
                          year_filter = c(1, 10), include_scramble = TRUE, hire_rounds = 2)
 
-# Stability analysis 
+
+# Stability analysis
 blocking_pairs <- count_blocking_pairs(all_sim_results,
                                        hiring_schedule = artifacts$yearly_hiring_schedule_sim,
                                        rates = cfg$participation_rates, year_filter = 1:10,
                                         max_replicates = 200)
+bp_figs <- fig_blocking_pairs(blocking_pairs)
 
 
 ggsave("../manuscript/fig/fig_dept_interview_heatmap.pdf", interview_heatmap$plot,
@@ -155,8 +157,8 @@ ggsave("../manuscript/fig/fig_candidate_welfare_unconditional.pdf", cand_welfare
        width = 7,  height = 5, device = cairo_pdf)
 ggsave("manuscript/fig/fig_dept_welfare_per_offer.pdf",         dept_welfare_offer$plot,
        width = 7,  height = 5, device = cairo_pdf)
-ggsave("manuscript/fig/fig_blocking_pairs.pdf", blocking_pairs$plot,
-       width = 7, height = 5, device = cairo_pdf)
+ggsave("manuscript/fig/fig_blocking_pairs.pdf", bp_figs$plot,
+       width = 8, height = 4, device = cairo_pdf)
 
 saveRDS(interview_heatmap,   "output/interview_heatmap.rds")
 saveRDS(hiring_heatmap,      "output/hiring_heatmap.rds")

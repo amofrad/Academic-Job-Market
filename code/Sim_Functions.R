@@ -4044,35 +4044,7 @@ count_blocking_pairs <- function(all_sim_results,
       se_bp_rate   = sd(bp_rate_avg) / sqrt(dplyr::n()),
       .groups = "drop")
 
-  # --- Figure ---
-  plot_theme <- theme_minimal(base_size = 14) +
-    theme(panel.grid.minor   = element_blank(),
-          panel.grid.major   = element_line(color = "gray90",
-                                            linewidth = 0.5),
-          axis.title         = element_text(size = 14, face = "bold"),
-          axis.text          = element_text(size = 12),
-          plot.margin        = margin(10, 10, 10, 10))
-
-  p <- ggplot(summary_tbl,
-              aes(x = participation_rate,
-                  y = mean_bp_rate)) +
-    geom_ribbon(aes(
-      ymin = mean_bp_rate - 1.96 * se_bp_rate,
-      ymax = mean_bp_rate + 1.96 * se_bp_rate),
-      alpha = 0.15, fill = "#377EB8") +
-    geom_line(linewidth = 1.2, color = "#377EB8") +
-    geom_point(size = 3, color = "#377EB8") +
-    scale_x_continuous(
-      breaks = sort(unique(summary_tbl$participation_rate)),
-      labels = scales::percent_format(accuracy = 1),
-      name = "Participation Rate") +
-    scale_y_continuous(
-      labels = scales::percent_format(accuracy = 0.1),
-      name = "Blocking Pair Rate (% of Eligible Pairings)") +
-    plot_theme
-
-  # --- Per-tier plot ---
-  # Normalize by (n_depts_in_tier * n_candidates) — full candidate set
+  # --- Per-tier summary ---
   tier_long <- data %>%
     dplyr::transmute(
       participation_rate, replicate, year,
@@ -4100,35 +4072,71 @@ count_blocking_pairs <- function(all_sim_results,
                          levels = c("Tier 1","Tier 2",
                                     "Tier 3","Tier 4")))
 
+  list(data = data, summary = summary_tbl, tier_summary = tier_summary)
+}
+
+
+# ---------------------------------------------------------------------------
+# fig_blocking_pairs — Plot blocking pair results from count_blocking_pairs
+# ---------------------------------------------------------------------------
+fig_blocking_pairs <- function(bp_result) {
+
+  summary_tbl  <- bp_result$summary
+  tier_summary <- bp_result$tier_summary
+
   tier_colors <- c("Tier 1" = "#E41A1C", "Tier 2" = "#377EB8",
                     "Tier 3" = "#4DAF4A", "Tier 4" = "#984EA3")
 
-  p_tier <- ggplot(tier_summary,
-                   aes(x = participation_rate,
-                       y = mean_bp_rate,
-                       color = dept_tier, shape = dept_tier,
-                       fill = dept_tier)) +
-    geom_ribbon(aes(
-      ymin = mean_bp_rate - 1.96 * se_bp_rate,
-      ymax = mean_bp_rate + 1.96 * se_bp_rate),
-      alpha = 0.10, color = NA) +
-    geom_line(linewidth = 1.2) +
-    geom_point(size = 3) +
+  plot_theme <- theme_minimal(base_size = 14) +
+    theme(panel.grid.minor   = element_blank(),
+          panel.grid.major   = element_line(color = "gray90", linewidth = 0.5),
+          axis.title         = element_text(size = 14, face = "bold"),
+          axis.text          = element_text(size = 12),
+          plot.margin        = margin(10, 10, 10, 10))
+
+  p <- ggplot(summary_tbl,
+              aes(x = participation_rate * 100, y = mean_bp_rate)) +
+    geom_line(linewidth = 1.8, color = "#2C6FAC") +
+    geom_point(size = 4, color = "#2C6FAC") +
     scale_x_continuous(
-      breaks = sort(unique(tier_summary$participation_rate)),
-      labels = scales::percent_format(accuracy = 1),
-      name = "Participation Rate") +
+      breaks = c(0, 5, 20, 50, 90, 100),
+      labels = c("0", "5", "20", "50", "90", "100")) +
     scale_y_continuous(
       labels = scales::percent_format(accuracy = 0.1),
-      name = "Blocking Pair Rate (% of All Pairings)") +
+      expand = expansion(mult = c(0.05, 0.05))) +
+    labs(x = "Market Participation Rate (%)",
+         y = "Blocking Pair Rate") +
+    plot_theme
+
+  p_tier <- ggplot(tier_summary,
+                   aes(x = participation_rate * 100,
+                       y = mean_bp_rate,
+                       color = dept_tier, linetype = dept_tier,
+                       shape = dept_tier, group = dept_tier)) +
+    geom_line(linewidth = 1.8) +
+    geom_point(aes(size = dept_tier)) +
     scale_color_manual(values = tier_colors) +
-    scale_fill_manual(values = tier_colors) +
+    scale_linetype_manual(values = c("solid", "solid", "solid", "solid")) +
     scale_shape_manual(values = c(16, 17, 15, 18)) +
-    labs(color = NULL, fill = NULL, shape = NULL) +
+    scale_size_manual(values = c(4, 4, 4, 5.5)) +
+    scale_x_continuous(
+      breaks = c(0, 5, 20, 50, 90, 100),
+      labels = c("0", "5", "20", "50", "90", "100")) +
+    scale_y_continuous(
+      labels = scales::percent_format(accuracy = 0.1),
+      expand = expansion(mult = c(0.05, 0.05))) +
+    labs(x = "Market Participation Rate (%)",
+         y = "Blocking Pair Rate",
+         color = "Department Tier", linetype = "Department Tier",
+         shape = "Department Tier", size = "Department Tier") +
     plot_theme +
-    theme(legend.position = "bottom")
+    theme(legend.position = "bottom",
+          legend.title = element_text(size = 14, face = "bold"),
+          legend.text = element_text(size = 13),
+          legend.key.size = unit(1.5, "lines"),
+          legend.key.width = unit(2.5, "lines"),
+          legend.spacing.x = unit(0.5, "cm"))
 
   list(plot = p, plot_tier = p_tier,
-       data = data, summary = summary_tbl,
-       tier_summary = tier_summary)
+       summary = summary_tbl, tier_summary = tier_summary)
 }

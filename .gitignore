@@ -28,3 +28,4 @@ procedure.pdf
 # Python virtual environments (web scraping)
 usnews_scraper_env/
 __pycache__/
+output/*.rds
