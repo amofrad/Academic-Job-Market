@@ -169,7 +169,7 @@ This script:
 
 ## Data Description
 
-A full data dictionary for `departments_dataset.csv` and the supporting data files is provided in `code/department_generator/Data_Dictionary.md`.
+A data dictionary for `departments_dataset.csv` is provided in `data/Data_Dictionary.md`.
 
 ### `departments_dataset.csv`
 
@@ -205,6 +205,8 @@ The primary input dataset containing 101 US statistics departments with the foll
 
 - **`cost_of_living_us.csv`**: County-level cost of living from the Economic Policy Institute (EPI) Family Budget Calculator, including housing, food, transportation, healthcare, and other costs.
 - **`salary_data.csv`**: State-level adjusted 9-month average faculty salary from the National Center for Education Statistics (NCES), 2023.
+
+A data dictionary for these supporting data files is provided in `code/department_generator/supporting_data/Supporting_Data_Dictionary.md`.
 
 ## Key Functions in `Sim_Functions.R`
 
