@@ -51,9 +51,9 @@ torch::install_torch()
 - **Memory**: >= 16 GB RAM recommended (32 GB for full 200-replicate runs)
 - **CPU**: Multi-core processor recommended; each simulation batch uses 20 parallel workers
 - **Runtime estimates**:
-  - `BurnIn.R` (Stage 1): ~2-3 minutes
-  - `sim_batch.R` (Stage 2): ~1.5-2.5 hours per batch (20 replicates each). The 10 batches can be run in parallel on an HPC cluster, so wall-clock time for the full 200 replicates is approximately 1.5-2.5 hours when parallelized.
-  - `Result_processer.R` (Stage 3): ~1-2 minutes
+  - `BurnIn.R` (Stage 1): ~10-15 minutes
+  - `sim_batch.R` (Stage 2): ~2.5-3.5 hours per batch (20 replicates each). The 10 batches can be run in parallel on an HPC cluster, so wall-clock time for the full 200 replicates is approximately 2.5-3.5 hours when parallelized.
+  - `Result_processer.R` (Stage 3): ~5 minutes
 
 ## Repository Structure
 
@@ -168,6 +168,8 @@ This script:
    - `fig_candidate_by_participation.pdf` — Welfare comparison of participating vs. non-participating candidates
 
 ## Data Description
+
+A full data dictionary for `departments_dataset.csv` and the supporting data files is provided in `code/department_generator/Data_Dictionary.md`.
 
 ### `departments_dataset.csv`
 

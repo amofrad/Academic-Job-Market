@@ -3,7 +3,7 @@
 # USNews_Rankings_Scraper.R — Scrape and parse US News 2022 Statistics rankings
 #
 # Automates the full pipeline:
-#   1. Initializes the USNews-Scrapper Git submodule (if needed)
+#   1. Initializes the USNews-Scrapper Git submodule
 #   2. Sets up a Python virtual environment and installs dependencies
 #   3. Runs the Python scraper to download rankings JSON
 #   4. Parses the JSON output to extract department rankings

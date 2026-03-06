@@ -24,10 +24,10 @@ n_candidates        <- 300
 burn_in_years       <- 20
 sim_years           <- 10
 alpha               <- 0.05
-n_bootstrap           <- 50
+n_bootstrap           <- 100
 max_offer_rounds    <- 2
 cand_tier_cutpoints <- c(0.10, 0.25, 0.50)
-participation_rates <- c(0, 0.05, 0.2, 0.5, 0.9, 1.00)#c(0, 0.05, 0.2, 0.5, 0.9, 1.00)
+participation_rates <- c(0, 0.05, 0.2, 0.5, 0.9, 1.00)
 
 set.seed(base_seed)
 torch::torch_manual_seed(base_seed)

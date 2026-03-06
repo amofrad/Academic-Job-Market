@@ -207,3 +207,7 @@ out_file <- sprintf("output/sim_batch_%d.rds", task_id)
 saveRDS(batch_results, out_file, compress = "gzip")
 cat(sprintf("Saved %s (%.1f MB)\n", out_file, file.size(out_file) / 1e6))
 cat("Done.\n")
+
+# ── Capture session info for reproducibility (task 1 only) ──
+if (task_id == 1L)
+  writeLines(capture.output(sessionInfo()), "output/requirements.txt")
