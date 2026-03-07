@@ -64,7 +64,7 @@ Academic-Job-Market/
 │   ├── Sim_Functions.R                 # Core simulation functions
 │   ├── BurnIn.R                        # Stage 1: Burn-in phase
 │   ├── sim_batch.R                     # Stage 2: Simulation batches (HPC-ready)
-│   ├── sim_array.sh                    # SGE job array script for HPC (Hoffman2)
+│   ├── sim_array.sh                    # SGE job array script for HPC
 │   ├── Result_processer.R              # Stage 3: Combine results and generate figures
 │   └── department_generator/           # Department dataset construction (Stage 0)
 │       ├── USNews_Rankings_Scraper.R   # Scrape and parse US News 2022 rankings
@@ -130,7 +130,7 @@ Rscript code/BurnIn.R
 
 ### Stage 2: Simulation Batches
 
-Each batch processes 20 independent replicates for all participation rates. Run 10 batches for 200 total replicates. Each batch takes approximately 1.5-2.5 hours.
+Each batch processes 20 independent replicates for all participation rates. Run 10 batches for 200 total replicates. Each batch takes approximately 2.5-3.5 hours.
 
 ```bash
 # Run sequentially (~15-25 hours total):
@@ -138,8 +138,8 @@ for i in $(seq 1 10); do
   Rscript code/sim_batch.R $i
 done
 
-# Or submit as an HPC job array for parallel execution (~1.5-2.5 hours total).
-# The paper's results were generated on the UCLA Hoffman2 cluster using
+# Or submit as an HPC job array for parallel execution (~2.5-3.5 hours total).
+# The paper's results were generated on an HPC cluster using
 # SGE job arrays with 20 cores and 4 GB per core per task:
 # qsub -t 1-10 -pe shared 20 -l h_rt=24:00:00,h_data=4G code/sim_array.sh
 ```
@@ -252,7 +252,7 @@ To reproduce all results from the paper:
 Rscript code/BurnIn.R
 
 # Step 2: Simulation batches (10 batches x 20 replicates = 200 total)
-# ~1.5-2.5 hours per batch; run in parallel on HPC for fastest results
+# ~2.5-3.5 hours per batch; run in parallel on HPC for fastest results
 for i in $(seq 1 10); do
   Rscript code/sim_batch.R $i
 done
