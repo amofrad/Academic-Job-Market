@@ -161,11 +161,18 @@ This script:
 1. Loads all 10 batch files and the burn-in artifacts
 2. Merges results into a single `output/all_sim_results.rds` structure
 3. Generates PDF figures in `manuscript/fig/`:
-   - `fig_dept_interview_heatmap.pdf` — Interview allocation across department and candidate tiers
+
+   **Main text figures:**
    - `fig_dept_hiring_heatmap.pdf` — Hiring outcomes across tiers
    - `fig_department_welfare.pdf` — Department welfare per hiring position by tier
-   - `fig_candidate_welfare_by_tier.pdf` — Matched candidate utility $\bar{V}_{ij}$ by quality tier
+   - `fig_candidate_utility_by_tier.pdf` — Matched candidate utility $\bar{V}_{ij}$ by quality tier
    - `fig_candidate_by_participation.pdf` — Welfare comparison of participating vs. non-participating candidates
+
+   **Supplement figures:**
+   - `fig_candidate_welfare.pdf` — Mean candidate welfare across all candidates
+   - `fig_candidate_welfare_unconditional.pdf` — Mean candidate welfare by quality tier
+   - `fig_dept_interview_heatmap.pdf` — Interview allocation across department and candidate tiers
+   - `fig_blocking_pairs.pdf` — Blocking pair rate by participation rate
 
 ## Data Description
 
@@ -227,11 +234,14 @@ The simulation is built on the following core components. Notation follows the p
 | `run_burn_in_phase()` | Burn-in phase to learn department priors |
 | `run_job_market_sim_with_learned_prior()` | Simulation with learned priors |
 | `reconstruct_learned_prior_models()` | Rebuild torch models from historical data |
-| `fig_interview_heatmap()` | Figure: interview allocation heatmap |
 | `fig_hiring_heatmap()` | Figure: hiring outcomes heatmap |
 | `fig_department_welfare()` | Figure: department welfare by tier |
-| `fig_candidate_welfare()` | Figure: candidate welfare $\bar{V}_{ij}$ by tier |
+| `fig_candidate_utility()` | Figure: candidate utility $\bar{V}_{ij}$ by tier (conditional on matching) |
 | `fig_participation_welfare()` | Figure: participating vs. non-participating welfare |
+| `fig_candidate_welfare()` | Figure: mean candidate welfare across all candidates (supplement) |
+| `fig_candidate_welfare_unconditional()` | Figure: mean candidate welfare by quality tier (supplement) |
+| `fig_interview_heatmap()` | Figure: interview allocation heatmap (supplement) |
+| `fig_blocking_pairs()` | Figure: blocking pair rate by participation rate (supplement) |
 
 ## Reproducing Results
 

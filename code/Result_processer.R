@@ -14,13 +14,18 @@
 #
 # Output:
 #   output/all_sim_results.rds          — combined simulation results
-#   manuscript/fig/fig_dept_interview_heatmap.pdf
-#   manuscript/fig/fig_dept_hiring_heatmap.pdf
-#   manuscript/fig/fig_department_welfare.pdf
-#   manuscript/fig/fig_candidate_welfare_by_tier.pdf
-#   manuscript/fig/fig_candidate_welfare_unconditional.pdf
-#   manuscript/fig/fig_candidate_by_participation.pdf
-#   manuscript/fig/fig_dept_welfare_per_offer.pdf
+#
+#   Main text figures:
+#   manuscript/fig/fig_dept_hiring_heatmap.pdf        — hiring heatmap
+#   manuscript/fig/fig_department_welfare.pdf          — department welfare per position
+#   manuscript/fig/fig_candidate_utility_by_tier.pdf   — candidate utility by tier (matched)
+#   manuscript/fig/fig_candidate_by_participation.pdf  — participating vs non-participating
+#
+#   Supplement figures:
+#   manuscript/fig/fig_candidate_welfare.pdf           — aggregate candidate welfare
+#   manuscript/fig/fig_candidate_welfare_unconditional.pdf — candidate welfare by tier
+#   manuscript/fig/fig_dept_interview_heatmap.pdf      — interview allocation heatmap
+#   manuscript/fig/fig_blocking_pairs.pdf              — blocking pair rate
 # =============================================================================
 source("code/Sim_Functions.R")
 
@@ -119,16 +124,16 @@ interview_heatmap   <- fig_interview_heatmap(all_sim_results,
 hiring_heatmap      <- fig_hiring_heatmap(all_sim_results,
                          year_filter = c(1, 10), include_scramble = TRUE, hire_rounds = 2)
 
-cand_welfare        <- fig_candidate_welfare(all_sim_results,
+cand_utility        <- fig_candidate_utility(all_sim_results,
                          year_filter = c(1, 10), include_scramble = TRUE, hire_rounds = 2)
 
 cand_welfare_uncond <- fig_candidate_welfare_unconditional(all_sim_results,
                          year_filter = c(1, 10), include_scramble = TRUE, hire_rounds = 2)
 
-dept_welfare        <- fig_department_welfare(all_sim_results,
+cand_welfare   <- fig_candidate_welfare(all_sim_results,
                          year_filter = c(1, 10), include_scramble = TRUE, hire_rounds = 2)
 
-dept_welfare_offer  <- fig_department_welfare_per_offer(all_sim_results,
+dept_welfare        <- fig_department_welfare(all_sim_results,
                          year_filter = c(1, 10), include_scramble = TRUE, hire_rounds = 2)
 
 cand_participation  <- fig_participation_welfare(all_sim_results,
@@ -143,65 +148,19 @@ blocking_pairs <- count_blocking_pairs(all_sim_results,
 bp_figs <- fig_blocking_pairs(blocking_pairs)
 
 
-ggsave("../manuscript/fig/fig_dept_interview_heatmap.pdf", interview_heatmap$plot,
+ggsave("manuscript/fig/fig_dept_interview_heatmap.pdf", interview_heatmap$plot,
        width = 10, height = 5, device = cairo_pdf)
-ggsave("../manuscript/fig/fig_dept_hiring_heatmap.pdf",  hiring_heatmap$plot,
+ggsave("manuscript/fig/fig_dept_hiring_heatmap.pdf",  hiring_heatmap$plot,
        width = 10, height = 5, device = cairo_pdf)
-ggsave("../manuscript/fig/fig_department_welfare.pdf", dept_welfare$plot,
+ggsave("manuscript/fig/fig_department_welfare.pdf", dept_welfare$plot,
        width = 7,  height = 5, device = cairo_pdf)
-ggsave("manuscript/fig/fig_candidate_welfare_by_tier.pdf", cand_welfare$plot,
+ggsave("manuscript/fig/fig_candidate_utility_by_tier.pdf", cand_utility$plot,
        width = 7,  height = 5, device = cairo_pdf)
-ggsave("../manuscript/fig/fig_candidate_by_participation.pdf",  cand_participation$plot,
+ggsave("manuscript/fig/fig_candidate_by_participation.pdf",  cand_participation$plot,
        width = 10, height = 4, device = cairo_pdf)
-ggsave("../manuscript/fig/fig_candidate_welfare_unconditional.pdf", cand_welfare_uncond$plot,
+ggsave("manuscript/fig/fig_candidate_welfare_unconditional.pdf", cand_welfare_uncond$plot,
        width = 7,  height = 5, device = cairo_pdf)
-ggsave("manuscript/fig/fig_dept_welfare_per_offer.pdf",         dept_welfare_offer$plot,
+ggsave("manuscript/fig/fig_candidate_welfare.pdf", cand_welfare$plot,
        width = 7,  height = 5, device = cairo_pdf)
 ggsave("manuscript/fig/fig_blocking_pairs.pdf", bp_figs$plot,
        width = 8, height = 4, device = cairo_pdf)
-
-saveRDS(interview_heatmap,   "output/interview_heatmap.rds")
-saveRDS(hiring_heatmap,      "output/hiring_heatmap.rds")
-saveRDS(dept_welfare,        "output/dept_welfare.rds")
-saveRDS(cand_welfare,        "output/cand_welfare.rds")
-saveRDS(cand_participation,  "output/cand_participation.rds")
-saveRDS(cand_welfare_uncond, "output/cand_welfare_uncond.rds")
-saveRDS(dept_welfare_offer,  "output/dept_welfare_offer.rds")
-saveRDS(blocking_pairs, "output/blocking_pairs.rds")
-
-
-
-
-
-
-
-
-
-
-
-
-
-total_change <- hiring_heatmap$data %>%
-  group_by(scenario, prestige_tier) %>%
-  summarise(total_mean_n = sum(mean_n), .groups = "drop")%>%
-  pivot_wider(
-    names_from  = prestige_tier,
-    values_from = total_mean_n,
-    values_fill = 0
-  ) %>%
-  arrange(scenario)
-
-
-pct_change <- hiring_heatmap$data %>%
-  group_by(scenario, prestige_tier) %>%
-  summarise(total_mean_n = sum(mean_n, na.rm = TRUE), .groups = "drop") %>%
-  left_join(hiring_heatmap$hiring_quotas, by = "prestige_tier") %>%
-  mutate(mean_n_per_slot = total_mean_n / quota) %>%
-  dplyr::select(scenario, prestige_tier, mean_n_per_slot) %>%
-  pivot_wider(
-    names_from  = prestige_tier,
-    values_from = mean_n_per_slot
-  )
-
-
-total_change; pct_change
