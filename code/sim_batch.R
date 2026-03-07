@@ -55,7 +55,7 @@ participation_rates <- cfg$participation_rates
 n_departments <- nrow(departments)
 burn_in_seed  <- base_seed
 
-# ── Reconstruct learned prior models from burn-in historical data ──
+# Reconstruct learned prior models from burn-in historical data
 # (torch models cannot be serialized via saveRDS; retrain from data)
 cat("Reconstructing learned prior models from burn-in data...\n")
 learned_prior_models <- reconstruct_learned_prior_models(
@@ -65,7 +65,7 @@ learned_prior_models <- reconstruct_learned_prior_models(
 )
 cat("Done.\n\n")
 
-# ── Parallel setup: 1 worker per replicate ──
+# Parallel setup: 1 worker per replicate
 n_workers <- reps_per_task
 cat(sprintf("Setting up %d workers for %d replicates\n", n_workers, reps_per_task))
 
@@ -73,7 +73,7 @@ old_plan <- future::plan()
 on.exit(future::plan(old_plan), add = TRUE)
 future::plan(future::multisession, workers = n_workers)
 
-# ── Single-replicate function ──
+# Single-replicate function
 run_one_replicate <- function(rep) {
   rep_seed <- base_seed + rep * 10000
   set.seed(rep_seed)
@@ -148,7 +148,7 @@ run_one_replicate <- function(rep) {
   list(replicate = rep, seed = rep_seed, sim_results = sim_results_rep)
 }
 
-# ── Run all replicates in this batch ──
+# Run all replicates in this batch
 start_time <- Sys.time()
 reps <- rep_start:rep_end
 
@@ -164,7 +164,7 @@ rep_outputs <- future.apply::future_lapply(
 elapsed <- round(difftime(Sys.time(), start_time, units = "hours"), 2)
 cat(sprintf("\nBatch %d completed in %s hours\n", task_id, elapsed))
 
-# ── Aggregate results ──
+# Aggregate results
 rate_keys <- as.character(participation_rates)
 sim_acc <- setNames(
   lapply(rate_keys, function(x) list(
@@ -208,6 +208,6 @@ saveRDS(batch_results, out_file, compress = "gzip")
 cat(sprintf("Saved %s (%.1f MB)\n", out_file, file.size(out_file) / 1e6))
 cat("Done.\n")
 
-# ── Capture session info for reproducibility (task 1 only) ──
+# Capture session info requirements.txt
 if (task_id == 1L)
   writeLines(capture.output(sessionInfo()), "output/requirements.txt")
