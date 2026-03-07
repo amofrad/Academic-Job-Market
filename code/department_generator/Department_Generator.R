@@ -46,7 +46,7 @@ departments <- departments %>%
     )
   )
 
-# ── Tier classification by rank ──
+#  Tier classification by rank 
 set.seed(1)
 departments <- departments %>%
   mutate(
@@ -524,12 +524,6 @@ departments_enriched <- departments_enriched %>%
     )
   )
 
-# Check matching results
-cat("\nMatching results:\n")
-cat("Successfully matched:", sum(departments_enriched$has_match), "out of", nrow(departments_enriched), "\n\n")
-
-
-
 # =============================================================================
 # SECTION 4: MEDICAL SCHOOL PROXIMITY (Q15)
 # =============================================================================
@@ -568,23 +562,11 @@ departments_enriched <- departments_enriched %>%
   mutate(q15_medical_school_proximity = if_else(university %in% universities_with_med_schools, 1L, 0L))
 
 
-
-
-
-
-
-
-
-
-
-
-
-
 # =============================================================================
 # SECTION 5: ESTIMATE REMAINING QUESTIONNAIRE RESPONSES (Q5, Q7-Q14)
 # =============================================================================
 
-# ===== Q5: Dual Career Programs =====
+#  Q5: Dual Career Programs 
 estimate_dual_career <- function(tier, q2_region, university_size, public_private, n_undergrads) {
   # Larger institutions more likely to have dual career programs
   # Particularly common at R1 publics in Midwest/Northeast
@@ -612,7 +594,7 @@ estimate_dual_career <- function(tier, q2_region, university_size, public_privat
   }
 }
 
-# ===== Q7: Startup Funding =====
+#  Q7: Startup Funding 
 estimate_startup <- function(tier, q1_geographic_setting, public_private, cost_avg, rate_admissions) {
   # Base on tier
   base_startup <- case_when(
@@ -656,7 +638,7 @@ estimate_startup <- function(tier, q1_geographic_setting, public_private, cost_a
   )
 }
 
-# ===== Q8: Guaranteed Summer Support =====
+#  Q8: Guaranteed Summer Support 
 estimate_summer_support <- function(tier, university_size, n_undergrads, public_private) {
   # Top institutions provide more summer support
   tier_score <- case_when(
@@ -691,7 +673,7 @@ estimate_summer_support <- function(tier, university_size, n_undergrads, public_
   )
 }
 
-# ===== Q9: Teaching Load =====
+#  Q9: Teaching Load 
 estimate_teaching_load <- function(tier, n_undergrads, university_size, public_private) {
   # Base teaching load by tier
   base_load <- case_when(
@@ -724,7 +706,7 @@ estimate_teaching_load <- function(tier, n_undergrads, university_size, public_p
   )
 }
 
-# ===== Q10: Course Types =====
+#  Q10: Course Types 
 estimate_course_types <- function(tier, university_size, n_undergrads) {
   # Top research universities focus on graduate courses
   if(tier == "Tier 1") {
@@ -750,7 +732,7 @@ estimate_course_types <- function(tier, university_size, n_undergrads) {
   return("D")  # Tier 4: Flexible across all levels
 }
 
-# ===== Q11: Mentoring Program =====
+#  Q11: Mentoring Program 
 estimate_mentoring <- function(tier, university_size, public_private, n_undergrads) {
   # Top private institutions have best mentoring structures
   if(!is.na(public_private) && public_private == "Private" && tier == "Tier 1") {
@@ -781,27 +763,23 @@ estimate_mentoring <- function(tier, university_size, public_private, n_undergra
   return("C")  # Slightly important (informal mentoring)
 }
 
-# ===== Q12: Research Culture =====
+#  Q12: Research Culture 
 research_culture_lookup <- tribble(
   ~university, ~q12_research_culture,
-  # Known theoretical programs
   "University of Chicago", "A",
   "Stanford University", "D",
   "University of California--Berkeley", "D",
   "Harvard University", "A",
-  # Known biostatistics focus
   "Duke University", "C",
   "Boston University", "C",
   "University of Washington", "C",
   "University of North Carolina--Chapel Hill", "C",
   "Johns Hopkins University", "C",
-  # Known applied/data science
   "Carnegie Mellon University", "B",
   "George Mason University", "B",
   "Worcester Polytechnic Institute", "B",
   "Michigan Technological University", "B",
   "University of Maryland--Baltimore County", "B",
-  # Balanced programs (most fall here)
   "Columbia University", "D",
   "University of Pennsylvania", "D",
   "University of Michigan--Ann Arbor", "D",
@@ -839,7 +817,7 @@ infer_research_culture <- function(university, tier, q15_medical_school_proximit
   return("D")
 }
 
-# ===== Q13: Publication Venues =====
+#  Q13: Publication Venues 
 estimate_publication_venues <- function(tier, q12_research_culture) {
   # Top theoretical departments
   if(tier == "Tier 1" && !is.na(q12_research_culture) && q12_research_culture == "A") {
@@ -869,7 +847,7 @@ estimate_publication_venues <- function(tier, q12_research_culture) {
   return("E")
 }
 
-# ===== Q14: PhD Student Ratio =====
+#  Q14: PhD Student Ratio 
 estimate_phd_ratio <- function(tier, university_size, n_undergrads, q15_medical_school_proximity) {
   # Base ratio by tier
   base_ratio <- case_when(
@@ -912,7 +890,7 @@ estimate_phd_ratio <- function(tier, university_size, n_undergrads, q15_medical_
 # APPLY ALL ESTIMATION FUNCTIONS
 # =============================================================================
 
-set.seed(2026)  # For reproducibility
+set.seed(2026)
 
 departments_final <- departments_enriched %>%
   rowwise() %>%
@@ -957,49 +935,6 @@ departments_final <- departments_final %>%
   ) %>%
   ungroup()
 
-# =============================================================================
-# FINAL DATA QUALITY CHECKS AND OUTPUT
-# =============================================================================
-
-# Check completeness
-cat("\n=== DATA COMPLETENESS CHECK ===\n")
-questionnaire_vars <- c("q1_geographic_setting", "q2_region", "q3_airport_proximity",
-                        "q4_cost_of_living", "q5_dual_career", "q6_typical_salary_range",
-                        "q7_typical_startup", "q8_guaranteed_summer", "q9_typical_teaching_load",
-                        "q10_course_types", "q11_mentoring_program", "q12_research_culture",
-                        "q13_publication_venues", "q14_phd_student_ratio", "q15_medical_school_proximity")
-
-for(var in questionnaire_vars) {
-  missing_count <- sum(is.na(departments_final[[var]]))
-  cat(sprintf("%-30s: %3d missing (%.1f%%)\n", var, missing_count, 
-              100 * missing_count / nrow(departments_final)))
-}
-
-# Summary statistics
-cat("\n=== SUMMARY STATISTICS ===\n")
-cat("\nQ5 - Dual Career Programs:\n")
-print(table(departments_final$q5_dual_career, departments_final$tier))
-
-cat("\nQ7 - Startup Funding:\n")
-print(table(departments_final$q7_typical_startup, departments_final$tier))
-
-cat("\nQ9 - Teaching Load:\n")
-print(table(departments_final$q9_typical_teaching_load, departments_final$tier))
-
-cat("\nQ12 - Research Culture:\n")
-print(table(departments_final$q12_research_culture))
-
-cat("\nQ14 - PhD Student Ratio (by tier):\n")
-departments_final %>%
-  group_by(tier) %>%
-  summarise(
-    mean_ratio = mean(q14_phd_student_ratio, na.rm = TRUE),
-    sd_ratio = sd(q14_phd_student_ratio, na.rm = TRUE),
-    .groups = "drop"
-  ) %>%
-  print()
-
-
 
 departments_final <- departments_final %>%
   mutate(
@@ -1039,7 +974,7 @@ create_hidden_gems <- function(departments_df, gem_rate = 0.25, seed = 2026) {
     # Each gem gets 1-2 standout attributes
     n_attributes <- sample(1:2, 1, prob = c(0.6, 0.4))
     
-    # Possible gem types with weights (some more common than others)
+    # Possible gem types with weights
     gem_types <- c(
       "salary",           # Unusually high salary for tier
       "location",         # Urban location (A or B)
@@ -1059,7 +994,7 @@ create_hidden_gems <- function(departments_df, gem_rate = 0.25, seed = 2026) {
       tier <- departments_df$tier[idx]
       
       if (gem_type == "salary") {
-        # Boost salary to Tier 1/2 levels (1.3-1.5x state average instead of 0.9-1.0x)
+        # Boost salary to Tier 1/2 levels
         original <- departments_df$q6_typical_salary_range[idx]
         # Get base state salary and apply Tier 1/2 multiplier
         state_salary <- original / ifelse(tier == "Tier 3", 1.0, 0.9)
@@ -1164,35 +1099,8 @@ create_hidden_gems <- function(departments_df, gem_rate = 0.25, seed = 2026) {
 
 departments_final <- create_hidden_gems(departments_final, gem_rate = 0.25, seed = 2026)
 
-# Verify the changes
-cat("\n=== VERIFICATION: Tier 3/4 Departments with Tier 1/2 Attributes ===\n")
 
-cat("\nTier 3/4 with urban/suburban location (A or B):\n")
-departments_final %>%
-  filter(tier %in% c("Tier 3", "Tier 4"), 
-         q1_geographic_setting %in% c("A", "B")) %>%
-  dplyr::select(university, tier, q1_geographic_setting) %>%
-  print(n = 20)
-
-cat("\nTier 3/4 with light teaching load (B = 2-2):\n")
-departments_final %>%
-  filter(tier %in% c("Tier 3", "Tier 4"), 
-         q9_typical_teaching_load == "B") %>%
-  dplyr::select(university, tier, q9_typical_teaching_load) %>%
-  print(n = 20)
-
-cat("\nSalary distribution by tier (after hidden gems):\n")
-departments_final %>%
-  group_by(tier) %>%
-  summarise(
-    min_salary = min(q6_typical_salary_range, na.rm = TRUE),
-    mean_salary = mean(q6_typical_salary_range, na.rm = TRUE),
-    max_salary = max(q6_typical_salary_range, na.rm = TRUE),
-    .groups = "drop"
-  ) %>%
-  print()
-
-# ── Remove intermediate columns and order cleanly ──
+# Remove intermediate columns and order cleanly
 departments_final <- departments_final %>%
   dplyr::select(-any_of(c("has_match", "n_undergrads", "cost_avg", "rate_admissions",
                     "locale_type", "department_size_faculty",
@@ -1206,6 +1114,6 @@ departments_final <- departments_final %>%
                 q15_medical_school_proximity,
                 everything())
 
-# ── Save final dataset ──
+#  Save final dataset
 write_csv(departments_final, "../../data/departments_dataset.csv")
 cat(sprintf("\nSaved ../departments_dataset.csv (%d departments)\n", nrow(departments_final)))

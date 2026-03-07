@@ -51,7 +51,7 @@ if (!file.exists(venv_python)) {
 }
 
 # =============================================================================
-# STEP 3: Run the Python scraper
+# STEP 3: Run Python scraper
 # =============================================================================
 temp_dir <- "USNews-Scrapper/usnews_scrapper/temp"
 
@@ -65,7 +65,7 @@ if (!dir.exists(temp_dir) || length(list.files(temp_dir, pattern = "\\.txt$")) =
   )
   system(scraper_cmd)
   # The scraper may exit with an error during its own tablib export step,
-  # but the raw JSON files we need are saved to temp/ before that.
+  # but raw JSON files are saved to temp/ before that.
   n_files <- length(list.files(temp_dir, pattern = "\\.txt$"))
   if (n_files == 0) stop("Scraper failed: no JSON files found in ", temp_dir)
   cat(sprintf("Scraper downloaded %d JSON files.\n", n_files))
