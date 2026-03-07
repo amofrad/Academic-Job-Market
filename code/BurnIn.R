@@ -18,7 +18,7 @@ source("code/Sim_Functions.R")
 cat("=== BURN-IN STAGE ===\n")
 cat("Time:", format(Sys.time()), "\n\n")
 
-# ── Configuration ──
+# Configuration
 base_seed           <- 14
 n_candidates        <- 300
 burn_in_years       <- 20
@@ -32,19 +32,19 @@ participation_rates <- c(0, 0.05, 0.2, 0.5, 0.9, 1.00)
 set.seed(base_seed)
 torch::torch_manual_seed(base_seed)
 
-# ── Load and prepare departments ──
+# Load and prepare departments
 departments_final <- read_csv("data/departments_dataset.csv")
 departments_raw   <- departments_final %>% mutate(dept_id = row_number())
 departments       <- prepare_departments(departments_raw, questions, seed = base_seed)
 n_departments     <- nrow(departments)
 
-# ── Generate deterministic hiring schedules ──
+# Generate deterministic hiring schedules
 yearly_hiring_schedule_burn_in <- generate_yearly_hiring_schedule(
   n_departments, burn_in_years, departments, base_seed + 500)
 yearly_hiring_schedule_sim <- generate_yearly_hiring_schedule(
   n_departments, sim_years, departments, base_seed + 600)
 
-# ── Generate candidate cohorts and run burn-in ──
+# Generate candidate cohorts and run burn-in
 start_time <- Sys.time()
 
 yearly_candidate_cohorts_burn_in <- vector("list", burn_in_years)
@@ -69,7 +69,7 @@ burn_in <- run_burn_in_phase(
 elapsed <- round(difftime(Sys.time(), start_time, units = "mins"), 1)
 cat(sprintf("\nBurn-in completed in %s minutes\n", elapsed))
 
-# ── Save artifacts ──
+# Save artifacts
 # NOTE: torch nn_module objects are not serializable via saveRDS. We save
 # burn_in_historical instead; sim jobs reconstruct models via
 # reconstruct_learned_prior_models().

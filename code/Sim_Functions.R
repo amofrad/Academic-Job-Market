@@ -49,16 +49,6 @@ assign_tiers_from_quantiles <- function(x, cutpoints = c(0.10, 0.25, 0.50),
 candidate_utility <- function(v_i_bar, s_j, f_j, cand_tier = NULL,
                               prestige_sensitivity = NULL) {
   # Cobb-Douglas: V = s_j^beta * f_j^(1-beta)
-  # Tier-gap-aware: beta increases when dept prestige exceeds candidate quality
-  #   beta_base = 0.30 + 0.35*v_i_bar  (higher-quality candidates value prestige more)
-  #   prestige_gap = s_j - v_i_bar  (positive when dept is "above" candidate)
-  #   beta = beta_base + 0.30 * prestige_gap
-  # Intuition: CT1 candidate offered by DT1 → high beta (accept for prestige)
-  #            CT1 candidate offered by DT3 → lower beta (need good fit to accept)
-  # CT1 (v~0.87) at DT1 (s~0.87): beta_base~0.60, gap~0,    beta~0.60
-  # CT1 (v~0.87) at DT3 (s~0.40): beta_base~0.60, gap~-0.47, beta~0.46
-  # CT4 (v~0.48) at DT4 (s~0.28): beta_base~0.47, gap~-0.20, beta~0.41
-  # CT4 (v~0.48) at DT1 (s~0.87): beta_base~0.47, gap~+0.39, beta~0.59
   beta_base <- pmin(0.30 + 0.35 * v_i_bar, 0.9)
   prestige_gap <- s_j - v_i_bar
   beta <- pmin(0.9, pmax(0.05, beta_base + 0.30 * prestige_gap))
@@ -70,12 +60,6 @@ candidate_utility <- function(v_i_bar, s_j, f_j, cand_tier = NULL,
 
 department_utility <- function(s_j, v_i_bar, f_j, dept_tier = NULL, cand_tier = NULL) {
   # Cobb-Douglas: U = v^alpha * f^(1-alpha)
-  # All departments prioritize quality (alpha > 0.5), with top depts most quality-focused.
-  #   alpha = 0.50 + 0.40*s_j  (linear in s_j, steeper slope for DT1 dominance)
-  # DT1 (s~0.87): alpha~0.85 → 85% quality / 15% fit
-  # DT2 (s~0.73): alpha~0.79 → 79% quality / 21% fit
-  # DT3 (s~0.53): alpha~0.71 → 71% quality / 29% fit
-  # DT4 (s~0.28): alpha~0.61 → 61% quality / 39% fit
   alpha <- pmin(0.50 + 0.40 * s_j, 0.9)
   v <- v_i_bar + 1e-8
   f <- f_j + 1e-8
@@ -134,10 +118,7 @@ compute_f_j <- function(candidates_df, dept_row, questions, gamma = 1.5) {
   if (is.data.frame(dept_row)) dept_row <- as.list(dept_row[1, ])
   eps <- 1e-6
   
-  # --- Retrieve department-specific weights ---
-  # weight_vector is a normalized vector over all questionnaire dimensions
-  # (numerical + categorical), generated in prepare_departments().
-  # Order: questions$numerical first, then names(questions$categorical).
+  #  Retrieve department-specific weights 
   dept_weights <- dept_row[["weight_vector"]]
   if (is.null(dept_weights) || !is.list(dept_weights)) {
     # If weight_vector is stored as a list column, extract the vector
@@ -149,15 +130,13 @@ compute_f_j <- function(candidates_df, dept_row, questions, gamma = 1.5) {
   n_cat <- length(questions$categorical)
   n_total <- n_num + n_cat
   if (is.null(dept_weights) || length(dept_weights) != n_total) {
-    # Fallback: uniform weights
     dept_weights <- rep(1 / n_total, n_total)
   }
   # Split into numerical and categorical weight vectors
   num_weights <- dept_weights[1:n_num]
   cat_weights_vec <- dept_weights[(n_num + 1):n_total]
   names(cat_weights_vec) <- names(questions$categorical)
-  
-  # --- NUMERICAL SCORES (fully vectorized) ---
+
   num_scores <- list()
   num_w <- numeric(0)
   
@@ -210,7 +189,7 @@ compute_f_j <- function(candidates_df, dept_row, questions, gamma = 1.5) {
     num_avg <- rep(0.5, n)
   }
   
-  # --- CATEGORICAL SCORES (vectorized per question, dept-specific weights) ---
+  # CATEGORICAL SCORES 
   cat_score_sum <- rep(0, n)
   cat_weight_sum <- rep(0, n)
   
@@ -255,10 +234,7 @@ s_k <- as.numeric(grepl(dept_tok, cand_str, fixed = TRUE))
     cat_weight_sum <- cat_weight_sum + valid * w
   }
   cat_avg <- ifelse(cat_weight_sum > 0, cat_score_sum / cat_weight_sum, 0.5)
-  
-  # --- COMBINE using department-specific numerical vs categorical balance ---
-  # The overall weight split is determined by the sum of numerical vs
-  # categorical weights in the department's weight vector
+
   total_num_w <- sum(num_weights)
   total_cat_w <- sum(cat_weights_vec)
   total_w <- total_num_w + total_cat_w
@@ -269,8 +245,6 @@ s_k <- as.numeric(grepl(dept_tok, cand_str, fixed = TRUE))
 
   # Per-department normalization: rescale S_ij to [0, 1] within this department
   # so every department sees candidates spanning the full alignment range.
-  # Without this, categorical score floors (~0.5) and weighted averaging
-  # compress S_ij to roughly [0.4, 0.95], yielding f_j SD ~ 0.05.
   S_min <- min(S_ij, na.rm = TRUE)
   S_max <- max(S_ij, na.rm = TRUE)
   if (S_max - S_min > eps) {
@@ -300,11 +274,7 @@ generate_candidates <- function(n_candidates, questions, seed = NULL) {
 
   n <- n_candidates; v_pctl <- candidates$quality_pctl
 
-  # Preference heterogeneity: quality-correlated shifts on key dimensions
-  # v_centered = v_i_bar - 0.62 (mean of Beta(2,1.1)^(1/3) geometric mean)
-  # High-quality candidates: less flexible, less teaching-focused, more location-picky
-  # Low-quality candidates: more flexible, more open to teaching, less location-picky
-  # Shifts are moderate (0.20-0.25) so preferences remain heterogeneous within tiers
+  # Preference heterogeneity
   v_centered <- candidates$v_i_bar - 0.62
   flexibility <- pmin(1.0, pmax(0.2, runif(n, 0.3, 1.0) - 0.25 * v_centered))
 
@@ -313,12 +283,12 @@ generate_candidates <- function(n_candidates, questions, seed = NULL) {
   location_priority <- pmin(0.95, pmax(0.05, rbeta(n, 2, 2) + 0.20 * v_centered))
   collab_preference <- rbeta(n, 2, 2)   # 0 = independent, 1 = collaborative (stays independent)
 
-  # Helper: fully vectorized weighted sampling (no apply)
+  # Helper: fully vectorized weighted sampling
   vsample <- function(choices, prob_matrix) {
     rs <- rowSums(prob_matrix)
     pm <- prob_matrix / rs
     u <- runif(nrow(pm))
-    # Compute cumulative sums column-wise (avoids t(apply(...)))
+    # Compute cumulative sums column-wise 
     nc <- ncol(pm)
     cum <- pm
     for (k in 2:nc) cum[, k] <- cum[, k - 1L] + pm[, k]
@@ -326,7 +296,7 @@ generate_candidates <- function(n_candidates, questions, seed = NULL) {
     choices[pmin(pmax(idx, 1L), nc)]
   }
   
-  # Numerical questions (already vectorized)
+  # Numerical questions 
   candidates$q_q6_typical_salary_range <- pmax(80000, pmin(180000,
                                                            80000 + 60000 * runif(n) + rnorm(n, 0, 12000)))
   candidates$q_q4_cost_of_living <- pmax(60000, pmin(140000,
@@ -334,7 +304,7 @@ generate_candidates <- function(n_candidates, questions, seed = NULL) {
   candidates$q_q14_phd_student_ratio <- pmax(0.5, pmin(5.0,
                                                        1.0 + 2.5 * runif(n) + rnorm(n, 0, 0.5)))
   
-  # Geographic setting (vectorized) - now includes location_priority and collab_preference
+  # Geographic setting
   pm <- cbind(
     (1-flexibility)*0.50 + flexibility*0.25 - location_priority*0.2 + collab_preference*0.15,  # A (Major city) - collaborative types prefer cities
     (1-flexibility)*0.30 + flexibility*0.30 + location_priority*0.05,                          # B (Mid-size)
@@ -345,14 +315,14 @@ generate_candidates <- function(n_candidates, questions, seed = NULL) {
   pm <- pm / rowSums(pm)  # Normalize to ensure valid probabilities
   candidates$q_q1_geographic_setting <- vsample(c("A","B","C","D"), pm)
   
-  # Region (multi-select, must loop but optimized)
+  # Region (multi-select)
   n_reg <- pmin(pmax(round(1 + 3 * flexibility + runif(n)), 1), 5)
   reg_names <- c("Northeast","West Coast","Midwest","Southeast","Southwest")
   reg_probs <- c(0.22, 0.22, 0.20, 0.20, 0.16)
   candidates$q_q2_region <- vapply(n_reg, function(nr)
     paste(sample(reg_names, nr, prob = reg_probs, replace = FALSE), collapse = ","), character(1))
   
-  # Teaching load (vectorized) - now includes teaching_focus heterogeneity
+  # Teaching load 
   pm <- cbind(
     pmax(0.50-0.3*flexibility, 0.02) * (1 - teaching_focus*0.4),  # A (1-1 load) - research-focused prefer this
     0.30,                                                          # B (1-2 load)
@@ -372,12 +342,12 @@ generate_candidates <- function(n_candidates, questions, seed = NULL) {
   pm <- pmax(pm, 0.02)
   candidates$q_q7_typical_startup <- vsample(c("A","B","C","D","E"), pm)
   
-  # Simple categoricals (already vectorized via sample())
+  # Simple categoricals 
   candidates$q_q3_airport_proximity <- sample(c("A","B","C","D"), n, replace=TRUE, prob=c(0.35,0.35,0.20,0.10))
   candidates$q_q5_dual_career <- sample(c("Y","N"), n, replace=TRUE, prob=c(0.35,0.65))
   candidates$q_q8_guaranteed_summer <- sample(c("A","B","C","D"), n, replace=TRUE, prob=c(0.35,0.35,0.20,0.10))
   
-  # Course types (vectorized) - influenced by teaching_focus
+  # Course types - influenced by teaching_focus
   pm <- cbind(
     pmax(0.35-0.15*flexibility, 0.02) * (1 - teaching_focus*0.3),  # A (Graduate only) - research-focused
     0.35,                                                           # B (Mix)
@@ -390,7 +360,7 @@ generate_candidates <- function(n_candidates, questions, seed = NULL) {
   
   candidates$q_q11_mentoring_program <- sample(c("A","B","C","D"), n, replace=TRUE, prob=c(0.25,0.35,0.25,0.15))
 
-  # Research culture (vectorized) - heavily influenced by collaboration preference
+  # Research culture
   pm <- cbind(
     0.15 * (1.5 - collab_preference),     # A (Individual) - independent types prefer this
     0.20,                                  # B (Mostly individual)
@@ -677,10 +647,8 @@ train_department_model <- function(dept_model, train_data, n_epochs = 60,
   for (epoch in 1:n_epochs) {
     log_odds <- dept_model$model(x_train, x_cat_train)
     
-    # ── FIX 1: Standard BCE (no focal weighting) ──
     loss <- nn_bce_with_logits_loss()(log_odds, y_train)
     
-    # ── FIX 1: Fixed L2 (no time decay) ──
     l2_loss <- 0
     for (param in dept_model$model$parameters)
       l2_loss <- l2_loss + torch_sum(param^2)
@@ -869,30 +837,28 @@ predict_acceptance_probability <- function(dept_model, applicant_data, n_bootstr
     attr(res,"pi_draws") <- matrix(mu, nrow=1); return(res)
   }
   
-  # ── Cache TRAINING data ONCE (tensorize hist_data, then index per bootstrap) ──
   nn_data_train_all <- tryCatch(
     prepare_nn_data(hist_data, dept_model$questions,
                     include_fit = include_fit, include_questions = include_questions),
     error = function(e) NULL)
   y_all <- torch::torch_tensor(hist_data$accepted, dtype = torch::torch_float())$unsqueeze(2)
   
-  # Save trained model state for warm-start bootstrap
   trained_state <- if (dept_model$is_trained) lapply(dept_model$model$parameters, function(p) p$clone()$detach()) else NULL
   
-  # Allocate temp model ONCE outside the loop
+  # Allocate temp model once outside the loop
   temp_model <- initialize_department_model(dept_model$questions, include_fit=include_fit, include_questions=include_questions)
   
   for (b in 1:n_bootstrap) {
     boot_indices <- sample.int(n_hist, n_hist, replace = TRUE)
     
-    # Reset weights to trained state (cheap copy, no allocation)
+    # Reset weights to trained state
     if (!is.null(trained_state)) {
       tp <- temp_model$model$parameters
       with_no_grad({ for (i in seq_along(tp)) tp[[i]]$copy_(trained_state[[i]]) })
     }
     temp_model$is_trained <- FALSE
     
-    # Train from cached tensors (no prepare_nn_data call inside loop)
+    # Train from cached tensors
     if (!is.null(nn_data_train_all)) {
       temp_model <- tryCatch(
         train_department_model_from_tensors(
@@ -900,7 +866,6 @@ predict_acceptance_probability <- function(dept_model, applicant_data, n_bootstr
           boot_indices, n_epochs = 5, seed = seed + b),
         error = function(e) temp_model)
     } else {
-      # Fallback: dataframe path if tensor caching failed
       boot_data <- hist_data[boot_indices, ]
       temp_model$historical_data <- boot_data
       temp_model <- tryCatch(
@@ -947,7 +912,6 @@ make_repeated_rank_draws <- function(applicant_data, L = 200, tuple_size = NULL,
   U_true_sub <- applicant_data$U_true[idx]; resid <- U_true_sub - U_hat
   if (all(!is.finite(resid)) || sd(resid,na.rm=TRUE)==0)
     return(list(U_draws=matrix(rep(U_hat,each=L),nrow=L,ncol=M), idx=idx, U_hat=U_hat))
-  # VECTORIZED: sample all at once via matrix indexing
   boot_idx <- sample.int(M, size=M*L, replace=TRUE)
   eps_mat <- matrix(resid[boot_idx], nrow=L, ncol=M)
   U_draws <- sweep(eps_mat, 2, U_hat, "+"); U_draws[U_draws<0] <- 0
@@ -983,7 +947,7 @@ compute_c_alpha_from_draws <- function(U_hat, U_draws, alpha = 0.05, ridge = 0.0
     delta_hat_pairs <- delta_hat_mat[pairs]; sigma_pairs <- sigma_hat[pairs]
     z_pairs <- sweep(sweep(delta_b_pairs, 2, delta_hat_pairs, "-"), 2, sigma_pairs, "/")
     z_pairs[!is.finite(z_pairs)] <- -Inf
-    # Row max via column-wise reduction (avoids apply)
+    # Row max via column-wise reduction
     Zb <- z_pairs[, 1]
     if (ncol(z_pairs) > 1) for (cc in 2:ncol(z_pairs)) Zb <- pmax(Zb, z_pairs[, cc])
   } else {
@@ -1016,7 +980,6 @@ compute_pairwise_lower_ranks <- function(applicant_data, n_bootstrap=20, tuple_s
     applicant_data <- applicant_data %>% mutate(U_det=department_utility(s_j, v_i_bar, f_j),
                                                 U_hat=U_det*pmin(pmax(pi_pred,1e-5),1-1e-5))
 
-  # Resolve pi_draws: explicit argument > attribute > fallback to legacy
   
   if (is.null(pi_draws)) pi_draws <- attr(applicant_data, "pi_draws")
   
@@ -1028,12 +991,10 @@ compute_pairwise_lower_ranks <- function(applicant_data, n_bootstrap=20, tuple_s
   U_hat <- Uhat_full[idx]
   
   if (!is.null(pi_draws) && is.matrix(pi_draws) && nrow(pi_draws) > 1) {
-    # Paper-aligned path: U_draws[b,i] = U_det[i] * pi_draws[b,i]  (eq 4)
     U_det_sub <- applicant_data$U_det[idx]
     pi_draws_sub <- pi_draws[, idx, drop=FALSE]
     U_draws <- sweep(pi_draws_sub, 2, U_det_sub, "*")
   } else {
-    # Legacy fallback (residual bootstrap) — used only when no pi_draws available
     repack <- make_repeated_rank_draws(applicant_data, L=n_bootstrap, tuple_size=tuple_size,
                                        seed=seed)
     idx <- repack$idx; U_draws <- repack$U_draws; U_hat <- repack$U_hat
@@ -1047,7 +1008,7 @@ compute_pairwise_lower_ranks <- function(applicant_data, n_bootstrap=20, tuple_s
   c_alpha <- cal$c_alpha; sigma_hat <- cal$sigma_hat
   if (is.na(c_alpha) || !is.finite(c_alpha)) c_alpha <- 1.96
   
-  # VECTORIZED: z_mat[l,i] = (U_hat[l]-U_hat[i])/sigma[l,i]
+  # z_mat[l,i] = (U_hat[l]-U_hat[i])/sigma[l,i]
   delta_mat <- outer(U_hat, U_hat, "-")
   safe_sigma <- sigma_hat; diag(safe_sigma) <- 1
   z_mat <- delta_mat / safe_sigma; z_mat[!is.finite(z_mat)] <- 0; diag(z_mat) <- 0
@@ -1461,7 +1422,7 @@ resolve_offers_sequential <- function(interviewed_data, departments, questions,
   id_util_lookup <- setNames(interviewed_data$cand_util,
                              paste(interviewed_data$cand_id, interviewed_data$dept_id, sep = "_"))
   
-  # Helper: candidates choose best offer in a given round (no holding across rounds)
+  # Helper: candidates choose best offer in a given round 
   choose_best_offers <- function(offers_this_round) {
     if (nrow(offers_this_round) == 0) return(tibble())
     offer_cands <- unique(offers_this_round$cand_id)
@@ -1604,7 +1565,7 @@ resolve_offers_sequential <- function(interviewed_data, departments, questions,
     cat(sprintf("  Round 2 scramble skipped because max_rounds=%d\n", max_rounds))
   }
 
-  # ── Final summary ──
+  # Summary 
   accepted_counts_final <- table(interviewed_data$dept_id[interviewed_data$accepted == 1L])
   filled_final <- as.integer(accepted_counts_final[dept_names])
   filled_final[is.na(filled_final)] <- 0L
@@ -1653,11 +1614,9 @@ run_burn_in_phase <- function(departments, questions, n_candidates = 500, burn_i
 
   # Models learn P(accept | s_j, v_i_bar, f_j) from outcomes.
   # During burn-in, departments learn that fit matters for acceptance
-  # through interviews and offer outcomes (realistic institutional
-  # knowledge). However, at PREDICTION time with participation_rate=0,
-  # f_j_used = 0.5 for all candidates — so fit cannot discriminate
-  # among new applicants. The questionnaire's value is providing
-  # candidate-specific f_j at prediction time.
+  # through interviews and offer outcomes. However, at prediction time 
+  # with participation_rate=0, f_j_used = 0.5 for all candidates so fit
+  # cannot discriminate among new applicants.
   mdl <- purrr::map(1:n_departments,
     ~initialize_department_model(questions, include_fit = TRUE, include_questions = FALSE))
 
@@ -1677,7 +1636,7 @@ run_burn_in_phase <- function(departments, questions, n_candidates = 500, burn_i
                                                     cand_tier_col = "quality_tier", max_offer_rounds = max_offer_rounds, seed = year)
     res_all[[year]] <- out$results
 
-    # Accumulate learning data — keep real f_j (do NOT overwrite with v_i_bar)
+    # Accumulate learning data — keep real f_j
     for (j in 1:n_departments) {
       if (!is.null(out$learning_data_pairwise[[j]]) && nrow(out$learning_data_pairwise[[j]]) > 0) {
         mdl[[j]]$historical_data <- bind_rows(mdl[[j]]$historical_data,
@@ -1744,10 +1703,6 @@ run_burn_in_phase <- function(departments, questions, n_candidates = 500, burn_i
   burn_in_out
 }
 
-
-
-
-
 # =============================================================================
 # predict_acceptance_probability_with_learned_prior
 #
@@ -1766,10 +1721,10 @@ predict_acceptance_probability_with_learned_prior <- function(dept_model, applic
   blend_denom <- if (is_baseline) 40 else 15
   n_applicants <- nrow(applicant_data)
   
-  # ── Step 1: Compute learned prior from burn-in model (point estimate) ──
+  #  Step 1: Compute learned prior from burn-in model (point estimate)
   # The prior model learned P(accept | s_j, v_i_bar, f_j) from burn-in
   # outcomes. During burn-in prediction, f_j_used=0.5 for all candidates
-  # so f_j could not discriminate. The prior uses whatever features were
+  # so f_j could not discriminate. Prior uses the features that were
   # included during burn-in training (respects prior_include_fit).
   if (!is.null(learned_prior_model) && learned_prior_model$is_trained) {
     prior_include_fit <- isTRUE(learned_prior_model$include_fit)
@@ -1797,7 +1752,7 @@ predict_acceptance_probability_with_learned_prior <- function(dept_model, applic
                                  tg == 2 ~ 0.12, TRUE ~ 0.05)
   }
   
-  # ── Step 2: Tier-gap fallback (no model trained at all) ──
+  # Step 2: Tier-gap fallback (no model trained at all)
   if (!dept_model$is_trained || n_applicants == 0) {
     pi_point <- pmax(0.10, pmin(0.90, pi_prior + rnorm(n_applicants, 0, 0.02)))
     res <- applicant_data %>% dplyr::mutate(pi_pred = pi_point, pi_var = 0)
@@ -1808,7 +1763,7 @@ predict_acceptance_probability_with_learned_prior <- function(dept_model, applic
   hist_data <- dept_model$historical_data %>% dplyr::filter(offered == 1L)
   n_hist <- nrow(hist_data)
   
-  # ── Step 3: Trained but insufficient data for bootstrap (< 10 obs) ──
+  # Step 3: Trained but insufficient data for bootstrap (< 10 obs)
   if (n_hist < 10) {
     nn_data <- tryCatch(
       prepare_nn_data(applicant_data, dept_model$questions,
@@ -1832,11 +1787,11 @@ predict_acceptance_probability_with_learned_prior <- function(dept_model, applic
     return(res)
   }
   
-  # ── Step 4: Full bootstrap (>= 10 obs) ──
+  # Step 4: Full bootstrap (>= 10 obs)
   mw <- pmin(1, n_hist / blend_denom)
   pi_draws_matrix <- matrix(NA_real_, nrow = n_bootstrap, ncol = n_applicants)
   
-  # ── Cache INFERENCE data ONCE ──
+  # Cache inference data once ──
   nn_data_cached <- tryCatch(
     prepare_nn_data(applicant_data, dept_model$questions,
                     include_fit = include_fit,
@@ -1849,7 +1804,7 @@ predict_acceptance_probability_with_learned_prior <- function(dept_model, applic
     return(res)
   }
   
-  # ── Cache TRAINING data ONCE (tensorize hist_data, then index per bootstrap) ──
+  # Cache training data once (tensorize hist_data, then index per bootstrap)
   nn_data_train_all <- tryCatch(
     prepare_nn_data(hist_data, dept_model$questions,
                     include_fit = include_fit,
@@ -1860,7 +1815,7 @@ predict_acceptance_probability_with_learned_prior <- function(dept_model, applic
   # Save trained model state for warm-start bootstrap
   trained_state <- if (dept_model$is_trained) lapply(dept_model$model$parameters, function(p) p$clone()$detach()) else NULL
   
-  # Allocate temp model ONCE outside the loop
+  # Allocate temp model once outside the loop
   temp_model <- initialize_department_model(dept_model$questions,
                                             include_fit = include_fit,
                                             include_questions = include_questions)
@@ -1868,14 +1823,14 @@ predict_acceptance_probability_with_learned_prior <- function(dept_model, applic
   for (b in 1:n_bootstrap) {
     boot_indices <- sample.int(n_hist, n_hist, replace = TRUE)
     
-    # Reset weights to trained state (cheap copy, no allocation)
+    # Reset weights to trained state 
     if (!is.null(trained_state)) {
       tp <- temp_model$model$parameters
       with_no_grad({ for (i in seq_along(tp)) tp[[i]]$copy_(trained_state[[i]]) })
     }
     temp_model$is_trained <- FALSE
     
-    # Train from cached tensors (no prepare_nn_data call inside loop)
+    # Train from cached tensors
     if (!is.null(nn_data_train_all)) {
       temp_model <- tryCatch(
         train_department_model_from_tensors(
@@ -1883,7 +1838,7 @@ predict_acceptance_probability_with_learned_prior <- function(dept_model, applic
           boot_indices, n_epochs = 5, seed = seed + b),
         error = function(e) temp_model)
     } else {
-      # Fallback: dataframe path if tensor caching failed
+      # Fallback
       boot_data <- hist_data[boot_indices, ]
       temp_model$historical_data <- boot_data
       temp_model <- tryCatch(
@@ -2039,7 +1994,6 @@ simulate_market_year_with_learned_prior <- function(candidates, departments, que
       next
     }
 
-    # Build apps_all using base R assignment (avoids dplyr::mutate per dept)
     apps_all <- candidates
     apps_all$s_j <- dept_s_j
     apps_all$dept_id <- dept_id_j
@@ -2095,7 +2049,6 @@ simulate_market_year_with_learned_prior <- function(candidates, departments, que
     applicant_data_pw$r_point <- rank(-applicant_data_pw$U_hat, ties.method="average")
     rpair <- compute_pairwise_lower_ranks(applicant_data_pw, n_bootstrap, tuple_size,
                                           alpha, pi_draws=pi_draws_pw)
-    # Merge rpair using base R match instead of dplyr::left_join
     rpair_idx <- match(applicant_data_pw$cand_id, rpair$cand_id)
     applicant_data_pw$r_pair_lb <- rpair$rank_lower[rpair_idx]
     applicant_data_pw$pair_score <- rpair$pair_score[rpair_idx]
@@ -2118,7 +2071,6 @@ simulate_market_year_with_learned_prior <- function(candidates, departments, que
       idpw$strategy <- "pairwise"; idpw$h_j <- h_j; idpw$k_j <- k_j
       interviewed_chunks[[j]] <- idpw
     }
-    # Build diag using base R
     d_j <- apps_all
     d_j$considered <- as.integer(d_j$cand_id %in% applicant_data$cand_id)
     d_j$interviewed <- as.integer(d_j$cand_id %in% interviewed_ids)
@@ -2191,13 +2143,13 @@ run_job_market_sim_with_learned_prior <- function(departments, questions, n_cand
   }
   cand_roster_all <- list(); rank_all <- list(); diag_all <- list()
   
-  # ── Initialize sim-phase models ──
+  # Initialize sim-phase models:
   # Sim-phase models always include fit (include_fit=TRUE) to match
   # the burn-in prior's feature space. At rho=0, f_j_used=0.5 for
   # all candidates so fit cannot discriminate; at rho>0, actual f_j
   # is available for participants. Questionnaire features
-  # (include_questions) are only enabled for questionnaire scenarios.
-  # Sim-phase models start with EMPTY historical data.
+  # are only enabled for questionnaire scenarios.
+  # Sim-phase models start with empty historical data.
   # Burn-in knowledge enters only through the learned_prior_models
   # (which provide pi_prior in predict_acceptance_probability_with_learned_prior).
   mdl <- purrr::map(1:n_departments, function(j) {
@@ -2445,7 +2397,7 @@ reconstruct_learned_prior_models <- function(burn_in_historical, questions, seed
 # extract_model_weights / reconstruct_from_weights
 #
 # Extract torch model weights as plain R objects for serialization, and
-# reconstruct models from saved weights (avoids retraining in parallel workers).
+# reconstruct models from saved weights
 # =============================================================================
 extract_model_weights <- function(models) {
   lapply(models, function(mdl) {
@@ -2513,7 +2465,7 @@ run_multi_replicate_simulation <- function(
 ) {
   
   # =========================================================================
-  # STEP 1: Fix shared infrastructure (computed ONCE, reused every replicate)
+  # STEP 1: Fix shared infrastructure (computed once, reused every replicate)
   # =========================================================================
   set.seed(base_seed); torch::torch_manual_seed(base_seed)
   
@@ -2529,9 +2481,6 @@ run_multi_replicate_simulation <- function(
   # Fallback only; strategic participation sets are generated per year/cohort.
   participation_sets <- NULL
   
-  # =========================================================================
-  # STEP 2: Loop over replicates
-  # =========================================================================
   # =========================================================================
   # STEP 2: SHARED BURN-IN (run ONCE for all replicates)
   # =========================================================================
@@ -2664,7 +2613,7 @@ run_multi_replicate_simulation <- function(
       )
     }
 
-    # --- SIMULATION RUNS (one per participation rate) ---
+    # SIMULATION RUNS (one per participation rate)
     sim_results_rep <- list()
     for (rate in participation_rates) {
       rate_chr <- as.character(rate)
@@ -2791,8 +2740,6 @@ run_multi_replicate_simulation <- function(
   # =========================================================================
   # STEP 4: Assemble combined results with replicate ID
   # =========================================================================
-  # This produces the same structure as the single-run `all_sim_results` list,
-  # but each tibble now has an extra `replicate` column.
   
   combined <- list(
     departments = departments,
@@ -2827,7 +2774,7 @@ run_multi_replicate_simulation <- function(
     )
   }
   
-  # Combine burn-in results (optionally replicate shared burn-in across rep IDs)
+  # Combine burn-in results
   burn_in_results <- burn_in$burn_in_results
   burn_in_roster <- burn_in$cand_roster
   if (isTRUE(replicate_shared_burn_in)) {
@@ -3187,8 +3134,7 @@ fig_hiring_heatmap <- function(all_sim_results, year_filter = c(1, 10),
 
 
 # =============================================================================
-# 3. DEPARTMENT WELFARE BY TIER (line plots, averaged over replicates)
-#    — NOW WITH TIER COLORS —
+# 3. DEPARTMENT WELFARE BY TIER
 # =============================================================================
 fig_department_welfare <- function(all_sim_results,
                                                            year_filter = c(1, 10),
@@ -3264,7 +3210,7 @@ fig_department_welfare <- function(all_sim_results,
     mutate(prestige_tier = factor(prestige_tier,
                                   levels = c("Tier 1","Tier 2","Tier 3","Tier 4")))
 
-  # --- Plot: Welfare per hiring slot ---
+  # Plot: Welfare per hiring slot
   ribbon_alpha <- 0.15
 
   plot_theme <- theme_minimal(base_size = 14) +
@@ -3310,7 +3256,7 @@ fig_department_welfare <- function(all_sim_results,
 
 
 # =============================================================================
-# 4. CANDIDATE UTILITY BY TIER (conditional on matching, averaged over replicates)
+# 4. CANDIDATE UTILITY BY TIER (conditional on matching)
 # =============================================================================
 fig_candidate_utility <- function(all_sim_results,
                                                        year_filter = c(1, 10),
@@ -3389,7 +3335,7 @@ fig_candidate_utility <- function(all_sim_results,
     mutate(quality_tier = factor(quality_tier,
                                  levels = c("Tier 1","Tier 2","Tier 3","Tier 4")))
 
-  # --- Plot: Conditional welfare by tier ---
+  # Plot: Conditional welfare by tier
   ribbon_alpha <- 0.15
 
   plot_theme <- theme_minimal(base_size = 14) +
@@ -3439,7 +3385,7 @@ fig_candidate_utility <- function(all_sim_results,
 
 
 # =============================================================================
-# 4b. CANDIDATE WELFARE BY TIER (unconditional: unmatched = 0)
+# 4b. CANDIDATE WELFARE BY TIER (unconditional: unmatched candidate utility = 0)
 # =============================================================================
 fig_candidate_welfare_unconditional <- function(all_sim_results,
                                                 year_filter = c(1, 10),
@@ -3536,9 +3482,6 @@ fig_candidate_welfare_unconditional <- function(all_sim_results,
   list(plot = p, unconditional_welfare = unconditional_welfare)
 }
 
-
-
-
 # =============================================================================
 # 4c. AGGREGATE CANDIDATE WELFARE (unconditional, all tiers pooled)
 # =============================================================================
@@ -3618,7 +3561,6 @@ fig_candidate_welfare <- function(all_sim_results,
 
 # =============================================================================
 # 5. CANDIDATE BY PARTICIPATION (Participating vs Non-participating)
-#    — NOW WITH PARTICIPATION COLORS —
 # =============================================================================
 fig_participation_welfare <- function(all_sim_results,
                                                 year_filter = c(1, 10),
@@ -3722,7 +3664,7 @@ fig_participation_welfare <- function(all_sim_results,
       se_welfare = sd(mean_welfare, na.rm = TRUE) / sqrt(sum(!is.na(mean_welfare))),
       mean_welfare_if_matched = mean(mean_welfare_if_matched, na.rm = TRUE),
       se_welfare_if_matched = sd(mean_welfare_if_matched, na.rm = TRUE) / sqrt(sum(!is.na(mean_welfare_if_matched))),
-      .groups = "drop"
+      .groups = "drop"pair analysis
     )
   
   # Diagnostics
@@ -3737,10 +3679,9 @@ fig_participation_welfare <- function(all_sim_results,
     }
   }
   
-  # --- Plots (with participation colors) ---
+  #  Plots
   ribbon_alpha <- 0.15
   
-  # Common theme for Figure 5 panels
   fig5_theme <- theme_minimal(base_size = 14) +
     theme(panel.grid.minor = element_blank(),
           panel.grid.major = element_line(color = "gray90", linewidth = 0.5),
@@ -3840,7 +3781,7 @@ fig_participation_welfare <- function(all_sim_results,
 
 
 # =============================================================================
-# count_blocking_pairs — Blocking pair analysis for baseline vs questionnaire
+# count_blocking_pairs — Stability analysis
 #
 # Standard blocking pair definition for a one-to-one matching with unfilled
 # positions and shortlisting.  A pair (d, c) blocks matching mu when:
@@ -3886,7 +3827,7 @@ count_blocking_pairs <- function(all_sim_results,
     cat(sprintf("\r  Blocking pairs: replicate %d / %d", rep, max(rep_ids)))
     rep_seed <- base_seed + rep * 10000L
 
-    # Regenerate candidate cohorts (deterministic via saved seeds)
+    # Regenerate candidate cohorts 
     yearly_cohorts <- vector("list", sim_years)
     for (yr in 1:sim_years)
       yearly_cohorts[[yr]] <- generate_candidates(
@@ -3898,7 +3839,7 @@ count_blocking_pairs <- function(all_sim_results,
       n_hiring     <- length(hiring_depts)
       if (n_hiring == 0L) next
 
-      # Assign candidate quality tiers (same as simulation)
+      # Assign candidate quality tiers 
       cand_tiers <- assign_tiers_from_quantiles(
         cohort$v_i_bar, cutpoints = c(0.10, 0.25, 0.50))
 
@@ -3934,7 +3875,7 @@ count_blocking_pairs <- function(all_sim_results,
       }
 
       for (rate in rates) {
-        # --- Extract matching mu for this (replicate, year, rate) ---
+        # Extract matching mu for specific (replicate, year, rate)
         matches <- all_sim_results$sim_results[[as.character(rate)]]$results %>%
           dplyr::filter(replicate == rep, year == yr, accepted == 1L)
         n_matches <- nrow(matches)
@@ -3961,9 +3902,7 @@ count_blocking_pairs <- function(all_sim_results,
           if (!is.na(cand_match[i]))
             cand_threshold[i] <- V_mat[i, cand_match[i]]
 
-        # --- Count blocking pairs per position, with shortlist rule ---
-        # For each position d, count how many eligible candidates c
-        # form a blocking pair with d.
+        #  Count blocking pairs per position, under shortlist rule 
         dept_bp_count <- integer(n_hiring)
 
         for (d in seq_len(n_hiring)) {
@@ -4012,13 +3951,12 @@ count_blocking_pairs <- function(all_sim_results,
   cat("\n")
   data <- dplyr::bind_rows(out[1:k])
 
-  # --- Blocking pair rate: fraction of eligible pairings that block ---
+  # Blocking pair rate
   data <- data %>%
     dplyr::mutate(
       bp_rate = n_blocking_pairs / n_eligible_pairs)
 
-  # --- Summary: average across years, grouped by participation rate ---
-  # First average each replicate across years, then summarise across reps
+  # Summary: average across years, grouped by participation rate
   rep_avg <- data %>%
     dplyr::group_by(participation_rate, replicate) %>%
     dplyr::summarise(
@@ -4031,7 +3969,7 @@ count_blocking_pairs <- function(all_sim_results,
       se_bp_rate   = sd(bp_rate_avg) / sqrt(dplyr::n()),
       .groups = "drop")
 
-  # --- Per-tier summary ---
+  # Tier summary
   tier_long <- data %>%
     dplyr::transmute(
       participation_rate, replicate, year,
@@ -4062,10 +4000,9 @@ count_blocking_pairs <- function(all_sim_results,
   list(data = data, summary = summary_tbl, tier_summary = tier_summary)
 }
 
-
-# ---------------------------------------------------------------------------
-# fig_blocking_pairs — Plot blocking pair results from count_blocking_pairs
-# ---------------------------------------------------------------------------
+# =============================================================================
+# 6. Plot blocking pair results from count_blocking_pairs
+# =============================================================================
 fig_blocking_pairs <- function(bp_result) {
 
   summary_tbl  <- bp_result$summary

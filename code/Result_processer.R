@@ -33,12 +33,12 @@ cat("=== COMBINING RESULTS ===\n")
 
 n_batches <- 10L
 
-# ── Load burn-in artifacts ──
+# Load burn-in artifacts
 artifacts   <- readRDS("output/burn_in_artifacts.rds")
 departments <- artifacts$departments
 cfg         <- artifacts$config
 
-# ── Load and merge all batch files ──
+# Load and merge all batch files
 rate_keys <- as.character(cfg$participation_rates)
 merged <- setNames(
   lapply(rate_keys, function(x) list(results = list(), cand_roster = list(),
@@ -47,7 +47,7 @@ merged <- setNames(
 )
 
 for (b in 1:n_batches) {
-  f <- sprintf("../output/sim_batch_%d.rds", b)
+  f <- sprintf("output/sim_batch_%d.rds", b)
   if (!file.exists(f)) { cat(sprintf("WARNING: %s not found, skipping\n", f)); next }
   cat(sprintf("Loading %s...\n", f))
   batch <- readRDS(f)
@@ -64,7 +64,7 @@ for (b in 1:n_batches) {
   }
 }
 
-# ── Assemble final results structure ──
+# Assemble final results structure
 all_sim_results <- list(
   departments = departments,
   questions   = questions,
@@ -97,7 +97,7 @@ all_sim_results <- list(
   )
 )
 
-# ── Summary ──
+# Summary
 cat("\n=== COMBINED RESULTS SUMMARY ===\n")
 for (rc in rate_keys) {
   nr    <- nrow(all_sim_results$sim_results[[rc]]$results)
@@ -105,18 +105,18 @@ for (rc in rate_keys) {
   cat(sprintf("  Rate %5s: %d result rows, %d replicates\n", rc, nr, n_rep))
 }
 
-saveRDS(all_sim_results, "../output/all_sim_results.rds", compress = "gzip")
+saveRDS(all_sim_results, "output/all_sim_results.rds", compress = "gzip")
 cat(sprintf("\nSaved output/all_sim_results.rds (%.1f MB)\n",
-            file.size("../output/all_sim_results.rds") / 1e6))
+            file.size("output/all_sim_results.rds") / 1e6))
 
-# ── Clean up batch files ──
+#  Clean up batch files ──
 for (b in 1:n_batches) {
-  f <- sprintf("../output/sim_batch_%d.rds", b)
+  f <- sprintf("output/sim_batch_%d.rds", b)
   if (file.exists(f)) file.remove(f)
 }
 cat(sprintf("Removed %d batch files\n", n_batches))
 
-# ── Generate figures ──
+# Generate figures
 cat("\nGenerating figures...\n")
 
 interview_heatmap   <- fig_interview_heatmap(all_sim_results,
