@@ -2,7 +2,7 @@
 
 This repository contains the replication code and data for:
 
-> **A Statistical Market-Design Framework for the Academic Job Market for New Statisticians**
+> **A Statistical Market-Design Framework for the Academic Job Market**
 > Ali Kaazempur-Mofrad, Xiaowu Dai, and Xuming He
 >
 > Project website: [academic-markets.github.io](https://academic-markets.github.io)
