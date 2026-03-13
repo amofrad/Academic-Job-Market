@@ -28,7 +28,7 @@ library(tidyverse)
 library(collegeScorecard)
 library(stringdist)
 
-# ── Load source data ──
+# Load source data
 data(school)
 data(scorecard)
 
@@ -91,9 +91,7 @@ departments <- departments %>%
     department_size_phd_students = NA_integer_
   )
 
-# =============================================================================
-# SECTION 1: GEOGRAPHIC DATA (Q1-Q4)
-# =============================================================================
+# Geographic data (Q1-Q4)
 
 # Q1: Geographic Setting
 city_setting <- tribble(
@@ -289,9 +287,7 @@ departments <- living_cost_mapper(departments)
 # Clean up duplicates properly
 if(any(str_detect(names(departments), "\\.x$|\\.y$"))) {
   departments <- departments %>%
-    # First, identify columns with .y suffix (these are the newer/correct ones)
     dplyr::select(-ends_with(".x")) %>%
-    # Then rename all .y columns to remove the suffix
     rename_with(~str_remove(., "\\.y$"), ends_with(".y"))
 }
 
@@ -303,9 +299,7 @@ if(any(duplicated(names(departments)))) {
   # Remove duplicates by keeping only first occurrence
   departments <- departments[, !duplicated(names(departments))]
 }
-# =============================================================================
-# SECTION 2: SALARY DATA (Q6)
-# =============================================================================
+# Salary data (Q6)
 
 salary_est <- function(departments) {
   salary_data <- read_lines("supporting_data/salary_data.csv")
@@ -343,9 +337,7 @@ salary_est <- function(departments) {
 
 departments <- salary_est(departments)
 
-# =============================================================================
-# SECTION 3: COLLEGE SCORECARD MATCHING
-# =============================================================================
+# College Scorecard matching
 
 # Prepare scorecard data
 scorecard_recent <- scorecard %>%
@@ -524,9 +516,7 @@ departments_enriched <- departments_enriched %>%
     )
   )
 
-# =============================================================================
-# SECTION 4: MEDICAL SCHOOL PROXIMITY (Q15)
-# =============================================================================
+# Medical school proximity (Q15)
 
 universities_with_med_schools <- c(
   "Stanford University", "University of California--Berkeley", "Harvard University",
@@ -562,9 +552,7 @@ departments_enriched <- departments_enriched %>%
   mutate(q15_medical_school_proximity = if_else(university %in% universities_with_med_schools, 1L, 0L))
 
 
-# =============================================================================
-# SECTION 5: ESTIMATE REMAINING QUESTIONNAIRE RESPONSES (Q5, Q7-Q14)
-# =============================================================================
+# Estimate remaining questionnaire responses (Q5, Q7-Q14)
 
 #  Q5: Dual Career Programs 
 estimate_dual_career <- function(tier, q2_region, university_size, public_private, n_undergrads) {
@@ -886,9 +874,7 @@ estimate_phd_ratio <- function(tier, university_size, n_undergrads, q15_medical_
   return(max(0.5, min(5.0, ratio)))
 }
 
-# =============================================================================
-# APPLY ALL ESTIMATION FUNCTIONS
-# =============================================================================
+# Apply all estimation functions
 
 set.seed(2026)
 
@@ -942,9 +928,7 @@ departments_final <- departments_final %>%
   )
 
 
-# =============================================================================
-# SECTION 6: CREATE "HIDDEN GEM" DEPARTMENTS
-# =============================================================================
+# Create "hidden gem" departments
 # Some Tier 3/4 departments have 1-2 attributes that rival Tier 1/2 departments
 # This reflects real-world variation (e.g., a teaching school in a great city,
 # or a lower-ranked program with unusually high salary due to cost of living)
@@ -1093,9 +1077,7 @@ create_hidden_gems <- function(departments_df, gem_rate = 0.25, seed = 2026) {
   return(departments_df)
 }
 
-# =============================================================================
-# APPLY HIDDEN GEMS
-# =============================================================================
+# Apply hidden gems
 
 departments_final <- create_hidden_gems(departments_final, gem_rate = 0.25, seed = 2026)
 

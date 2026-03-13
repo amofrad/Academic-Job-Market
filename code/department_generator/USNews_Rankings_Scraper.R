@@ -24,18 +24,14 @@ setwd(dirname(rstudioapi::getSourceEditorContext()$path))
 library(tidyverse)
 library(jsonlite)
 
-# =============================================================================
-# STEP 1: Initialize submodule if needed
-# =============================================================================
+# Initialize submodule if needed
 if (!dir.exists("USNews-Scrapper/usnews_scrapper")) {
   cat("Initializing USNews-Scrapper submodule...\n")
   status <- system("cd .. && git submodule update --init department_generator/USNews-Scrapper")
   if (status != 0) stop("Failed to initialize submodule. Ensure Git is installed.")
 }
 
-# =============================================================================
-# STEP 2: Set up Python virtual environment and install dependencies
-# =============================================================================
+# Set up Python virtual environment
 venv_dir <- "USNews-Scrapper/.venv"
 venv_python <- file.path(venv_dir, "bin", "python")
 
@@ -50,9 +46,7 @@ if (!file.exists(venv_python)) {
   system(sprintf("%s install --upgrade requests urllib3 chardet idna", pip))
 }
 
-# =============================================================================
-# STEP 3: Run Python scraper
-# =============================================================================
+# Run Python scraper
 temp_dir <- "USNews-Scrapper/usnews_scrapper/temp"
 
 if (!dir.exists(temp_dir) || length(list.files(temp_dir, pattern = "\\.txt$")) == 0) {
@@ -73,9 +67,7 @@ if (!dir.exists(temp_dir) || length(list.files(temp_dir, pattern = "\\.txt$")) =
   cat("Scraped JSON files already exist in", temp_dir, "— skipping scraper.\n")
 }
 
-# =============================================================================
-# STEP 4: Parse scraped JSON into rankings CSV
-# =============================================================================
+# Parse scraped JSON into rankings CSV
 cat("\nParsing scraped JSON files...\n")
 all_schools <- list()
 

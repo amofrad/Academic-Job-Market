@@ -20,7 +20,7 @@
 # =============================================================================
 source("code/Sim_Functions.R")
 
-# ── Parse task ID ──
+# Parse task ID
 args    <- commandArgs(trailingOnly = TRUE)
 task_id <- as.integer(args[1])
 if (is.na(task_id)) task_id <- 1L
@@ -33,7 +33,7 @@ cat(sprintf("=== SIM BATCH: Task %d | Replicates %d-%d ===\n",
             task_id, rep_start, rep_end))
 cat("Time:", format(Sys.time()), "\n\n")
 
-# ── Load burn-in artifacts ──
+# Load burn-in artifacts
 cat("Loading output/burn_in_artifacts.rds...\n")
 artifacts <- readRDS("output/burn_in_artifacts.rds")
 
@@ -65,7 +65,7 @@ learned_prior_models <- reconstruct_learned_prior_models(
 )
 cat("Done.\n\n")
 
-# Parallel setup: 1 worker per replicate
+# Parallel setup
 n_workers <- reps_per_task
 cat(sprintf("Setting up %d workers for %d replicates\n", n_workers, reps_per_task))
 
@@ -81,7 +81,7 @@ run_one_replicate <- function(rep) {
   try(torch::torch_set_num_threads(1L), silent = TRUE)
   try(torch::torch_set_num_interop_threads(1L), silent = TRUE)
 
-  # Generate candidate cohorts for simulation phase
+  # Generate candidate cohorts
   yearly_candidate_cohorts_sim <- vector("list", sim_years)
   for (year in 1:sim_years)
     yearly_candidate_cohorts_sim[[year]] <- generate_candidates(
@@ -208,6 +208,6 @@ saveRDS(batch_results, out_file, compress = "gzip")
 cat(sprintf("Saved %s (%.1f MB)\n", out_file, file.size(out_file) / 1e6))
 cat("Done.\n")
 
-# Capture session info requirements.txt
+# Save session info to requirements.txt
 if (task_id == 1L)
   writeLines(capture.output(sessionInfo()), "output/requirements.txt")
