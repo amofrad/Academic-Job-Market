@@ -1,8 +1,8 @@
-# A Statistical Market-Design Framework for the Academic Job Market
+# A Statistical Market-Design Framework for Academic Job Markets
 
 This repository contains the replication code and data for:
 
-> **A Statistical Market-Design Framework for the Academic Job Market**
+> **A Statistical Market-Design Framework for Academic Job Markets**
 > 
 > Ali Kaazempur-Mofrad, Xiaowu Dai, and Xuming He
 >
@@ -272,4 +272,4 @@ The department dataset (`data/departments_dataset.csv`) is provided and does not
 
 ## License
 
-This code is provided for academic reproducibility purposes accompanying the paper "A Statistical Market-Design Framework for the Academic Job Market for New Statisticians" (Kaazempur-Mofrad, Dai, and He).
+This code is provided for reproducibility purposes accompanying the paper "A Statistical Market-Design Framework for Academic Job Markets" (Kaazempur-Mofrad, Dai, and He).
