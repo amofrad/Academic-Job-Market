@@ -140,7 +140,6 @@ cand_participation  <- fig_participation_welfare(all_sim_results,
                          year_filter = c(1, 10), include_scramble = TRUE, hire_rounds = 2)
 
 
-# Market outcome pie charts (baseline vs questionnaire)
 market_pies <- fig_market_outcome_pies(all_sim_results,
                   year_filter = c(1, 10), hire_rounds = 2)
 
