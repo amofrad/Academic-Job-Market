@@ -139,11 +139,10 @@ dept_welfare        <- fig_department_welfare(all_sim_results,
 cand_participation  <- fig_participation_welfare(all_sim_results,
                          year_filter = c(1, 10), include_scramble = TRUE, hire_rounds = 2)
 
-
 market_pies <- fig_market_outcome_pies(all_sim_results,
-                  year_filter = c(1, 10), hire_rounds = 2)
+                    year_filter = c(1, 10), hire_rounds = 2)
 
-# Stability analysis
+
 blocking_pairs <- count_blocking_pairs(all_sim_results,
                                        hiring_schedule = artifacts$yearly_hiring_schedule_sim,
                                        rates = cfg$participation_rates, year_filter = 1:10,

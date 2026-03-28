@@ -357,8 +357,8 @@ generate_candidates <- function(n_candidates, questions, seed = NULL) {
   # Research culture
   pm <- cbind(
     0.15 * (1.5 - collab_preference),     # A (Individual) - independent types prefer this
-    0.20,                                  # B (Mostly individual)
-    0.30,                                  # C (Balanced)
+    0.20,                                 # B (Mostly individual)
+    0.30,                                 # C (Balanced)
     0.25 * (1 + collab_preference*0.6),   # D (Collaborative)
     0.10 * (1 + collab_preference*0.8)    # E (Highly collaborative) - collaborative types prefer this
   )
@@ -375,7 +375,6 @@ generate_candidates <- function(n_candidates, questions, seed = NULL) {
 
   candidates %>% dplyr::select(-quality_pctl)
 }
-
 
 # =============================================================================
 # prepare_departments — Initialize department attributes and weight vectors
@@ -763,7 +762,6 @@ train_department_model_from_tensors <- function(dept_model, x_cont_all, x_cat_al
       }
     }
   }
-  
   dept_model$is_trained <- TRUE
   dept_model
 }
@@ -944,7 +942,6 @@ compute_c_alpha_from_draws <- function(U_hat, U_draws, alpha = 0.05, ridge = 0.0
   list(c_alpha=as.numeric(c_alpha), sigma_hat=sigma_hat)
 }
 
-
 # =============================================================================
 # compute_pairwise_lower_ranks — Pairwise ranking with uncertainty
 # =============================================================================
@@ -1000,7 +997,6 @@ compute_pairwise_lower_ranks <- function(applicant_data, n_bootstrap=20, tuple_s
     mutate(rank_lower=ifelse(is.na(rank_lower),Inf,rank_lower), mean_rank=ifelse(is.na(mean_rank),Inf,mean_rank))
 }
 
-
 select_interviews_sure_screening <- function(applicant_data, k_j, h_j, alpha=0.05, n_bootstrap=20,
                                              tuple_size=NULL, seed=NULL, tier_width=0.1, pi_draws=NULL) {
   n <- nrow(applicant_data)
@@ -1038,10 +1034,8 @@ select_interviews_sure_screening <- function(applicant_data, k_j, h_j, alpha=0.0
   attr(selected_ids, "sure_ids") <- applicant_data$cand_id[sure_idx]; selected_ids
 }
 
-
 generate_applications <- function(candidates, departments, questions, ...)
   tibble(cand_id=candidates$cand_id) %>% tidyr::crossing(tibble(dept_id=departments$dept_id))
-
 
 
 add_participation_signals <- function(candidates, departments, questions,
@@ -1072,7 +1066,6 @@ add_participation_signals <- function(candidates, departments, questions,
                nonparticipant_fit_proxy = pmin(0.95, pmax(0.05, 0.5 - nonparticipant_penalty))
              ))
   }
-  
   if (is.null(dept_weights) || length(dept_weights) != n_departments) {
     dept_weights <- rep(1, n_departments)
   }
@@ -1356,7 +1349,6 @@ simulate_market_year_adaptive_sequential <- function(candidates, departments, qu
   list(results=all_results, learning_data_pairwise=learning_data_pairwise, rank_panel=rank_panel, diagnostics=list(applicant_level=bind_rows(diag_list)))
 }
 
-
 # =============================================================================
 # resolve_offers_sequential — Two-round offer resolution with scramble
 #
@@ -1408,7 +1400,7 @@ resolve_offers_sequential <- function(interviewed_data, departments, questions,
       keys <- paste(cand, depts, sep = "_")
       utils <- as.numeric(id_util_lookup[keys])
       if (length(utils) == 0 || all(!is.finite(utils))) next
-      best_i <- which.max(utils)  # deterministic tie break: first max
+      best_i <- which.max(utils)
       n_acc <- n_acc + 1L
       accepted_list[[n_acc]] <- tibble(
         cand_id = cand,
@@ -1600,7 +1592,6 @@ run_burn_in_phase <- function(departments, questions, n_candidates = 500, burn_i
                                                     shortlist_enabled = TRUE, collect_ranking_panel = FALSE,
                                                     cand_tier_col = "quality_tier", max_offer_rounds = max_offer_rounds, seed = year)
     res_all[[year]] <- out$results
-
     # Accumulate learning data — keep real f_j
     for (j in 1:n_departments) {
       if (!is.null(out$learning_data_pairwise[[j]]) && nrow(out$learning_data_pairwise[[j]]) > 0) {
@@ -1608,7 +1599,6 @@ run_burn_in_phase <- function(departments, questions, n_candidates = 500, burn_i
                                               out$learning_data_pairwise[[j]])
       }
     }
-
     # Incremental retraining: retrain models every retrain_interval years
     if (year %% retrain_interval == 0L) {
       n_retrained <- 0L
@@ -1629,7 +1619,6 @@ run_burn_in_phase <- function(departments, questions, n_candidates = 500, burn_i
                   year, n_retrained, n_departments))
     }
   }
-
   # Final training pass on all accumulated data
   cat("\n", strrep("=", 70), "\nFinal training on all burn-in data...\n", strrep("=", 70), "\n")
   for (j in 1:n_departments) {
@@ -2339,7 +2328,6 @@ reconstruct_learned_prior_models <- function(burn_in_historical, questions, seed
   models
 }
 
-
 # =============================================================================
 # extract_model_weights / reconstruct_from_weights
 #
@@ -2385,7 +2373,6 @@ reconstruct_from_weights <- function(weight_list, historical_list, questions, se
   models
 }
 
-
 run_multi_replicate_simulation <- function(
     sampled_depts,
     questions,
@@ -2429,7 +2416,7 @@ run_multi_replicate_simulation <- function(
   participation_sets <- NULL
   
   # =========================================================================
-  # SHARED BURN-IN (run ONCE for all replicates)
+  # Shared burn-in (run once for all replicates)
   # =========================================================================
   cat("\n", strrep("=", 80), "\n")
   cat("SHARED BURN-IN: Running once for all replicates\n")
@@ -2760,7 +2747,7 @@ run_multi_replicate_simulation <- function(
 # =============================================================================
 # Publication theme and color palettes
 # =============================================================================
-theme_jasa <- function(base_size = 11, base_family = "") {
+theme_template <- function(base_size = 11, base_family = "") {
   theme_minimal(base_size = base_size, base_family = base_family) +
     theme(
       panel.grid.major.y = element_line(linewidth = 0.25, colour = "grey85"),
@@ -2787,13 +2774,13 @@ tier_int_to_str <- function(x) {
 # =============================================================================
 # Color palettes
 # =============================================================================
-# Tier palette: Acadia palette from nationalparkcolors (via paletteer)
+# Tier palette
 tier_colors <- setNames(
   as.character(paletteer_d("nationalparkcolors::Acadia", n = 4)),
   c("Tier 1", "Tier 2", "Tier 3", "Tier 4")
 )
 
-# Participation palette: cavaliers_retro from nbapalettes (via paletteer)
+# Participation palette
 participation_colors <- setNames(
   as.character(paletteer_d("nbapalettes::cavaliers_retro", n = 2)),
   c("Participating", "Non-participating")
@@ -2944,7 +2931,7 @@ fig_interview_heatmap <- function(all_sim_results, year_filter = c(1, 10),
     scale_x_discrete(labels = x_labels) +
     scale_y_discrete(labels = y_labels) +
     labs(x = "Candidate Quality Tier", y = "Department Prestige Tier") +
-    theme_jasa(base_size = 14) +
+    theme_template(base_size = 14) +
     theme(panel.grid = element_blank(),
           strip.background = element_rect(fill = "gray95", color = NA),
           legend.position = "right",
@@ -2954,7 +2941,6 @@ fig_interview_heatmap <- function(all_sim_results, year_filter = c(1, 10),
   list(plot = p, data = heatmap_data, candidate_totals = cand_totals,
        interview_budgets = interview_budget_totals)
 }
-
 
 # =============================================================================
 # Figure 6: Hiring heatmap (Baseline vs Questionnaire)
@@ -3062,7 +3048,7 @@ fig_hiring_heatmap <- function(all_sim_results, year_filter = c(1, 10),
     scale_x_discrete(labels = x_labels) +
     scale_y_discrete(labels = y_labels) +
     labs(x = "Candidate Quality Tier", y = "Department Prestige Tier") +
-    theme_jasa(base_size = 14) +
+    theme_template(base_size = 14) +
     theme(panel.grid = element_blank(),
           strip.background = element_rect(fill = "gray95", color = NA),
           legend.position = "right",
@@ -3072,7 +3058,6 @@ fig_hiring_heatmap <- function(all_sim_results, year_filter = c(1, 10),
   list(plot = p, data = heatmap_data, candidate_totals = cand_totals,
        hiring_quotas = quota_totals)
 }
-
 
 # =============================================================================
 # Figure 4b: Department welfare by tier
@@ -3151,9 +3136,7 @@ fig_department_welfare <- function(all_sim_results,
     mutate(prestige_tier = factor(prestige_tier,
                                   levels = c("Tier 1","Tier 2","Tier 3","Tier 4")))
 
-  # Plot: Welfare per hiring slot
   ribbon_alpha <- 0.15
-
   plot_theme <- theme_minimal(base_size = 14) +
     theme(panel.grid.minor = element_blank(),
           panel.grid.major = element_line(color = "gray90", linewidth = 0.5),
@@ -3194,7 +3177,6 @@ fig_department_welfare <- function(all_sim_results,
 
   list(plot = p, aggregate_data = welfare_by_tier)
 }
-
 
 # =============================================================================
 # Figure 4a: Candidate utility by tier (conditional on matching)
@@ -3323,7 +3305,6 @@ fig_candidate_utility <- function(all_sim_results,
        unconditional_welfare = unconditional_welfare,
        conditional_welfare = conditional_welfare)
 }
-
 
 # =============================================================================
 # Figure C.1b: Candidate welfare by tier (unconditional: unmatched utility = 0)
@@ -3499,7 +3480,6 @@ fig_candidate_welfare <- function(all_sim_results,
   list(plot = p, aggregate_welfare = agg_welfare)
 }
 
-
 # =============================================================================
 # Figure 2: Candidate welfare by participation (Participating vs Non-participating)
 # =============================================================================
@@ -3619,11 +3599,9 @@ fig_participation_welfare <- function(all_sim_results,
                   pd$mean_welfare - nd$mean_welfare))
     }
   }
-  
-  #  Plots
   ribbon_alpha <- 0.15
   
-  fig5_theme <- theme_minimal(base_size = 14) +
+  fig_theme <- theme_minimal(base_size = 14) +
     theme(panel.grid.minor = element_blank(),
           panel.grid.major = element_line(color = "gray90", linewidth = 0.5),
           axis.title = element_text(size = 14, face = "bold"),
@@ -3672,7 +3650,7 @@ fig_participation_welfare <- function(all_sim_results,
                linetype = c("solid", "11", "dashed"),
                shape = c(16, 17, NA),
                linewidth = c(1.4, 1.4, 0.9)))) +
-    fig5_theme
+    fig_theme
   
   p2 <- ggplot(comparison_data,
                aes(x = participation_rate * 100, y = matching_rate,
@@ -3712,7 +3690,7 @@ fig_participation_welfare <- function(all_sim_results,
                linetype = c("solid", "11", "dashed"),
                shape = c(16, 17, NA),
                linewidth = c(1.4, 1.4, 0.9)))) +
-    fig5_theme
+    fig_theme
   
   combined <- (p1 | p2) +
     plot_layout(guides = "collect") & theme(legend.position = "bottom")
@@ -3944,8 +3922,6 @@ fig_blocking_pairs <- function(bp_result) {
   summary_tbl  <- bp_result$summary
   tier_summary <- bp_result$tier_summary
 
-  tier_colors <- c("Tier 1" = "#E41A1C", "Tier 2" = "#377EB8",
-                    "Tier 3" = "#4DAF4A", "Tier 4" = "#984EA3")
 
   plot_theme <- theme_minimal(base_size = 14) +
     theme(panel.grid.minor   = element_blank(),
@@ -3968,37 +3944,7 @@ fig_blocking_pairs <- function(bp_result) {
          y = "Blocking Pair Rate") +
     plot_theme
 
-  p_tier <- ggplot(tier_summary,
-                   aes(x = participation_rate * 100,
-                       y = mean_bp_rate,
-                       color = dept_tier, linetype = dept_tier,
-                       shape = dept_tier, group = dept_tier)) +
-    geom_line(linewidth = 1.8) +
-    geom_point(aes(size = dept_tier)) +
-    scale_color_manual(values = tier_colors) +
-    scale_linetype_manual(values = c("solid", "solid", "solid", "solid")) +
-    scale_shape_manual(values = c(16, 17, 15, 18)) +
-    scale_size_manual(values = c(4, 4, 4, 5.5)) +
-    scale_x_continuous(
-      breaks = c(0, 5, 20, 50, 90, 100),
-      labels = c("0", "5", "20", "50", "90", "100")) +
-    scale_y_continuous(
-      labels = scales::percent_format(accuracy = 0.1),
-      expand = expansion(mult = c(0.05, 0.05))) +
-    labs(x = "Market Participation Rate (%)",
-         y = "Blocking Pair Rate",
-         color = "Department Tier", linetype = "Department Tier",
-         shape = "Department Tier", size = "Department Tier") +
-    plot_theme +
-    theme(legend.position = "bottom",
-          legend.title = element_text(size = 14, face = "bold"),
-          legend.text = element_text(size = 13),
-          legend.key.size = unit(1.5, "lines"),
-          legend.key.width = unit(2.5, "lines"),
-          legend.spacing.x = unit(0.5, "cm"))
-
-  list(plot = p, plot_tier = p_tier,
-       summary = summary_tbl, tier_summary = tier_summary)
+  list(plot = p, summary = summary_tbl, tier_summary = tier_summary)
 }
 
 
@@ -4159,10 +4105,8 @@ fig_market_outcome_pies <- function(all_sim_results,
     scale_color_manual(values = cand_text_colors) +
     pie_theme
 
-  p_combined <- p_dept / p_cand
-
   all_data <- bind_rows(dept_data, cand_data)
 
-  list(plot = p_combined, plot_dept = p_dept, plot_cand = p_cand,
+  list(plot_dept = p_dept, plot_cand = p_cand,
        data = all_data, baseline = baseline, questionnaire = questionnaire)
 }
