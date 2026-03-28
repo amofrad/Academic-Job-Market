@@ -10,7 +10,6 @@
 #   - Offer resolution (two-round offers with scramble)
 #   - Burn-in and learned prior infrastructure
 #   - Multi-replicate simulation orchestration
-#   - Publication-quality figure generation
 # =============================================================================
 
 suppressPackageStartupMessages({
@@ -1365,6 +1364,7 @@ simulate_market_year_adaptive_sequential <- function(candidates, departments, qu
 #   candidates accept their best offer and reject all others.
 # Round 2 (scramble): Departments with unfilled positions offer their
 #   next-best remaining interviewed candidate.
+# =============================================================================
 resolve_offers_sequential <- function(interviewed_data, departments, questions,
                                       all_candidates = NULL, max_rounds = 3, seed = NULL,
                                       temperature = 0.3, noise_sd = 0.4,
@@ -2306,9 +2306,6 @@ run_job_market_sim_with_learned_prior <- function(departments, questions, n_cand
   sim_out
 }
 
-
-
-
 reconstruct_learned_prior_models <- function(burn_in_historical, questions, seed = 123,
                                              min_offered_to_train = 10L) {
   set.seed(seed); torch::torch_manual_seed(seed)
@@ -2415,7 +2412,7 @@ run_multi_replicate_simulation <- function(
 ) {
   
   # =========================================================================
-  # STEP 1: Fix shared infrastructure (computed once, reused every replicate)
+  # Fix shared infrastructure (computed once, reused every replicate)
   # =========================================================================
   set.seed(base_seed); torch::torch_manual_seed(base_seed)
   
@@ -2432,7 +2429,7 @@ run_multi_replicate_simulation <- function(
   participation_sets <- NULL
   
   # =========================================================================
-  # STEP 2: SHARED BURN-IN (run ONCE for all replicates)
+  # SHARED BURN-IN (run ONCE for all replicates)
   # =========================================================================
   cat("\n", strrep("=", 80), "\n")
   cat("SHARED BURN-IN: Running once for all replicates\n")
@@ -2489,7 +2486,7 @@ run_multi_replicate_simulation <- function(
   raw_replicates <- if (keep_raw_replicates) vector("list", n_replicates) else NULL
   
   # =========================================================================
-  # STEP 3: Run replicate tasks (serial or parallel)
+  # Run replicate tasks (serial or parallel)
   # =========================================================================
   if (is.null(n_workers)) {
     n_workers <- min(n_replicates, max(1L, parallel::detectCores(logical = FALSE) - 1L))
@@ -2688,7 +2685,7 @@ run_multi_replicate_simulation <- function(
   }
   
   # =========================================================================
-  # STEP 4: Assemble combined results with replicate ID
+  # Assemble combined results with replicate ID
   # =========================================================================
   
   combined <- list(
@@ -2760,7 +2757,6 @@ run_multi_replicate_simulation <- function(
 # =============================================================================
 #                                 FIGURES
 # =============================================================================
-
 # =============================================================================
 # Publication theme and color palettes
 # =============================================================================
@@ -2789,7 +2785,7 @@ tier_int_to_str <- function(x) {
 }
 
 # =============================================================================
-# COLOR PALETTES
+# Color palettes
 # =============================================================================
 # Tier palette: Acadia palette from nationalparkcolors (via paletteer)
 tier_colors <- setNames(
@@ -2804,7 +2800,7 @@ participation_colors <- setNames(
 )
 
 # =============================================================================
-# INTERNAL HELPERS
+# Internal helpers
 # =============================================================================
 
 # Regenerate yearly_hiring_schedule_sim from config (deterministic)
@@ -2839,7 +2835,7 @@ participation_colors <- setNames(
   df
 }
 # =============================================================================
-# 1. INTERVIEW HEATMAP (Baseline vs Questionnaire, averaged over replicates)
+# Figure C.2: Interview heatmap (Baseline vs Questionnaire)
 # =============================================================================
 fig_interview_heatmap <- function(all_sim_results, year_filter = c(1, 10),
                                             include_scramble = FALSE) {
@@ -2961,7 +2957,7 @@ fig_interview_heatmap <- function(all_sim_results, year_filter = c(1, 10),
 
 
 # =============================================================================
-# 2. HIRING HEATMAP (Baseline vs Questionnaire, averaged over replicates)
+# Figure 6: Hiring heatmap (Baseline vs Questionnaire)
 # =============================================================================
 fig_hiring_heatmap <- function(all_sim_results, year_filter = c(1, 10),
                                          include_scramble = FALSE, hire_rounds = NULL) {
@@ -3079,7 +3075,7 @@ fig_hiring_heatmap <- function(all_sim_results, year_filter = c(1, 10),
 
 
 # =============================================================================
-# 3. DEPARTMENT WELFARE BY TIER
+# Figure 4b: Department welfare by tier
 # =============================================================================
 fig_department_welfare <- function(all_sim_results,
                                                            year_filter = c(1, 10),
@@ -3201,7 +3197,7 @@ fig_department_welfare <- function(all_sim_results,
 
 
 # =============================================================================
-# 4. CANDIDATE UTILITY BY TIER (conditional on matching)
+# Figure 4a: Candidate utility by tier (conditional on matching)
 # =============================================================================
 fig_candidate_utility <- function(all_sim_results,
                                                        year_filter = c(1, 10),
@@ -3330,7 +3326,7 @@ fig_candidate_utility <- function(all_sim_results,
 
 
 # =============================================================================
-# 4b. CANDIDATE WELFARE BY TIER (unconditional: unmatched candidate utility = 0)
+# Figure C.1b: Candidate welfare by tier (unconditional: unmatched utility = 0)
 # =============================================================================
 fig_candidate_welfare_unconditional <- function(all_sim_results,
                                                 year_filter = c(1, 10),
@@ -3428,7 +3424,7 @@ fig_candidate_welfare_unconditional <- function(all_sim_results,
 }
 
 # =============================================================================
-# 4c. AGGREGATE CANDIDATE WELFARE (unconditional, all tiers pooled)
+# Figure C.1a: Aggregate candidate welfare (unconditional, all tiers pooled)
 # =============================================================================
 fig_candidate_welfare <- function(all_sim_results,
                                             year_filter = c(1, 10),
@@ -3505,7 +3501,7 @@ fig_candidate_welfare <- function(all_sim_results,
 
 
 # =============================================================================
-# 5. CANDIDATE BY PARTICIPATION (Participating vs Non-participating)
+# Figure 2: Candidate welfare by participation (Participating vs Non-participating)
 # =============================================================================
 fig_participation_welfare <- function(all_sim_results,
                                                 year_filter = c(1, 10),
@@ -3520,7 +3516,7 @@ fig_participation_welfare <- function(all_sim_results,
     return(NULL)
   }
   
-  # --- Baseline stats (averaged over replicates) ---
+  # Baseline stats (averaged over replicates)
   bl_roster <- .get_roster(all_sim_results, "0", year_filter)
   bl_results <- .get_results(all_sim_results, "0", year_filter) %>%
     dplyr::filter(accepted == 1)
@@ -3558,7 +3554,7 @@ fig_participation_welfare <- function(all_sim_results,
               baseline_stats$baseline_matching_rate * 100,
               baseline_stats$baseline_mean_welfare_if_matched))
   
-  # --- Interior rates: per (replicate, rate, participates) ---
+  # Interior rates: per (replicate, rate, participates)
   comparison_by_rep <- purrr::map_dfr(interior_rates, function(rate_chr) {
     rate <- as.numeric(rate_chr)
     roster <- .get_roster(all_sim_results, rate_chr, year_filter)
@@ -3609,7 +3605,7 @@ fig_participation_welfare <- function(all_sim_results,
       se_welfare = sd(mean_welfare, na.rm = TRUE) / sqrt(sum(!is.na(mean_welfare))),
       mean_welfare_if_matched = mean(mean_welfare_if_matched, na.rm = TRUE),
       se_welfare_if_matched = sd(mean_welfare_if_matched, na.rm = TRUE) / sqrt(sum(!is.na(mean_welfare_if_matched))),
-      .groups = "drop"pair analysis
+      .groups = "drop"
     )
   
   # Diagnostics
@@ -3740,10 +3736,6 @@ fig_participation_welfare <- function(all_sim_results,
 #   5. c strictly prefers d to mu(c):
 #        - if c is matched:  V(c,d) > V(c, mu(c))
 #        - if c is unmatched: always satisfied (c prefers any job to none)
-#
-# Metric: average number of blocking pairs per hiring position.
-#
-# Returns list(plot, data, summary).
 # =============================================================================
 count_blocking_pairs <- function(all_sim_results,
                                  hiring_schedule,
@@ -3901,7 +3893,6 @@ count_blocking_pairs <- function(all_sim_results,
     dplyr::mutate(
       bp_rate = n_blocking_pairs / n_eligible_pairs)
 
-  # Summary: average across years, grouped by participation rate
   rep_avg <- data %>%
     dplyr::group_by(participation_rate, replicate) %>%
     dplyr::summarise(
@@ -3946,7 +3937,7 @@ count_blocking_pairs <- function(all_sim_results,
 }
 
 # =============================================================================
-# 6. Plot blocking pair results from count_blocking_pairs
+# Figure C.3: Blocking pair rate by participation rate
 # =============================================================================
 fig_blocking_pairs <- function(bp_result) {
 
@@ -4008,4 +3999,170 @@ fig_blocking_pairs <- function(bp_result) {
 
   list(plot = p, plot_tier = p_tier,
        summary = summary_tbl, tier_summary = tier_summary)
+}
+
+
+# =============================================================================
+# Figures 3 & 5: Market Outcome Pie Charts (Baseline vs Questionnaire)
+# =============================================================================
+fig_market_outcome_pies <- function(all_sim_results,
+                                    year_filter = c(1, 10),
+                                    hire_rounds = 2) {
+
+  departments <- all_sim_results$departments %>%
+    dplyr::select(dept_id, prestige_tier)
+  yearly_hiring_schedule <- .get_hiring_schedule(all_sim_results)
+  years_in_filter <- year_filter[1]:year_filter[2]
+  n_departments <- nrow(departments)
+  cfg <- all_sim_results$config
+
+  # Total positions across all years
+  total_quota <- tibble(dept_id = 1:n_departments) %>%
+    crossing(year = years_in_filter) %>%
+    mutate(h_j = yearly_hiring_schedule[cbind(dept_id, year)]) %>%
+    summarise(quota = sum(h_j)) %>%
+    pull(quota)
+
+  # Total candidates per replicate
+  n_cand_per_rep <- cfg$n_candidates * length(years_in_filter)
+
+
+  get_outcomes <- function(rate_chr) {
+    df <- .get_results(all_sim_results, rate_chr, year_filter)
+    if (nrow(df) == 0) return(NULL)
+
+    # Department outcomes
+    hires <- df %>% dplyr::filter(accepted == 1)
+    if (!is.null(hire_rounds))
+      hires <- hires %>% dplyr::filter(is.na(offer_round) | offer_round <= hire_rounds)
+
+    dept_per_rep <- hires %>%
+      group_by(replicate) %>%
+      summarise(
+        initial = sum(offer_round == 1L, na.rm = TRUE),
+        scramble = sum(offer_round >= 2L, na.rm = TRUE),
+        .groups = "drop"
+      ) %>%
+      mutate(unfilled = total_quota - initial - scramble)
+
+    dept_avg <- dept_per_rep %>%
+      summarise(
+        initial  = mean(initial),
+        scramble = mean(scramble),
+        unfilled = mean(unfilled)
+      )
+
+    # Candidate outcomes
+    cand_per_rep <- hires %>%
+      group_by(replicate) %>%
+      summarise(n_matched = n(), .groups = "drop") %>%
+      mutate(n_unmatched = n_cand_per_rep - n_matched)
+
+    cand_avg <- cand_per_rep %>%
+      summarise(matched = mean(n_matched), unmatched = mean(n_unmatched))
+
+    list(dept = dept_avg, cand = cand_avg)
+  }
+
+  baseline <- get_outcomes("0")
+  questionnaire <- get_outcomes("1")
+  if (is.null(baseline) || is.null(questionnaire)) {
+    message("Insufficient data for pie charts"); return(NULL)
+  }
+
+  tc <- as.character(paletteer_d("nationalparkcolors::Acadia", n = 4))
+  dept_colors <- c("Filled (Initial Offer)" = tc[1],
+                    "Filled (Scramble)"      = tc[2],
+                    "Unfilled"               = tc[4])
+  cand_colors <- c("Matched"   = tc[1],
+                    "Unmatched" = tc[4])
+
+  make_pie_df <- function(panel_name, scenario_name, categories, counts) {
+    tibble(
+      panel    = panel_name,
+      scenario = scenario_name,
+      category = categories,
+      count    = counts
+    ) %>%
+      mutate(
+        pct  = count / sum(count),
+        label = sprintf("%.1f%%", pct * 100),
+        ymax = cumsum(pct),
+        ymin = lag(ymax, default = 0),
+        ymid = (ymin + ymax) / 2
+      )
+  }
+
+  dept_data <- bind_rows(
+    make_pie_df("Department Positions", "Baseline (\u03C1 = 0%)",
+                c("Filled (Initial Offer)", "Filled (Scramble)", "Unfilled"),
+                c(baseline$dept$initial, baseline$dept$scramble, baseline$dept$unfilled)),
+    make_pie_df("Department Positions", "Questionnaire (\u03C1 = 100%)",
+                c("Filled (Initial Offer)", "Filled (Scramble)", "Unfilled"),
+                c(questionnaire$dept$initial, questionnaire$dept$scramble,
+                  questionnaire$dept$unfilled))
+  )
+  dept_data$scenario <- factor(dept_data$scenario,
+    levels = c("Baseline (\u03C1 = 0%)", "Questionnaire (\u03C1 = 100%)"))
+  dept_data$category <- factor(dept_data$category,
+    levels = c("Filled (Initial Offer)", "Filled (Scramble)", "Unfilled"))
+
+  cand_data <- bind_rows(
+    make_pie_df("Candidate Outcomes", "Baseline (\u03C1 = 0%)",
+                c("Matched", "Unmatched"),
+                c(baseline$cand$matched, baseline$cand$unmatched)),
+    make_pie_df("Candidate Outcomes", "Questionnaire (\u03C1 = 100%)",
+                c("Matched", "Unmatched"),
+                c(questionnaire$cand$matched, questionnaire$cand$unmatched))
+  )
+  cand_data$scenario <- factor(cand_data$scenario,
+    levels = c("Baseline (\u03C1 = 0%)", "Questionnaire (\u03C1 = 100%)"))
+  cand_data$category <- factor(cand_data$category,
+    levels = c("Matched", "Unmatched"))
+
+  pie_theme <- theme_void(base_size = 12) +
+    theme(
+      strip.text = element_text(face = "bold", size = 16),
+      legend.position = "bottom",
+      legend.text = element_text(size = 13),
+      legend.title = element_blank(),
+      panel.spacing = unit(1, "lines"),
+      plot.margin = margin(5, 5, 5, 5)
+    )
+
+  dept_text_colors <- c("Filled (Initial Offer)" = "grey20",
+                         "Filled (Scramble)"      = "white",
+                         "Unfilled"               = "white")
+  cand_text_colors <- c("Matched"   = "grey20",
+                         "Unmatched" = "white")
+
+
+  p_dept <- ggplot(dept_data, aes(x = 1, y = pct, fill = category)) +
+    geom_col(width = 1, color = "white", linewidth = 0.8) +
+    geom_text(aes(label = label, color = category),
+              position = position_stack(vjust = 0.5),
+              size = 4, fontface = "bold", show.legend = FALSE) +
+    coord_polar(theta = "y") +
+    facet_wrap(~ scenario, ncol = 2) +
+    scale_fill_manual(values = dept_colors) +
+    scale_color_manual(values = dept_text_colors) +
+    pie_theme
+
+  p_cand <- ggplot(cand_data, aes(x = 1, y = pct, fill = category)) +
+    geom_col(width = 1, color = "white", linewidth = 0.8) +
+    geom_text(aes(label = label, color = category),
+              position = position_stack(vjust = 0.5),
+              size = 4, fontface = "bold", show.legend = FALSE) +
+    coord_polar(theta = "y") +
+    facet_wrap(~ scenario, ncol = 2) +
+    scale_fill_manual(values = cand_colors) +
+    scale_color_manual(values = cand_text_colors) +
+    pie_theme
+
+  p_combined <- p_dept / p_cand
+
+  all_data <- bind_rows(dept_data, cand_data)
+
+  list(plot = p_combined, plot_dept = p_dept, plot_cand = p_cand,
+       data = all_data, baseline = baseline, questionnaire = questionnaire)
 }

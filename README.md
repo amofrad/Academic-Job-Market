@@ -164,10 +164,12 @@ This script:
 3. Generates PDF figures in `manuscript/fig/`:
 
    **Main text figures:**
-   - `fig_dept_hiring_heatmap.pdf` — Hiring outcomes across tiers
-   - `fig_department_welfare.pdf` — Department welfare per hiring position by tier
-   - `fig_candidate_utility_by_tier.pdf` — Matched candidate utility $\bar{V}_{ij}$ by quality tier
    - `fig_candidate_by_participation.pdf` — Welfare comparison of participating vs. non-participating candidates
+   - `fig_cand_outcome_pies.pdf` — Candidate outcome distribution (baseline vs. questionnaire)
+   - `fig_candidate_utility_by_tier.pdf` — Matched candidate utility $\bar{V}_{ij}$ by quality tier
+   - `fig_department_welfare.pdf` — Department welfare per hiring position by tier
+   - `fig_dept_outcome_pies.pdf` — Department position outcome distribution (baseline vs. questionnaire)
+   - `fig_dept_hiring_heatmap.pdf` — Hiring outcomes across tiers
 
    **Supplement figures:**
    - `fig_candidate_welfare.pdf` — Mean candidate welfare across all candidates
@@ -239,6 +241,7 @@ The simulation is built on the following core components. Notation follows the p
 | `fig_department_welfare()` | Figure: department welfare by tier |
 | `fig_candidate_utility()` | Figure: candidate utility $\bar{V}_{ij}$ by tier (conditional on matching) |
 | `fig_participation_welfare()` | Figure: participating vs. non-participating welfare |
+| `fig_market_outcome_pies()` | Figure: candidate and department outcome pie charts (baseline vs. questionnaire) |
 | `fig_candidate_welfare()` | Figure: mean candidate welfare across all candidates (supplement) |
 | `fig_candidate_welfare_unconditional()` | Figure: mean candidate welfare by quality tier (supplement) |
 | `fig_interview_heatmap()` | Figure: interview allocation heatmap (supplement) |

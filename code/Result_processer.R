@@ -140,6 +140,10 @@ cand_participation  <- fig_participation_welfare(all_sim_results,
                          year_filter = c(1, 10), include_scramble = TRUE, hire_rounds = 2)
 
 
+# Market outcome pie charts (baseline vs questionnaire)
+market_pies <- fig_market_outcome_pies(all_sim_results,
+                  year_filter = c(1, 10), hire_rounds = 2)
+
 # Stability analysis
 blocking_pairs <- count_blocking_pairs(all_sim_results,
                                        hiring_schedule = artifacts$yearly_hiring_schedule_sim,
@@ -164,3 +168,7 @@ ggsave("manuscript/fig/fig_candidate_welfare.pdf", cand_welfare$plot,
        width = 7,  height = 5, device = cairo_pdf)
 ggsave("manuscript/fig/fig_blocking_pairs.pdf", bp_figs$plot,
        width = 8, height = 4, device = cairo_pdf)
+ggsave("manuscript/fig/fig_dept_outcome_pies.pdf", market_pies$plot_dept,
+       width = 9, height = 4, device = cairo_pdf)
+ggsave("manuscript/fig/fig_cand_outcome_pies.pdf", market_pies$plot_cand,
+       width = 9, height = 4, device = cairo_pdf)
