@@ -19,7 +19,13 @@
 # =============================================================================
 
 # Set working directory to this script's location
-setwd(dirname(rstudioapi::getSourceEditorContext()$path))
+if (requireNamespace("rstudioapi", quietly = TRUE) && rstudioapi::isAvailable()) {
+  setwd(dirname(rstudioapi::getSourceEditorContext()$path))
+} else {
+  file_arg <- commandArgs(trailingOnly = FALSE)
+  file_arg <- file_arg[grep("--file=", file_arg)]
+  if (length(file_arg) > 0) setwd(dirname(sub("--file=", "", file_arg)))
+}
 
 library(tidyverse)
 library(jsonlite)

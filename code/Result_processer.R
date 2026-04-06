@@ -27,7 +27,13 @@
 #   manuscript/fig/fig_dept_interview_heatmap.pdf      — interview allocation heatmap
 #   manuscript/fig/fig_blocking_pairs.pdf              — blocking pair rate
 # =============================================================================
+# Ensure working directory is the project root (parent of code/)
+if (file.exists("Sim_Functions.R") && !file.exists("code/Sim_Functions.R")) setwd("..")
+
 source("code/Sim_Functions.R")
+
+dir.create("output", showWarnings = FALSE)
+dir.create("manuscript/fig", recursive = TRUE, showWarnings = FALSE)
 
 cat("=== COMBINING RESULTS ===\n")
 

@@ -13,7 +13,12 @@
 #     historical data, hiring schedules, and configuration parameters.
 # =============================================================================
 
+# Ensure working directory is the project root (parent of code/)
+if (file.exists("Sim_Functions.R") && !file.exists("code/Sim_Functions.R")) setwd("..")
+
 source("code/Sim_Functions.R")
+
+dir.create("output", showWarnings = FALSE)
 
 cat("=== BURN-IN STAGE ===\n")
 cat("Time:", format(Sys.time()), "\n\n")

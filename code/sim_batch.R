@@ -18,6 +18,9 @@
 # Output:
 #   output/sim_batch_<TASK_ID>.rds — batch results for this task's replicates
 # =============================================================================
+# Ensure working directory is the project root (parent of code/)
+if (file.exists("Sim_Functions.R") && !file.exists("code/Sim_Functions.R")) setwd("..")
+
 source("code/Sim_Functions.R")
 
 # Parse task ID
