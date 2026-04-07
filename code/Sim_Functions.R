@@ -3617,10 +3617,6 @@ fig_participation_welfare <- function(all_sim_results,
                aes(x = participation_rate * 100, y = mean_welfare,
                    color = participation_status,
                    linetype = participation_status, shape = participation_status)) +
-    geom_hline(aes(yintercept = baseline_stats$baseline_mean_welfare,
-                   linetype = "Baseline (\u03C1 = 0%)",
-                   color = "Baseline (\u03C1 = 0%)"),
-               linewidth = 0.9, inherit.aes = FALSE) +
     geom_ribbon(aes(ymin = mean_welfare - 1.96 * se_welfare,
                     ymax = mean_welfare + 1.96 * se_welfare,
                     fill = participation_status,
@@ -3629,16 +3625,15 @@ fig_participation_welfare <- function(all_sim_results,
     geom_line(linewidth = 1.4) +
     geom_point(size = 3.5) +
     scale_color_manual(
-      values = c(participation_colors, "Baseline (\u03C1 = 0%)" = "gray45"),
-      breaks = c("Participating", "Non-participating", "Baseline (\u03C1 = 0%)")) +
+      values = participation_colors,
+      breaks = c("Participating", "Non-participating")) +
     scale_fill_manual(values = participation_colors) +
     scale_linetype_manual(
-      values = c("Participating" = "solid", "Non-participating" = "11",
-                 "Baseline (\u03C1 = 0%)" = "dashed"),
-      breaks = c("Participating", "Non-participating", "Baseline (\u03C1 = 0%)")) +
+      values = c("Participating" = "solid", "Non-participating" = "11"),
+      breaks = c("Participating", "Non-participating")) +
     scale_shape_manual(
-      values = c("Participating" = 16, "Non-participating" = 17, "Baseline (\u03C1 = 0%)" = NA),
-      breaks = c("Participating", "Non-participating", "Baseline (\u03C1 = 0%)")) +
+      values = c("Participating" = 16, "Non-participating" = 17),
+      breaks = c("Participating", "Non-participating")) +
     scale_x_continuous(breaks = c(5, 20, 50, 90), labels = c("5", "20", "50", "90")) +
     scale_y_continuous(limits = c(0, NA), expand = expansion(mult = c(0, 0.05))) +
     labs(x = "Market Participation Rate (%)", y = "Mean Candidate Welfare",
@@ -3647,19 +3642,15 @@ fig_participation_welfare <- function(all_sim_results,
            color = guide_legend(
              title = NULL,
              override.aes = list(
-               linetype = c("solid", "11", "dashed"),
-               shape = c(16, 17, NA),
-               linewidth = c(1.4, 1.4, 0.9)))) +
+               linetype = c("solid", "11"),
+               shape = c(16, 17),
+               linewidth = c(1.4, 1.4)))) +
     fig_theme
   
   p2 <- ggplot(comparison_data,
                aes(x = participation_rate * 100, y = matching_rate,
                    color = participation_status,
                    linetype = participation_status, shape = participation_status)) +
-    geom_hline(aes(yintercept = baseline_stats$baseline_matching_rate,
-                   linetype = "Baseline (\u03C1 = 0%)",
-                   color = "Baseline (\u03C1 = 0%)"),
-               linewidth = 0.9, inherit.aes = FALSE) +
     geom_ribbon(aes(ymin = matching_rate - 1.96 * se_matching_rate,
                     ymax = matching_rate + 1.96 * se_matching_rate,
                     fill = participation_status,
@@ -3668,16 +3659,15 @@ fig_participation_welfare <- function(all_sim_results,
     geom_line(linewidth = 1.4) +
     geom_point(size = 3.5) +
     scale_color_manual(
-      values = c(participation_colors, "Baseline (\u03C1 = 0%)" = "gray45"),
-      breaks = c("Participating", "Non-participating", "Baseline (\u03C1 = 0%)")) +
+      values = participation_colors,
+      breaks = c("Participating", "Non-participating")) +
     scale_fill_manual(values = participation_colors) +
     scale_linetype_manual(
-      values = c("Participating" = "solid", "Non-participating" = "11",
-                 "Baseline (\u03C1 = 0%)" = "dashed"),
-      breaks = c("Participating", "Non-participating", "Baseline (\u03C1 = 0%)")) +
+      values = c("Participating" = "solid", "Non-participating" = "11"),
+      breaks = c("Participating", "Non-participating")) +
     scale_shape_manual(
-      values = c("Participating" = 16, "Non-participating" = 17, "Baseline (\u03C1 = 0%)" = NA),
-      breaks = c("Participating", "Non-participating", "Baseline (\u03C1 = 0%)")) +
+      values = c("Participating" = 16, "Non-participating" = 17),
+      breaks = c("Participating", "Non-participating")) +
     scale_x_continuous(breaks = c(5, 20, 50, 90), labels = c("5", "20", "50", "90")) +
     scale_y_continuous(labels = scales::percent_format(accuracy = 0.1),
                        limits = c(0, NA), expand = expansion(mult = c(0, 0.05))) +
@@ -3687,9 +3677,9 @@ fig_participation_welfare <- function(all_sim_results,
            color = guide_legend(
              title = NULL,
              override.aes = list(
-               linetype = c("solid", "11", "dashed"),
-               shape = c(16, 17, NA),
-               linewidth = c(1.4, 1.4, 0.9)))) +
+               linetype = c("solid", "11"),
+               shape = c(16, 17),
+               linewidth = c(1.4, 1.4)))) +
     fig_theme
   
   combined <- (p1 | p2) +
