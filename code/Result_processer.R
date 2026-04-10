@@ -35,8 +35,6 @@ source("code/Sim_Functions.R")
 dir.create("output", showWarnings = FALSE)
 dir.create("manuscript/fig", recursive = TRUE, showWarnings = FALSE)
 
-cat("=== COMBINING RESULTS ===\n")
-
 n_batches <- 10L
 
 # Load burn-in artifacts
@@ -54,8 +52,7 @@ merged <- setNames(
 
 for (b in 1:n_batches) {
   f <- sprintf("output/sim_batch_%d.rds", b)
-  if (!file.exists(f)) { cat(sprintf("WARNING: %s not found, skipping\n", f)); next }
-  cat(sprintf("Loading %s...\n", f))
+  if (!file.exists(f)) { warning(sprintf("%s not found, skipping", f)); next }
   batch <- readRDS(f)
   for (rc in rate_keys) {
     sr <- batch$sim_results[[rc]]
@@ -103,27 +100,17 @@ all_sim_results <- list(
   )
 )
 
-# Summary
-cat("\n=== COMBINED RESULTS SUMMARY ===\n")
-for (rc in rate_keys) {
-  nr    <- nrow(all_sim_results$sim_results[[rc]]$results)
-  n_rep <- length(unique(all_sim_results$sim_results[[rc]]$results$replicate))
-  cat(sprintf("  Rate %5s: %d result rows, %d replicates\n", rc, nr, n_rep))
-}
-
 saveRDS(all_sim_results, "output/all_sim_results.rds", compress = "gzip")
-cat(sprintf("\nSaved output/all_sim_results.rds (%.1f MB)\n",
+cat(sprintf("Saved output/all_sim_results.rds (%.1f MB)\n",
             file.size("output/all_sim_results.rds") / 1e6))
 
-# Remove batch files
+# Remove batch files now that they have been merged
 for (b in 1:n_batches) {
   f <- sprintf("output/sim_batch_%d.rds", b)
   if (file.exists(f)) file.remove(f)
 }
-cat(sprintf("Removed %d batch files\n", n_batches))
 
 # Generate figures
-cat("\nGenerating figures...\n")
 
 interview_heatmap   <- fig_interview_heatmap(all_sim_results,
                          year_filter = c(1, 10), include_scramble = FALSE)
@@ -149,12 +136,14 @@ market_pies <- fig_market_outcome_pies(all_sim_results,
                     year_filter = c(1, 10), hire_rounds = 2)
 
 
+
+
+
 blocking_pairs <- count_blocking_pairs(all_sim_results,
                                        hiring_schedule = artifacts$yearly_hiring_schedule_sim,
                                        rates = cfg$participation_rates, year_filter = 1:10,
                                         max_replicates = 200)
 bp_figs <- fig_blocking_pairs(blocking_pairs)
-
 
 ggsave("manuscript/fig/fig_dept_interview_heatmap.pdf", interview_heatmap$plot,
        width = 10, height = 5, device = cairo_pdf)
@@ -176,3 +165,5 @@ ggsave("manuscript/fig/fig_dept_outcome_pies.pdf", market_pies$plot_dept,
        width = 9, height = 4, device = cairo_pdf)
 ggsave("manuscript/fig/fig_cand_outcome_pies.pdf", market_pies$plot_cand,
        width = 9, height = 4, device = cairo_pdf)
+
+

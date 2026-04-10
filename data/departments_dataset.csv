@@ -1,102 +1,160 @@
 rank,university,city,state,peer_assessment_score,tier,s_j,q1_geographic_setting,q2_region,q3_airport_proximity,q4_cost_of_living,q5_dual_career,q6_typical_salary_range,q7_typical_startup,q8_guaranteed_summer,q9_typical_teaching_load,q10_course_types,q11_mentoring_program,q12_research_culture,q13_publication_venues,q14_phd_student_ratio,q15_medical_school_proximity,public_private,university_size
-1,Stanford University,Stanford,CA,4.9,Tier 1,0.9750000000000001,A,West Coast,A,133914.75216,N,151743,E,B,B,A,A,D,A,3.47667852553692,1,Private,Medium
-2,University of California--Berkeley,Berkeley,CA,4.8,Tier 1,0.95,A,West Coast,A,117679.01916,Y,151743,E,A,B,A,A,D,A,3.591585364839486,1,Public,Very Large
-3,Harvard University,Cambridge,MA,4.6,Tier 1,0.8999999999999999,B,Northeast,A,120086.94144,N,149491.5,E,B,B,A,A,A,A,3.754535290875937,1,Private,Medium
-3,University of Chicago,Chicago,IL,4.6,Tier 1,0.8999999999999999,A,Midwest,A,81548.254319999993,N,133552.5,E,B,B,A,B,A,A,3.5779465294626793,1,Public,Medium
-5,Carnegie Mellon University,Pittsburgh,PA,4.4,Tier 1,0.8500000000000001,B,Northeast,A,72874.88364,N,123801,E,B,B,A,A,B,C,2.8993755692844068,0,Private,Medium
-5,Columbia University,New York,NY,4.4,Tier 1,0.8500000000000001,A,Northeast,A,137874.70452,N,128062.5,E,B,B,A,A,D,E,3.599840554678627,1,Private,Medium
-7,Duke University,Durham,NC,4.3,Tier 1,0.825,B,Southeast,B,78649.38792,N,121509,E,B,B,A,A,C,B,3.5066211088892367,1,Private,Medium
-7,University of Michigan--Ann Arbor,Ann Arbor,MI,4.3,Tier 1,0.825,B,Midwest,B,84563.21280000001,Y,126741,E,A,B,A,A,D,A,3.507525332516094,1,Public,Very Large
-7,University of Pennsylvania,Philadelphia,PA,4.3,Tier 1,0.825,A,Northeast,A,78477.67056,N,123801,E,B,B,A,B,D,A,3.348449959926745,1,Public,Medium
-7,University of Washington,Seattle,WA,4.3,Tier 1,0.825,A,West Coast,A,104223.11664000001,Y,130270.5,D,B,B,A,B,C,B,3.167347422689097,1,Public,Small
-11,North Carolina State University,Raleigh,NC,4.1,Tier 2,0.7749999999999999,B,Southeast,B,82908.066,Y,105307.8,C,B,C,B,A,D,E,3.012349391447934,0,Public,Large
-11,University of North Carolina--Chapel Hill,Chapel Hill,NC,4.1,Tier 2,0.7749999999999999,C,Southeast,B,84151.008,Y,105307.8,D,B,B,B,A,C,B,2.9387983863594216,1,Public,Large
-13,Cornell University,Ithaca,NY,4,Tier 2,0.75,C,Northeast,C,97221.48804,Y,110987.5,D,B,B,B,A,C,B,3.0421443275472604,1,Private,Large
-13,Texas A&M University--College Station,College Station,TX,4,Tier 2,0.75,C,Southwest,C,67040.75184,Y,115281.40000000001,C,B,C,B,A,C,B,3.1909079971386576,1,Public,Very Large
-13,University of California--Davis,Davis,CA,4,Tier 2,0.75,C,West Coast,B,91093.08696,Y,131510.6,C,B,C,B,A,C,B,3.059761175444246,1,Public,Very Large
-13,University of Minnesota--Twin Cities,Minneapolis,MN,4,Tier 2,0.75,B,Midwest,A,92792.94383999999,Y,101907,C,B,C,B,A,D,E,3.3334890703923903,1,Public,Very Large
-13,University of Wisconsin--Madison,Madison,WI,4,Tier 2,0.75,B,Midwest,B,84673.32708,Y,106133.3,C,B,C,B,A,D,E,3.250236819257679,1,Public,Very Large
-13,Yale University,New Haven,CT,4,Tier 2,0.75,C,Northeast,B,88957.6746,N,119519.40000000001,D,B,B,B,B,C,B,2.8646323272966967,1,Private,Medium
-19,Iowa State University,Ames,IA,3.9,Tier 2,0.725,C,Midwest,C,74376.37524000001,Y,94582.8,C,B,B,B,A,D,E,2.7418324749122034,0,Public,Large
-19,Pennsylvania State University,University Park,PA,3.9,Tier 2,0.725,C,Northeast,C,82482.79956,Y,107294.2,C,B,C,B,A,C,B,3.4503028468320798,1,Public,Very Large
-19,University of California--Los Angeles,Los Angeles,CA,3.9,Tier 2,0.725,A,West Coast,A,97766.38704,Y,131510.6,D,B,C,B,A,C,B,3.2271982029769757,1,Public,Very Large
-22,Purdue University--West Lafayette,West Lafayette,IN,3.8,Tier 2,0.7,C,Midwest,C,74132.97611999999,Y,103372.1,C,B,C,B,A,D,E,2.666400741437678,0,Public,Very Large
-22,University of Illinois--Urbana-Champaign,Champaign,IL,3.8,Tier 2,0.7,C,Midwest,C,76261.39752,Y,115745.5,C,B,C,B,A,C,B,3.231817917066849,1,Public,Very Large
-24,Ohio State University,Columbus,OH,3.7,Tier 2,0.675,B,Midwest,A,72589.03164,N,98135.7,C,C,B,B,B,C,B,2.450017629575794,1,Public,Small
-24,Rutgers University--New Brunswick,Piscataway,NJ,3.7,Tier 2,0.675,C,Northeast,A,94346.08788,Y,117646.1,C,B,C,B,A,C,B,3.7881852442007595,1,Public,Very Large
-26,University of Florida,Gainesville,FL,3.6,Tier 3,0.65,C,Southeast,B,73451.1642,Y,79599,C,C,C,D,B,C,B,2.549170128601999,1,Public,Very Large
-27,University of California--Irvine,Irvine,CA,3.5,Tier 3,0.625,A,West Coast,A,111909.20808,N,101162,C,C,C,B,B,C,B,2.8370525110731344,1,Public,Large
-27,University of Texas--Austin,Austin,TX,3.5,Tier 3,0.625,B,Southwest,A,79991.74224,Y,88678,B,C,C,D,B,C,B,3.129874170187294,1,Public,Very Large
-29,Rice University,Houston,TX,3.4,Tier 3,0.6,A,Southwest,A,68223.9888,Y,88678,C,C,B,B,C,D,E,2.00135907361894,0,Private,Small
-30,Colorado State University,Fort Collins,CO,3.3,Tier 3,0.575,B,West Coast,B,91469.7474,N,85212,B,C,C,B,B,D,E,2.336755208663485,0,Public,Small
-30,Florida State University,Tallahassee,FL,3.3,Tier 3,0.575,C,Southeast,B,71957.0094,Y,79599,C,C,C,D,B,C,B,2.5882416456760007,1,Public,Very Large
-30,Michigan State University,East Lansing,MI,3.3,Tier 3,0.575,C,Midwest,C,70359.97944,Y,84494,B,C,C,D,B,C,B,3.110849504328943,1,Public,Very Large
-30,University of Connecticut,Storrs,CT,3.3,Tier 3,0.575,C,Northeast,C,93605.17476,Y,91938,B,C,C,B,B,C,B,2.3557126329191718,1,Public,Large
-30,University of Iowa,Iowa City,IA,3.3,Tier 3,0.575,C,Midwest,C,78323.4192,Y,72756,B,C,C,B,B,C,B,3.1311227838784017,1,Public,Large
-35,University of Georgia,Athens,GA,3.2,Tier 3,0.55,C,Southeast,C,64832.488079999996,Y,114925.10345131424,B,C,C,D,B,C,B,2.971924740140385,1,Public,Very Large
-35,University of Pittsburgh,Pittsburgh,PA,3.2,Tier 3,0.55,B,Northeast,A,72874.88364,N,82534,B,C,C,B,B,C,B,2.314157944954901,1,Public,Small
-37,New York University,New York,NY,3.1,Tier 3,0.525,A,Northeast,A,137874.70452,Y,85375,C,C,C,B,C,C,B,2.9962923681684863,1,Private,Large
-37,Northwestern University,Evanston,IL,3.1,Tier 3,0.525,C,Midwest,B,81548.254319999993,N,89035,C,C,B,B,C,D,E,2.1111056348073705,1,Private,Medium
-37,University of Missouri--Columbia,Columbia,MO,3.1,Tier 3,0.525,C,Midwest,C,74433.64296,Y,75541,B,C,C,B,B,C,B,2.9772290865981748,1,Public,Large
-37,Virginia Tech,Blacksburg,VA,3.1,Tier 3,0.525,C,Southeast,C,81665.5638,Y,84592,B,C,C,D,B,C,B,2.511125959935661,1,Public,Very Large
-41,Boston University,Boston,MA,3,Tier 3,0.5,B,Northeast,A,122494.87931999999,N,99661,C,C,B,B,C,C,B,2.210797047448329,1,Private,Large
-41,George Washington University,Washington,DC,3,Tier 3,0.5,A,Northeast,A,120289.63692,N,100385,C,C,B,B,C,C,B,2.386188018694111,1,Private,Medium
-41,University of California--San Diego,La Jolla,CA,3,Tier 3,0.5,A,West Coast,A,106768.99884,Y,101162,C,C,B,D,B,C,B,3.0122982906756786,1,Public,Very Large
-44,Temple University,Philadelphia,PA,2.9,Tier 3,0.475,A,Northeast,A,78477.67056,Y,82534,C,C,C,B,B,C,B,2.5972258193740854,1,Public,Large
-44,University of California--Riverside,Riverside,CA,2.9,Tier 3,0.475,A,West Coast,A,83185.1028,N,101162,C,C,C,B,B,C,B,2.4099215420548203,1,Public,Large
-44,University of California--Santa Barbara,Santa Barbara,CA,2.9,Tier 3,0.475,C,West Coast,B,116973.29796,N,101162,C,C,C,B,B,D,E,2.4939498129190603,0,Public,Large
-44,University of California--Santa Cruz,Santa Cruz,CA,2.9,Tier 3,0.475,C,West Coast,B,137829.51408,N,101162,B,C,C,B,B,D,E,2.80361242725869,0,Public,Large
-44,University of Virginia,Charlottesville,VA,2.9,Tier 3,0.475,C,Southeast,C,90203.19288,Y,84592,C,C,C,B,B,C,B,2.1103718079434675,1,Public,Large
-49,Arizona State University,Tempe,AZ,2.8,Tier 3,0.44999999999999996,A,Southwest,A,82847.376,N,86872,C,C,C,B,B,C,B,2.76839747335745,1,Public,Small
-49,University of Rochester,Rochester,NY,2.8,Tier 3,0.44999999999999996,C,Northeast,B,84268.77275999999,N,85375,B,C,C,B,B,C,B,2.2812790096253175,1,Public,Medium
-51,University of Illinois--Chicago,Chicago,IL,2.7,Tier 4,0.42500000000000004,A,Midwest,A,81548.254319999993,Y,80131.5,B,D,C,D,C,D,E,2.3452927459464683,1,Public,Large
-51,University of Massachusetts--Amherst,Amherst,MA,2.7,Tier 4,0.42500000000000004,C,Northeast,B,93593.23991999999,Y,89694.90000000001,B,D,C,D,C,D,E,1.6439111951158598,1,Public,Large
-51,University of South Carolina,Columbia,SC,2.7,Tier 4,0.42500000000000004,C,Southeast,C,70478.52276,N,68060.7,B,D,C,D,C,D,E,1.834847295661933,1,Public,Small
-54,George Mason University,Fairfax,VA,2.6,Tier 4,0.4,C,Southeast,B,110032.49724,N,76132.8,B,D,B,D,C,B,E,1.6602886718565848,0,Public,Large
-54,Indiana University--Bloomington,Bloomington,IN,2.6,Tier 4,0.4,C,Midwest,C,77917.7376,Y,71565.3,B,C,D,D,C,D,E,2.377426072483369,1,Public,Very Large
-54,Oregon State University,Corvallis,OR,2.6,Tier 4,0.4,C,West Coast,C,90421.69847999999,Y,104953.7859933517,B,D,B,D,C,D,E,1.6306758215998358,0,Public,Large
-54,SMU,Dallas,TX,2.6,Tier 4,0.4,A,Southwest,A,72227.77716,Y,79810.2,B,D,C,D,C,D,E,1.5923564776361117,0,Private,Medium
-54,University of Arizona,Tucson,AZ,2.6,Tier 4,0.4,B,Southwest,B,70794.96048000001,Y,78184.8,B,C,D,D,C,D,E,2.8040666202848374,1,Public,Very Large
-54,University of Maryland--Baltimore County,Baltimore,MD,2.6,Tier 4,0.4,B,Northeast,A,79874.61624,N,125526.19285401945,B,A,C,D,C,B,E,1.776539191096474,1,Public,Medium
-54,Washington University in St. Louis,St. Louis,MO,2.6,Tier 4,0.4,A,Midwest,A,74576.04144,N,67986.90000000001,C,D,C,D,C,D,E,1.843053819755703,1,Private,Medium
-61,Clemson University,Clemson,SC,2.5,Tier 4,0.375,C,Southeast,C,64828.88436,Y,68060.7,C,D,C,D,C,D,E,1.4220877782381816,0,Public,Large
-61,University of Notre Dame,Notre Dame,IN,2.5,Tier 4,0.375,A,Midwest,D,73174.84908,Y,71565.3,B,D,B,D,C,D,E,1.748958272352406,0,Public,Medium
-63,Case Western Reserve University,Cleveland,OH,2.4,Tier 4,0.35,B,Midwest,A,66327.70488,N,67940.1,B,D,B,D,C,D,E,2.0404572227365216,1,Private,Medium
-63,University of Cincinnati,Cincinnati,OH,2.4,Tier 4,0.35,B,Midwest,A,68470.83216,Y,67940.1,B,D,D,D,C,D,E,1.9089303608710302,1,Public,Large
-63,University of Kentucky,Lexington,KY,2.4,Tier 4,0.35,C,Southeast,B,74767.80564,Y,59848.200000000004,B,D,C,D,C,D,E,2.4702692547763276,1,Public,Large
-66,Baylor University,Waco,TX,2.3,Tier 4,0.32499999999999996,C,Southwest,C,65655.02952,Y,79810.2,B,D,C,D,C,D,E,1.8076987124719417,1,Private,Large
-66,Kansas State University,Manhattan,KS,2.3,Tier 4,0.32499999999999996,C,Midwest,C,78771.98376,N,62152.200000000004,B,D,C,D,C,D,E,1.2369966156334113,0,Public,Medium
-66,University of Nebraska,Lincoln,NE,2.3,Tier 4,0.32499999999999996,C,Midwest,B,76867.89576,Y,68956.2,B,D,C,D,C,D,E,1.5320386187927437,1,Public,Medium
-66,University of Texas--Dallas,Richardson,TX,2.3,Tier 4,0.32499999999999996,C,Southwest,A,72227.77716,N,79810.2,B,D,B,D,C,D,E,3.3863539788872004,0,Public,Large
-70,University of Colorado--Denver,Denver,CO,2.2,Tier 4,0.30000000000000004,A,West Coast,A,91534.85376,N,76690.8,B,D,C,D,C,D,E,1.8130051438270156,1,Public,Medium
-70,University of North Carolina--Charlotte,Charlotte,NC,2.2,Tier 4,0.30000000000000004,A,Southeast,A,82007.23488,N,72905.40000000001,B,D,C,D,C,D,E,2.2332056357873546,1,Public,Large
-72,Binghamton University--SUNY,Binghamton,NY,2.1,Tier 4,0.275,C,Northeast,B,80305.6278,N,76837.5,B,D,C,D,C,D,E,1.7222528560372892,1,Public,Medium
-72,Bowling Green State University,Bowling Green,OH,2.1,Tier 4,0.275,C,Midwest,C,68044.08276,N,67940.1,B,B,C,D,C,D,E,1.4502527155918992,0,Public,Small
-72,Lehigh University,Bethlehem,PA,2.1,Tier 4,0.275,C,Northeast,B,84041.19144,Y,74280.6,B,D,C,D,C,D,E,1.8296566691203837,1,Private,Medium
-72,University of Central Florida,Orlando,FL,2.1,Tier 4,0.275,B,Southeast,A,78305.68824,Y,71639.1,B,C,D,D,C,D,E,2.7927315688012446,1,Public,Very Large
-72,University of New Mexico,Albuquerque,NM,2.1,Tier 4,0.275,B,Southwest,A,67375.24092,N,64791.9,B,D,C,D,C,D,E,2.67218329648,1,Public,Large
-72,Washington State University,Pullman,WA,2.1,Tier 4,0.275,D,West Coast,D,68633.85444,N,78162.3,B,D,C,D,C,D,E,1.832785846375231,1,Public,Large
-72,Worcester Polytechnic Institute,Worcester,MA,2.1,Tier 4,0.275,C,Northeast,B,91083.4434,N,89694.90000000001,B,D,C,D,C,B,E,1.9765510471406054,0,Private,Medium
-79,Auburn University,Auburn,AL,2,Tier 4,0.25,D,Southeast,D,75171.82212,Y,101412.37101760657,B,D,D,D,C,D,E,2.832949429619717,1,Public,Large
-79,University of Texas--San Antonio,San Antonio,TX,2,Tier 4,0.25,A,Southwest,A,66248.04288,Y,79810.2,B,D,D,D,C,D,E,2.357864090753838,1,Public,Large
-79,Utah State University,Logan,UT,2,Tier 4,0.25,B,West Coast,C,69758.86764,Y,74619.90000000001,B,D,C,D,C,D,E,3.47755213920027,1,Public,Large
-82,Montana State University,Bozeman,MT,1.9,Tier 4,0.22499999999999998,C,West Coast,C,84836.56716,N,57657.6,B,D,C,D,C,D,E,1.4653018219121199,1,Public,Medium
-82,New Jersey Institute of Technology,Newark,NJ,1.9,Tier 4,0.22499999999999998,C,Northeast,A,90801.2532,N,81447.3,D,D,C,D,C,B,E,1.6172119850338829,0,Public,Medium
-82,Northern Illinois University,DeKalb,IL,1.9,Tier 4,0.22499999999999998,C,Midwest,B,84111.27492,N,80131.5,B,D,C,D,C,D,E,1.3639630817005652,0,Public,Medium
-82,University of Alabama,Tuscaloosa,AL,1.9,Tier 4,0.22499999999999998,C,Southeast,B,73247.66832,N,68630.40000000001,B,C,D,D,C,D,E,2.258646461547888,1,Public,Very Large
-86,Marquette University,Milwaukee,WI,1.8,Tier 4,0.2,B,Midwest,A,72420.59556,Y,117104.62942184514,B,D,C,D,C,D,E,2.038041640643203,1,Private,Medium
-86,Oklahoma State University,Stillwater,OK,1.8,Tier 4,0.2,C,Southwest,C,71900.04372,Y,66914.1,B,D,B,D,C,D,E,2.3583325529008743,1,Public,Large
-86,Portland State University,Portland,OR,1.8,Tier 4,0.2,B,West Coast,A,96937.56072,N,72812.7,B,D,C,D,C,D,E,1.4884552988041135,0,Public,Medium
-86,University of Arkansas,Fayetteville,AR,1.8,Tier 4,0.2,C,Southwest,C,66482.75208,N,59760.9,B,D,D,D,C,D,E,2.959676828148947,1,Public,Large
-86,University of North Carolina--Greensboro,Greensboro,NC,1.8,Tier 4,0.2,C,Southeast,B,68674.42644,N,72905.40000000001,B,D,C,D,C,D,E,1.6472514373062543,0,Public,Medium
-86,University of South Florida,Tampa,FL,1.8,Tier 4,0.2,A,Southeast,A,76886.60832,N,71639.1,B,C,D,D,C,D,E,2.449405666442697,1,Public,Very Large
-92,Central Michigan University,Mount Pleasant,MI,1.7,Tier 4,0.175,D,Midwest,C,65116.14708,N,76044.6,B,D,C,D,C,D,E,2.0103900345005954,1,Public,Medium
-92,Michigan Technological University,Houghton,MI,1.7,Tier 4,0.175,D,Midwest,D,70862.39628,N,76044.6,B,D,C,D,C,B,E,1.4749355744792914,0,Public,Medium
-92,Old Dominion University,Norfolk,VA,1.7,Tier 4,0.175,C,Southeast,B,77374.08792,N,76132.8,B,D,C,D,C,D,E,1.826649002002223,1,Public,Large
-92,University of Nevada--Reno,Reno,NV,1.7,Tier 4,0.175,B,West Coast,A,81642.80544,Y,83907.90000000001,B,D,C,D,C,D,E,2.2258118346456626,1,Public,Large
-96,South Dakota State University,Madison,SD,1.6,Tier 4,0.15000000000000002,C,Midwest,C,69192.50232,N,66701.7,B,D,C,D,C,D,E,1.737310022779409,0,Public,Medium
-96,University of Toledo,Toledo,OH,1.6,Tier 4,0.15000000000000002,C,Midwest,B,65064.56472,Y,67940.1,B,D,C,D,C,D,E,1.995700514005578,1,Public,Medium
-96,Western Michigan University,Kalamazoo,MI,1.6,Tier 4,0.15000000000000002,C,Midwest,C,72649.4532,Y,76044.6,B,D,C,D,C,D,E,1.9928945527245132,1,Public,Medium
-99,North Dakota State University,Fargo,ND,1.5,Tier 4,0.125,C,Midwest,B,79386.29699999999,Y,64081.8,B,D,C,D,C,D,E,1.5393041004128563,0,Public,Medium
-99,Oakland University,Rochester Hills,MI,1.5,Tier 4,0.125,C,Midwest,B,79596.8724,N,76044.6,B,D,C,D,C,D,E,2.1119849724938438,1,Public,Medium
-99,University of Northern Colorado,Greeley,CO,1.5,Tier 4,0.125,C,West Coast,C,85381.90464000001,Y,76690.8,B,D,C,D,C,D,E,1.5791518358737058,1,Public,Medium
+1,Stanford University,Stanford,CA,5,Tier 1,1,A,West Coast,A,133914.75216,N,151743,E,B,B,A,A,D,E,3.535551845247583,1,Private,Medium
+2,University of California--Berkeley,Berkeley,CA,4.9,Tier 1,0.9750000000000001,A,West Coast,A,117679.01916,Y,151743,E,A,B,A,A,D,E,3.3213253652773025,1,Public,Very Large
+3,Harvard University,Cambridge,MA,4.7,Tier 1,0.925,B,Northeast,A,120086.94144,N,149491.5,E,B,B,A,A,A,A,3.5780504976998238,1,Private,Medium
+4,University of Chicago,Chicago,IL,4.6,Tier 1,0.8999999999999999,A,Midwest,A,81548.254319999993,N,133552.5,E,B,B,A,B,A,A,3.496752506604924,1,Public,Medium
+4,University of Pennsylvania,Philadelphia,PA,4.6,Tier 1,0.8999999999999999,A,Northeast,A,78477.67056,N,123801,E,B,B,A,B,D,A,3.421322345735836,1,Public,Medium
+6,Carnegie Mellon University,Pittsburgh,PA,4.4,Tier 1,0.8500000000000001,B,Northeast,A,72874.88364,N,123801,E,B,B,A,A,B,C,2.632815851620788,0,Private,Medium
+6,Duke University,Durham,NC,4.4,Tier 1,0.8500000000000001,B,Southeast,B,78649.38792,N,121509,E,B,B,A,A,C,B,3.582183170460947,1,Private,Medium
+6,University of Michigan--Ann Arbor,Ann Arbor,MI,4.4,Tier 1,0.8500000000000001,B,Midwest,B,84563.21280000001,Y,126741,E,A,B,A,A,D,E,4.098244965487071,1,Public,Very Large
+6,University of Washington,Seattle,WA,4.4,Tier 1,0.8500000000000001,A,West Coast,A,104223.11664000001,N,130270.5,D,B,B,A,B,C,B,3.6817221467720795,1,Public,Small
+10,Columbia University,New York,NY,4.3,Tier 1,0.825,A,Northeast,A,137874.70452,Y,128062.5,E,B,B,A,A,D,A,3.493329434451379,1,Private,Medium
+10,Yale University,New Haven,CT,4.3,Tier 1,0.825,C,Northeast,B,88957.6746,N,137907,E,B,B,A,A,A,A,3.404238637626998,1,Private,Medium
+12,Cornell University,Ithaca,NY,4.1,Tier 2,0.7749999999999999,C,Northeast,C,97221.48804,Y,110987.5,D,B,B,B,A,D,E,3.058527757455573,1,Private,Large
+12,University of California--Davis,Davis,CA,4.1,Tier 2,0.7749999999999999,C,West Coast,B,91093.08696,Y,131510.6,C,B,B,B,A,D,E,3.3030788110075795,1,Public,Very Large
+12,University of California--Los Angeles,Los Angeles,CA,4.1,Tier 2,0.7749999999999999,A,West Coast,A,97766.38704,Y,131510.6,D,B,B,B,A,C,B,3.198895160104771,1,Public,Very Large
+12,University of Wisconsin--Madison,Madison,WI,4.1,Tier 2,0.7749999999999999,B,Midwest,B,84673.32708,Y,106133.3,C,B,B,B,A,D,E,3.1900495893179497,1,Public,Very Large
+16,Johns Hopkins University,Baltimore,MD,4,Tier 2,0.75,B,Northeast,A,79874.61624,N,114791.3,D,B,B,B,B,C,B,2.354469843667098,0,Private,Medium
+16,University of North Carolina--Chapel Hill,Chapel Hill,NC,4,Tier 2,0.75,C,Southeast,B,84151.008,Y,105307.8,D,B,B,B,A,C,B,3.3328924503196546,1,Public,Large
+18,North Carolina State University,Raleigh,NC,3.9,Tier 2,0.725,B,Southeast,B,82908.066,Y,105307.8,C,B,B,B,A,B,C,3.063825781838831,0,Public,Large
+18,Pennsylvania State University,University Park,PA,3.9,Tier 2,0.725,C,Northeast,C,82482.79956,Y,107294.2,C,B,B,B,A,D,E,3.6933241150427296,1,Public,Very Large
+18,Texas A&M University--College Station,College Station,TX,3.9,Tier 2,0.725,C,Southwest,C,67040.75184,Y,115281.40000000001,C,B,B,B,A,D,E,3.746692742573387,1,Public,Very Large
+18,University of Illinois--Urbana-Champaign,Champaign,IL,3.9,Tier 2,0.725,C,Midwest,C,76261.39752,Y,115745.5,C,B,B,B,A,D,E,3.2653563442048545,1,Public,Very Large
+22,Iowa State University,Ames,IA,3.8,Tier 2,0.7,C,Midwest,C,74376.37524000001,Y,94582.8,C,B,B,B,A,A,E,2.7700308180957673,0,Public,Large
+22,Purdue University--West Lafayette,West Lafayette,IN,3.8,Tier 2,0.7,C,Midwest,C,74132.97611999999,Y,103372.1,C,B,B,B,A,D,E,3.0639676113812606,0,Public,Very Large
+22,University of California--Irvine,Irvine,CA,3.8,Tier 2,0.7,A,West Coast,A,111909.20808,Y,131510.6,D,B,B,B,A,C,B,3.7053493483215076,1,Public,Large
+22,University of Minnesota--Twin Cities,Minneapolis,MN,3.8,Tier 2,0.7,B,Midwest,A,92792.94383999999,Y,101907,C,B,B,B,A,D,E,3.4182708841192815,1,Public,Very Large
+26,University of Texas--Austin,Austin,TX,3.7,Tier 3,0.675,B,Southwest,A,79991.74224,Y,88678,B,C,C,D,B,D,E,3.089093702313166,1,Public,Very Large
+27,Ohio State University,Columbus,OH,3.6,Tier 3,0.65,B,Midwest,A,72589.03164,N,75489,B,C,C,B,B,C,B,2.5676268061428944,1,Public,Small
+27,Rice University,Houston,TX,3.6,Tier 3,0.65,A,Southwest,A,68223.9888,N,123211.56903288803,C,C,C,B,C,B,E,2.1339566301490227,0,Private,Small
+27,Rutgers University--New Brunswick,Piscataway,NJ,3.6,Tier 3,0.65,C,Northeast,A,94346.08788,N,90497,B,C,C,D,B,D,E,3.2700607405371707,1,Public,Very Large
+30,University of Florida,Gainesville,FL,3.5,Tier 3,0.625,C,Southeast,B,73451.1642,Y,100820.17348306761,C,C,C,D,B,C,B,3.050489968240698,1,Public,Very Large
+31,Michigan State University,East Lansing,MI,3.4,Tier 3,0.6,C,Midwest,C,70359.97944,Y,84494,B,C,C,D,B,C,B,3.0257403381945034,1,Public,Very Large
+31,Washington University in St. Louis,St. Louis,MO,3.4,Tier 3,0.6,A,Midwest,A,74576.04144,N,75541,C,C,B,B,C,D,E,2.469145989328188,1,Private,Medium
+33,University of California--Santa Barbara,Santa Barbara,CA,3.3,Tier 3,0.575,C,West Coast,B,116973.29796,Y,101162,C,C,C,B,B,A,E,2.22872523803107,0,Public,Large
+33,University of Connecticut,Storrs,CT,3.3,Tier 3,0.575,C,Northeast,C,93605.17476,Y,91938,B,C,C,B,B,C,B,2.2738525678475274,1,Public,Large
+33,University of Iowa,Iowa City,IA,3.3,Tier 3,0.575,B,Midwest,C,78323.4192,Y,91695.5496792879,B,C,C,B,B,C,B,2.213331879303647,1,Public,Large
+36,Florida State University,Tallahassee,FL,3.2,Tier 3,0.55,C,Southeast,B,71957.0094,Y,79599,C,C,C,D,B,C,B,2.674468772074859,1,Public,Very Large
+36,New York University,New York,NY,3.2,Tier 3,0.55,A,Northeast,A,137874.70452,Y,85375,C,C,B,B,C,C,B,2.6644535695068043,1,Private,Large
+36,Northwestern University,Evanston,IL,3.2,Tier 3,0.55,C,Midwest,B,81548.254319999993,N,89035,C,C,B,B,C,D,E,2.9625740839770818,1,Private,Medium
+36,University of California--San Diego,La Jolla,CA,3.2,Tier 3,0.55,A,West Coast,A,106768.99884,Y,101162,C,C,C,D,B,D,E,2.380672404519741,1,Public,Very Large
+36,Virginia Tech,Blacksburg,VA,3.2,Tier 3,0.55,C,Southeast,C,81665.5638,Y,84592,B,C,C,D,B,B,E,3.1160682616147715,1,Public,Very Large
+41,Brown University,Providence,RI,3.1,Tier 3,0.525,A,Northeast,A,74675.93004,N,86714,C,C,B,B,C,D,E,1.9838548727576761,1,Private,Medium
+41,Colorado State University,Fort Collins,CO,3.1,Tier 3,0.525,C,West Coast,B,91469.7474,N,85212,B,C,C,B,B,D,E,2.1670927452714475,0,Public,Small
+41,University of California--Riverside,Riverside,CA,3.1,Tier 3,0.525,A,West Coast,A,83185.1028,Y,137913.0369283512,C,C,C,B,B,B,E,2.4421411364203456,1,Public,Large
+41,University of Georgia,Athens,GA,3.1,Tier 3,0.525,A,Southeast,C,64832.488079999996,Y,112135.32325116335,B,C,C,D,B,D,E,2.5548508958251173,1,Public,Very Large
+41,University of Pittsburgh,Pittsburgh,PA,3.1,Tier 3,0.525,B,Northeast,A,72874.88364,N,82534,B,C,C,B,B,D,E,2.2091077951138924,1,Public,Small
+41,University of Virginia,Charlottesville,VA,3.1,Tier 3,0.525,C,Southeast,C,90203.19288,Y,84592,C,C,C,B,B,D,E,2.9709254623921018,1,Public,Large
+47,Boston University,Boston,MA,3,Tier 3,0.5,B,Northeast,A,122494.87931999999,N,99661,C,C,B,B,C,C,B,2.9363053716904703,1,Private,Large
+47,University of California--Santa Cruz,Santa Cruz,CA,3,Tier 3,0.5,C,West Coast,B,137829.51408,Y,101162,B,C,C,B,B,D,E,2.231987526510805,0,Public,Large
+49,George Mason University,Fairfax,VA,2.9,Tier 3,0.475,C,Southeast,B,110032.49724,Y,84592,B,C,C,B,B,B,E,2.3971480434169257,0,Public,Large
+49,George Washington University,Washington,DC,2.9,Tier 3,0.475,A,Northeast,A,120289.63692,N,100385,C,C,B,B,C,D,E,2.1206143143095253,1,Private,Medium
+49,Temple University,Philadelphia,PA,2.9,Tier 3,0.475,A,Northeast,A,78477.67056,Y,82534,C,C,C,B,B,B,E,2.255039764294181,1,Public,Large
+49,University of Illinois--Chicago,Chicago,IL,2.9,Tier 3,0.475,A,Midwest,A,81548.254319999993,Y,89035,C,C,C,B,B,B,E,2.385963279311094,1,Public,Large
+53,University of Maryland--Baltimore County,Baltimore,MD,2.8,Tier 4,0.44999999999999996,B,Northeast,A,79874.61624,N,79470.90000000001,B,D,C,D,C,B,E,2.22090532718563,1,Public,Medium
+53,University of Massachusetts--Amherst,Amherst,MA,2.8,Tier 4,0.44999999999999996,C,Northeast,B,93593.23991999999,N,89694.90000000001,B,D,C,D,C,B,E,2.1182290958553596,1,Public,Large
+53,University of Missouri--Columbia,Columbia,MO,2.8,Tier 4,0.44999999999999996,C,Midwest,C,74433.64296,Y,67986.90000000001,B,D,C,D,C,D,E,2.2239701332480686,1,Public,Large
+53,University of Notre Dame,Notre Dame,IN,2.8,Tier 4,0.44999999999999996,D,Midwest,D,73174.84908,N,109927.9855108636,B,D,B,D,C,D,E,1.3123364613246258,0,Public,Medium
+53,University of Rochester,Rochester,NY,2.8,Tier 4,0.44999999999999996,C,Northeast,B,84268.77275999999,Y,76837.5,B,D,C,D,C,C,B,1.9103633310060593,1,Public,Medium
+58,Arizona State University,Tempe,AZ,2.7,Tier 4,0.42500000000000004,A,Southwest,A,82847.376,N,78184.8,B,D,D,D,C,B,E,2.08717082060514,1,Public,Small
+58,Clemson University,Clemson,SC,2.7,Tier 4,0.42500000000000004,B,Southeast,C,64828.88436,Y,100358.47312021778,B,D,C,D,C,D,E,1.2154077640969014,0,Public,Large
+58,Indiana University--Bloomington,Bloomington,IN,2.7,Tier 4,0.42500000000000004,B,Midwest,C,77917.7376,Y,71565.3,B,C,B,D,C,C,B,2.6113300885366963,1,Public,Very Large
+58,Oregon State University,Corvallis,OR,2.7,Tier 4,0.42500000000000004,C,West Coast,C,90421.69847999999,Y,72812.7,B,D,C,D,C,D,E,2.701136683113873,0,Public,Large
+58,University of Colorado--Boulder,Boulder,CO,2.7,Tier 4,0.42500000000000004,C,West Coast,C,101991.82272,N,76690.8,B,C,C,D,C,B,E,1.3988142514280195,0,Public,Very Large
+58,University of South Carolina,Columbia,SC,2.7,Tier 4,0.42500000000000004,C,Southeast,C,70478.52276,N,68060.7,B,B,D,D,C,C,B,1.8417082924349426,1,Public,Small
+64,Georgetown University,Washington,DC,2.6,Tier 4,0.4,A,Northeast,A,120289.63692,N,90346.5,C,D,C,D,C,C,B,1.6407417948816079,1,Private,Medium
+64,University of Kentucky,Lexington,KY,2.6,Tier 4,0.4,C,Southeast,B,74767.80564,Y,59848.200000000004,B,D,C,D,C,D,E,1.7603155793375325,1,Public,Large
+66,Brigham Young University-Provo,Provo,UT,2.5,Tier 4,0.375,C,West Coast,C,74034.13488,N,74619.90000000001,B,C,C,D,C,D,E,1.8690809579812768,0,Private,Very Large
+66,Case Western Reserve University,Cleveland,OH,2.5,Tier 4,0.375,B,Midwest,A,66327.70488,N,67940.1,B,D,C,D,C,C,B,2.0674623092957405,1,Private,Medium
+66,SMU,Dallas,TX,2.5,Tier 4,0.375,A,Southwest,A,72227.77716,Y,79810.2,B,D,C,D,C,D,E,1.4931531865333032,0,Private,Medium
+66,University of Arizona,Tucson,AZ,2.5,Tier 4,0.375,B,Southwest,B,70794.96048000001,N,123494.76705376356,C,C,C,D,C,B,E,2.6073514114919494,1,Public,Very Large
+66,University of Texas--Dallas,Richardson,TX,2.5,Tier 4,0.375,B,Southwest,A,72227.77716,Y,79810.2,B,D,C,D,C,D,E,1.506420318045983,0,Public,Large
+66,Wake Forest University,Winston-Salem,NC,2.5,Tier 4,0.375,B,Southeast,B,67151.36184,N,72905.40000000001,B,D,C,D,C,D,E,1.3528557350976642,0,Private,Medium
+72,Baylor University,Waco,TX,2.4,Tier 4,0.35,C,Southwest,C,65655.02952,Y,79810.2,B,D,C,D,C,C,B,2.030663363302355,1,Private,Large
+72,Kansas State University,Manhattan,KS,2.4,Tier 4,0.35,C,Midwest,C,78771.98376,N,62152.200000000004,B,B,C,D,C,D,E,1.0951680611789913,0,Public,Medium
+72,Rochester Institute of Technology,Rochester,NY,2.4,Tier 4,0.35,C,Northeast,B,84268.77275999999,Y,76837.5,B,D,C,D,C,B,E,1.4533929007857966,0,Private,Medium
+72,University of Cincinnati,Cincinnati,OH,2.4,Tier 4,0.35,B,Midwest,A,68470.83216,Y,67940.1,B,D,C,D,C,D,E,2.164210513398513,1,Public,Large
+72,University of North Carolina--Charlotte,Charlotte,NC,2.4,Tier 4,0.35,A,Southeast,A,82007.23488,Y,72905.40000000001,B,D,C,D,C,C,B,2.012235820892964,1,Public,Large
+72,Washington State University,Pullman,WA,2.4,Tier 4,0.35,D,West Coast,D,68633.85444,N,78162.3,B,D,C,D,C,B,E,2.2894028690635877,1,Public,Large
+78,University of New Mexico,Albuquerque,NM,2.3,Tier 4,0.32499999999999996,B,Southwest,A,67375.24092,Y,64791.9,B,D,C,D,C,D,E,2.007175158293304,1,Public,Large
+79,Amherst College,Amherst,MA,2.2,Tier 4,0.30000000000000004,B,Northeast,B,93593.23991999999,N,89694.90000000001,B,D,C,D,C,D,E,1.3873807592940048,0,Private,Small
+79,Binghamton University--SUNY,Binghamton,NY,2.2,Tier 4,0.30000000000000004,C,Northeast,B,80305.6278,N,76837.5,B,D,C,D,C,B,E,1.8744955136575105,1,Public,Medium
+79,Lehigh University,Bethlehem,PA,2.2,Tier 4,0.30000000000000004,C,Northeast,B,84041.19144,N,114694.07936800523,B,D,C,D,C,D,E,1.8296010855074687,1,Private,Medium
+79,University of Colorado--Denver,Denver,CO,2.2,Tier 4,0.30000000000000004,A,West Coast,A,91534.85376,N,76690.8,B,D,C,D,C,D,E,1.7420605136443639,1,Public,Medium
+79,Virginia Commonwealth University,Richmond,VA,2.2,Tier 4,0.30000000000000004,A,Southeast,A,76501.36368,Y,120966.3737055294,C,D,C,D,C,C,B,1.9644906221284857,1,Public,Large
+79,Worcester Polytechnic Institute,Worcester,MA,2.2,Tier 4,0.30000000000000004,C,Northeast,B,91083.4434,N,89694.90000000001,B,D,C,D,C,B,E,1.2940073773746137,0,Private,Medium
+85,Miami University-Oxford,Oxford,OH,2.1,Tier 4,0.275,C,Midwest,C,72168.11568,N,67940.1,B,D,C,D,C,B,E,1.787429919007869,0,Public,Large
+85,New Jersey Institute of Technology,Newark,NJ,2.1,Tier 4,0.275,C,Northeast,A,90801.2532,Y,81447.3,B,D,C,D,C,B,E,1.5358765347416143,0,Public,Medium
+85,Texas Tech University,Lubbock,TX,2.1,Tier 4,0.275,B,Southwest,C,67056.8844,Y,79810.2,B,C,C,D,C,B,E,1.3968445187777432,0,Public,Very Large
+85,University of Delaware,Newark,DE,2.1,Tier 4,0.275,C,Northeast,B,85457.84664,N,87591.6,B,D,C,D,C,B,E,1.7154800116788145,0,Public,Large
+85,University of Tennessee-Knoxville,Knoxville,TN,2.1,Tier 4,0.275,B,Southeast,B,68106.31284,N,67517.1,B,D,C,D,C,D,E,2.438603713918538,1,Public,Large
+85,Utah State University,Logan,UT,2.1,Tier 4,0.275,C,West Coast,C,69758.86764,Y,74619.90000000001,B,D,C,D,C,D,E,2.0761402671867537,1,Public,Large
+91,Auburn University,Auburn,AL,2,Tier 4,0.25,D,Southeast,D,75171.82212,N,68630.40000000001,B,D,C,D,C,C,B,2.4414605304213666,1,Public,Large
+91,Bowling Green State University,Bowling Green,OH,2,Tier 4,0.25,C,Midwest,C,68044.08276,N,67940.1,B,D,D,D,C,D,E,1.7393478433832552,0,Public,Small
+91,San Diego State University,San Diego,CA,2,Tier 4,0.25,A,West Coast,A,106768.99884,Y,91045.8,B,C,C,D,C,D,E,2.162581117233144,0,Public,Very Large
+91,University of Central Florida,Orlando,FL,2,Tier 4,0.25,B,Southeast,A,78305.68824,Y,71639.1,B,C,C,D,C,B,E,2.027862770279067,1,Public,Very Large
+91,University of Kansas Medical Center,Kansas City,KS,2,Tier 4,0.25,A,Midwest,A,75127.91664,Y,62152.200000000004,B,D,D,D,C,D,E,1.8592639547282481,1,Public,Small
+91,University of Texas--San Antonio,San Antonio,TX,2,Tier 4,0.25,A,Southwest,A,66248.04288,Y,79810.2,B,D,C,D,C,C,B,2.0753489879817737,1,Public,Large
+91,Villanova University,Villanova,PA,2,Tier 4,0.25,C,Northeast,B,85030.11708,Y,74280.6,B,D,C,D,C,D,E,1.5154646844400608,0,Private,Medium
+98,California Polytechnic State University-San Luis Obispo,San Luis Obispo,CA,1.9,Tier 4,0.22499999999999998,C,West Coast,C,99948.51288,N,91045.8,B,D,C,D,C,B,E,1.6291209375836957,0,Public,Large
+98,Marquette University,Milwaukee,WI,1.9,Tier 4,0.22499999999999998,B,Midwest,A,72420.59556,Y,73476.90000000001,B,D,C,D,C,C,B,1.802925445980043,1,Private,Medium
+98,Oklahoma State University,Stillwater,OK,1.9,Tier 4,0.22499999999999998,C,Southwest,C,71900.04372,Y,66914.1,B,D,C,D,C,C,B,2.402532244965499,1,Public,Large
+98,University of Alabama,Tuscaloosa,AL,1.9,Tier 4,0.22499999999999998,C,Southeast,B,73247.66832,N,68630.40000000001,B,C,C,D,C,C,B,1.8472399425926675,1,Public,Very Large
+98,University of Nebraska,Lincoln,NE,1.9,Tier 4,0.22499999999999998,C,Midwest,B,76867.89576,N,68956.2,B,D,C,D,C,D,E,2.106073469756837,1,Public,Medium
+98,University of Vermont,Burlington,VT,1.9,Tier 4,0.22499999999999998,B,NA,B,104536.5582,Y,68220.90000000001,B,D,C,D,C,C,B,1.9103355530274293,1,Public,Medium
+104,American University,Washington,DC,1.8,Tier 4,0.2,A,Northeast,A,120289.63692,N,132335.40562336403,C,D,B,D,C,B,E,1.460452092142556,0,Private,Medium
+104,CUNY Bernard M Baruch College,New York,NY,1.8,Tier 4,0.2,A,Northeast,A,137874.70452,Y,76837.5,B,D,C,D,C,D,E,1.983223052734111,0,Public,Large
+104,Montana State University,Bozeman,MT,1.8,Tier 4,0.2,C,West Coast,C,84836.56716,Y,57657.6,B,D,C,D,C,B,E,1.9484254244346908,1,Public,Medium
+104,Old Dominion University,Norfolk,VA,1.8,Tier 4,0.2,C,Southeast,B,77374.08792,Y,76132.8,B,D,C,D,C,D,E,2.249694351428874,1,Public,Large
+104,University of Nevada--Reno,Reno,NV,1.8,Tier 4,0.2,B,West Coast,A,81642.80544,Y,83907.90000000001,B,D,C,D,C,C,B,2.1649977225993386,1,Public,Large
+104,University of New Hampshire,Durham,NH,1.8,Tier 4,0.2,C,Northeast,C,78484.2162,N,78831,B,D,C,D,C,D,E,1.6511349584988413,0,Public,Medium
+104,University of Wyoming,Laramie,WY,1.8,Tier 4,0.2,C,West Coast,C,82816.63068,N,73280.7,B,D,C,D,C,D,E,1.3933035200030917,0,Public,Medium
+111,Central Michigan University,Mount Pleasant,MI,1.7,Tier 4,0.175,D,Midwest,C,65116.14708,N,76044.6,B,D,C,D,C,D,E,2.2145852707535316,1,Public,Medium
+111,Michigan Technological University,Houghton,MI,1.7,Tier 4,0.175,D,Midwest,D,70862.39628,Y,76044.6,B,D,C,D,C,B,E,1.8441637107526576,0,Public,Medium
+111,Mount Holyoke College,NA,MA,1.7,Tier 4,0.175,NA,Northeast,NA,NA,N,89694.90000000001,B,D,C,D,C,D,E,3.120469501707703,0,Private,Small
+111,Portland State University,Portland,OR,1.7,Tier 4,0.175,B,West Coast,A,96937.56072,N,72812.7,B,D,C,D,C,D,E,1.2664757119702397,0,Public,Medium
+111,University of Arkansas,Fayetteville,AR,1.7,Tier 4,0.175,C,Southwest,C,66482.75208,Y,59760.9,B,D,C,D,C,D,E,1.9202092010679217,1,Public,Large
+111,University of Maine,NA,ME,1.7,Tier 4,0.175,NA,NA,NA,NA,N,70020.90000000001,B,D,B,D,C,B,E,3.3863539788872004,0,Public,Medium
+111,University of Toledo,Toledo,OH,1.7,Tier 4,0.175,C,Midwest,B,65064.56472,Y,67940.1,B,D,C,D,C,D,E,1.9574118619993333,1,Public,Medium
+111,Wichita State University,NA,KS,1.7,Tier 4,0.175,NA,Midwest,NA,NA,N,91471.62690517427,C,D,C,D,C,B,E,1.5095612507448148,0,Public,Medium
+119,Barnard College,NA,NY,1.6,Tier 4,0.15000000000000002,NA,Northeast,NA,NA,N,76837.5,B,D,C,D,C,D,E,1.477744390863716,0,Private,Small
+119,California State University-Fullerton,NA,CA,1.6,Tier 4,0.15000000000000002,NA,West Coast,NA,NA,Y,91045.8,B,C,C,D,C,D,E,1.9702893316177883,0,Public,Very Large
+119,Claremont Graduate University,NA,CA,1.6,Tier 4,0.15000000000000002,NA,West Coast,NA,NA,N,91045.8,B,D,C,D,C,B,E,1.7096190470470234,0,Private,Medium
+119,CUNY Hunter College,NA,NY,1.6,Tier 4,0.15000000000000002,NA,Northeast,NA,NA,N,76837.5,B,D,C,D,C,B,E,1.753776957236676,0,Public,Large
+119,Missouri S&T,NA,MO,1.6,Tier 4,0.15000000000000002,NA,Midwest,NA,NA,N,67986.90000000001,B,D,C,D,C,D,E,3.281715126009658,0,Private,Small
+119,North Dakota State University,Fargo,ND,1.6,Tier 4,0.15000000000000002,B,Midwest,B,79386.29699999999,N,102307.87423407761,B,D,C,D,C,B,E,1.6973493985627177,0,Public,Medium
+119,Northern Illinois University,DeKalb,IL,1.6,Tier 4,0.15000000000000002,C,Midwest,B,84111.27492,N,80131.5,B,D,C,D,C,B,E,1.662123912330301,0,Public,Medium
+119,South Dakota State University,Madison,SD,1.6,Tier 4,0.15000000000000002,A,Midwest,C,69192.50232,N,92703.47490653199,B,D,C,D,C,D,E,1.34242960357113,0,Public,Medium
+119,University of Akron,NA,OH,1.6,Tier 4,0.15000000000000002,NA,Midwest,NA,NA,Y,67940.1,B,D,C,D,C,D,E,1.4593338235297582,0,Public,Medium
+119,University of Idaho,NA,ID,1.6,Tier 4,0.15000000000000002,NA,NA,NA,NA,N,65523.6,B,D,C,D,C,B,E,1.3240541083345563,0,Public,Medium
+119,University of Minnesota-Duluth,NA,MN,1.6,Tier 4,0.15000000000000002,NA,Midwest,NA,NA,N,70551,B,D,C,D,C,D,E,1.132324625036399,0,Public,Medium
+119,University of North Carolina--Greensboro,Greensboro,NC,1.6,Tier 4,0.15000000000000002,C,Southeast,B,68674.42644,N,72905.40000000001,B,D,C,D,C,D,E,1.2590339796631531,0,Public,Medium
+119,University of South Florida,Tampa,FL,1.6,Tier 4,0.15000000000000002,A,Southeast,A,76886.60832,Y,71639.1,B,C,C,D,C,C,B,2.4272921326262216,1,Public,Very Large
+119,Western Michigan University,Kalamazoo,MI,1.6,Tier 4,0.15000000000000002,C,Midwest,C,72649.4532,N,76044.6,B,D,C,D,C,D,E,1.6449477768347944,1,Public,Medium
+133,Ball State University,NA,IN,1.5,Tier 4,0.125,NA,Midwest,NA,NA,N,71565.3,D,D,C,D,C,D,E,1.6844855812592388,0,Public,Medium
+133,Florida International University,NA,FL,1.5,Tier 4,0.125,NA,Southeast,NA,NA,Y,71639.1,B,C,B,D,C,D,E,2.341518642048113,0,Public,Very Large
+133,Idaho State University,NA,ID,1.5,Tier 4,0.125,NA,NA,NA,NA,Y,93568.10261640082,B,D,C,D,C,B,E,1.3277697116723475,0,Public,Medium
+133,Kennesaw State University,NA,GA,1.5,Tier 4,0.125,NA,Southeast,NA,NA,Y,104323.30826084773,B,D,B,D,C,D,E,1.5625319193168734,0,Public,Large
+133,Loyola University Chicago,NA,IL,1.5,Tier 4,0.125,NA,Midwest,NA,NA,N,80131.5,B,D,C,D,C,D,E,1.079695444983594,0,Private,Medium
+133,San Jose State University,NA,CA,1.5,Tier 4,0.125,NA,West Coast,NA,NA,Y,91045.8,B,D,B,D,C,B,E,1.592695758933138,0,Public,Large
+133,University of Northern Colorado,Greeley,CO,1.5,Tier 4,0.125,C,West Coast,C,85381.90464000001,Y,76690.8,B,D,C,D,C,B,E,1.4537749533946294,1,Public,Medium
+133,University of Northern Iowa,Cedar Falls,IA,1.5,Tier 4,0.125,NA,Midwest,NA,NA,N,65480.4,B,D,C,D,C,B,E,3.0354683056939393,0,Public,Medium
+133,University of Texas-El Paso,NA,TX,1.5,Tier 4,0.125,NA,Southwest,NA,NA,Y,79810.2,B,D,C,D,C,D,E,2.0290602704699157,0,Public,Large
+133,Wright State University,NA,OH,1.5,Tier 4,0.125,NA,Midwest,NA,NA,N,67940.1,B,D,C,D,C,D,E,1.381143112101923,0,Public,Medium
+143,California State University-East Bay,NA,CA,1.4,Tier 4,0.09999999999999998,NA,West Coast,NA,NA,N,134394.34466291266,B,D,C,D,C,D,E,1.7213898419500953,0,Public,Medium
+143,Eastern Kentucky University,NA,KY,1.4,Tier 4,0.09999999999999998,NA,Southeast,NA,NA,N,59848.200000000004,B,D,C,D,C,B,E,1.4327719784399364,0,Public,Medium
+143,Eastern Michigan University,NA,MI,1.4,Tier 4,0.09999999999999998,NA,Midwest,NA,NA,N,76044.6,B,D,C,D,C,D,E,1.4284103837601294,0,Public,Medium
+143,Minnesota State University-Mankato,NA,MN,1.4,Tier 4,0.09999999999999998,NA,Midwest,NA,NA,N,70551,C,D,C,D,C,B,E,1.5618430518826973,0,Public,Medium
+143,Montclair State University,NA,NJ,1.4,Tier 4,0.09999999999999998,NA,Northeast,NA,NA,Y,81447.3,B,D,C,D,C,D,E,1.2459242227680267,0,Public,Large
+143,Oakland University,Rochester Hills,MI,1.4,Tier 4,0.09999999999999998,C,Midwest,B,79596.8724,N,76044.6,B,D,C,D,C,D,E,2.0570433834540034,1,Public,Medium
+143,Southern Illinois University Carbondale,NA,IL,1.4,Tier 4,0.09999999999999998,NA,Midwest,NA,NA,N,80131.5,B,D,C,D,C,D,E,1.111058393918389,0,Public,Medium
+143,University of Central Oklahoma,NA,OK,1.4,Tier 4,0.09999999999999998,NA,Southwest,NA,NA,Y,66914.1,B,D,C,D,C,B,E,1.1620405654832315,0,Public,Medium
+143,University of North Florida,NA,FL,1.4,Tier 4,0.09999999999999998,NA,Southeast,NA,NA,N,71639.1,B,D,C,D,C,B,E,1.4965180085272636,0,Public,Medium
+152,Appalachian State University,NA,NC,1.3,Tier 4,0.07500000000000001,NA,Southeast,NA,NA,N,72905.40000000001,B,B,C,D,C,D,E,1.7768569343300027,0,Public,Large
+152,California State University-Long Beach,NA,CA,1.3,Tier 4,0.07500000000000001,NA,West Coast,NA,NA,Y,91045.8,B,C,C,D,C,D,E,2.0039844118999373,0,Public,Very Large
+152,Sam Houston State University,NA,TX,1.3,Tier 4,0.07500000000000001,NA,Southwest,NA,NA,Y,118092.37227608245,B,D,B,D,C,D,E,1.4559848407831142,0,Public,Large
+152,Slippery Rock University of Pennsylvania,NA,PA,1.3,Tier 4,0.07500000000000001,NA,Northeast,NA,NA,N,74280.6,B,D,C,D,C,D,E,1.0811203226131694,0,Public,Medium
+152,University of South Alabama,NA,AL,1.3,Tier 4,0.07500000000000001,NA,Southeast,NA,NA,N,68630.40000000001,B,D,C,D,C,B,E,1.6714704249233336,0,Public,Medium
+152,West Chester University,NA,PA,1.3,Tier 4,0.07500000000000001,NA,Northeast,NA,NA,N,74280.6,B,D,C,D,C,D,E,1.5099594964088676,0,Public,Medium
+158,Arkansas Tech University,NA,AR,1.2,Tier 4,0.04999999999999999,NA,Southwest,NA,NA,N,59760.9,B,D,C,D,C,B,E,1.3559495560342398,0,Public,Medium
+159,California Baptist University,NA,CA,1.1,Tier 4,0.025000000000000022,NA,West Coast,NA,NA,N,91045.8,B,D,C,D,C,B,E,1.4309809268308573,0,Private,Medium

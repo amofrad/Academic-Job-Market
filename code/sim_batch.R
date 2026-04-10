@@ -32,12 +32,10 @@ reps_per_task <- 20L
 rep_start <- (task_id - 1L) * reps_per_task + 1L
 rep_end   <- task_id * reps_per_task
 
-cat(sprintf("=== SIM BATCH: Task %d | Replicates %d-%d ===\n",
+cat(sprintf("Sim batch: task %d, replicates %d-%d\n",
             task_id, rep_start, rep_end))
-cat("Time:", format(Sys.time()), "\n\n")
 
 # Load burn-in artifacts
-cat("Loading output/burn_in_artifacts.rds...\n")
 artifacts <- readRDS("output/burn_in_artifacts.rds")
 
 departments                <- artifacts$departments
@@ -60,17 +58,14 @@ burn_in_seed  <- base_seed
 
 # Reconstruct learned prior models from burn-in historical data
 # (torch models cannot be serialized via saveRDS; retrain from data)
-cat("Reconstructing learned prior models from burn-in data...\n")
 learned_prior_models <- reconstruct_learned_prior_models(
   burn_in_historical = burn_in_historical,
   questions          = questions,
   seed               = burn_in_seed
 )
-cat("Done.\n\n")
 
 # Parallel setup
 n_workers <- reps_per_task
-cat(sprintf("Setting up %d workers for %d replicates\n", n_workers, reps_per_task))
 
 old_plan <- future::plan()
 on.exit(future::plan(old_plan), add = TRUE)
@@ -165,7 +160,7 @@ rep_outputs <- future.apply::future_lapply(
 )
 
 elapsed <- round(difftime(Sys.time(), start_time, units = "hours"), 2)
-cat(sprintf("\nBatch %d completed in %s hours\n", task_id, elapsed))
+cat(sprintf("Batch %d completed in %s hours\n", task_id, elapsed))
 
 # Aggregate results
 rate_keys <- as.character(participation_rates)
@@ -209,7 +204,6 @@ batch_results <- list(
 out_file <- sprintf("output/sim_batch_%d.rds", task_id)
 saveRDS(batch_results, out_file, compress = "gzip")
 cat(sprintf("Saved %s (%.1f MB)\n", out_file, file.size(out_file) / 1e6))
-cat("Done.\n")
 
 # Save session info to requirements.txt
 if (task_id == 1L)

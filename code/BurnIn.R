@@ -20,9 +20,6 @@ source("code/Sim_Functions.R")
 
 dir.create("output", showWarnings = FALSE)
 
-cat("=== BURN-IN STAGE ===\n")
-cat("Time:", format(Sys.time()), "\n\n")
-
 # Configuration
 base_seed           <- 14
 n_candidates        <- 300
@@ -38,7 +35,7 @@ set.seed(base_seed)
 torch::torch_manual_seed(base_seed)
 
 # Load and prepare departments
-departments_final <- read_csv("data/departments_dataset.csv")
+departments_final <- read_csv("data/departments_dataset.csv") %>% filter(rank <= 100)
 departments_raw   <- departments_final %>% mutate(dept_id = row_number())
 departments       <- prepare_departments(departments_raw, questions, seed = base_seed)
 n_departments     <- nrow(departments)
@@ -101,4 +98,3 @@ burn_in_artifacts <- list(
 saveRDS(burn_in_artifacts, "output/burn_in_artifacts.rds", compress = "gzip")
 cat(sprintf("Saved output/burn_in_artifacts.rds (%.1f MB)\n",
             file.size("output/burn_in_artifacts.rds") / 1e6))
-cat("Burn-in stage complete.\n")

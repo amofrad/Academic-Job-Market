@@ -52,7 +52,7 @@ torch::install_torch()
 - **Memory**: >= 16 GB RAM recommended (32 GB for full 200-replicate runs)
 - **CPU**: Multi-core processor recommended; each simulation batch uses 20 parallel workers
 - **Runtime estimates**:
-  - `BurnIn.R` (Stage 1): ~10-15 minutes
+  - `BurnIn.R` (Stage 1): ~45-60 minutes
   - `sim_batch.R` (Stage 2): ~2.5-3.5 hours per batch (20 replicates each). The 10 batches can be run in parallel on an HPC cluster, so wall-clock time for the full 200 replicates is approximately 2.5-3.5 hours when parallelized.
   - `Result_processer.R` (Stage 3): ~5 minutes
 
@@ -68,15 +68,15 @@ Academic-Job-Market/
 │   ├── sim_array.sh                    # SGE job array script for HPC
 │   ├── Result_processer.R              # Stage 3: Combine results and generate figures
 │   └── department_generator/           # Department dataset construction (Stage 0)
-│       ├── USNews_Rankings_Scraper.R   # Scrape and parse US News 2022 rankings
+│       ├── USNews_Rankings_Scraper.R   # Scrape and parse US News 2026 rankings
 │       ├── Department_Generator.R      # Build department attributes
 │       ├── USNews-Scrapper/            # Git submodule: Python web scraper
-│       ├── usnews_statistics.csv       # Scraped rankings (101 departments)
+│       ├── usnews_statistics.csv       # Scraped rankings (159 departments)
 │       └── supporting_data/
 │           ├── cost_of_living_us.csv   # County-level cost of living (EPI Family Budget)
 │           └── salary_data.csv         # State-level faculty salary data (NCES 2023)
 ├── data/
-│   └── departments_dataset.csv         # Pre-built department dataset (101 departments)
+│   └── departments_dataset.csv         # Pre-built department dataset (159 departments; sim uses rank <= 100)
 ├── manuscript/                         # LaTeX source
 │   └── fig/                            # Generated figures
 └── output/                             # Generated artifacts
@@ -103,7 +103,7 @@ The department dataset (`data/departments_dataset.csv`) is provided pre-built. T
    Output: `data/departments_dataset.csv`
 
    This script:
-   - Loads the US News 2022 rankings of 101 statistics departments
+   - Loads the US News 2026 rankings of 159 statistics departments
    - Matches each department to the US College Scorecard database to obtain institutional characteristics (enrollment, selectivity, public/private status, locale)
    - Assigns geographic attributes (setting, region, airport proximity) via hand-coded lookup tables
    - Computes cost-of-living from county-level EPI Family Budget data
@@ -183,11 +183,11 @@ A data dictionary for `departments_dataset.csv` is provided in `data/Data_Dictio
 
 ### `departments_dataset.csv`
 
-The primary input dataset containing 101 US statistics departments with the following variables:
+The primary input dataset contains 159 US statistics departments. The simulation uses departments with rank ≤ 100, yielding 103 departments due to ties at rank 98.
 
 | Variable | Type | Description |
 |----------|------|-------------|
-| `rank` | Integer | US News 2022 ranking (1-101) |
+| `rank` | Integer | US News 2026 ranking (1-159) |
 | `university` | Character | University name |
 | `city`, `state` | Character | Location |
 | `peer_assessment_score` | Numeric | US News peer assessment (1-5 scale) |

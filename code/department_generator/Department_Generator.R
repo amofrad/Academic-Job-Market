@@ -3,7 +3,7 @@
 # Department_Generator.R — Construct department dataset for simulation
 #
 # Builds a complete department dataset by:
-#   1. Loading US News 2022 statistics department rankings (usnews_statistics.csv)
+#   1. Loading US News 2026 statistics department rankings (usnews_statistics.csv)
 #   2. Matching departments to US College Scorecard data
 #   3. Assigning geographic attributes (setting, region, airport, cost of living)
 #   4. Estimating compensation, teaching, and research environment attributes
@@ -15,7 +15,7 @@
 #   supporting_data/salary_data.csv
 #
 # Output:
-#   ../../data/departments_dataset.csv — 101 departments with all questionnaire attributes
+#   ../../data/departments_dataset.csv — departments with all questionnaire attributes
 #
 # Required packages: dplyr, tidyverse, collegeScorecard, stringdist
 # =============================================================================
@@ -38,16 +38,38 @@ library(stringdist)
 data(school)
 data(scorecard)
 
-departments <- read_csv("usnews_statistics.csv")
+departments <- read_csv("usnews_statistics.csv") %>%
+  mutate(city = str_trim(city))
 
 # Fix missing city entries
 departments <- departments %>%
   mutate(
     city = case_when(
       university == "Boston University"        ~ "Boston",
+      university == "Johns Hopkins University" ~ "Baltimore",
       university == "University of Nebraska"   ~ "Lincoln",
       university == "University of Alabama"    ~ "Tuscaloosa",
       university == "Portland State University" ~ "Portland",
+      university == "Brown University"         ~ "Providence",
+      university == "Wake Forest University"   ~ "Winston-Salem",
+      university == "Rochester Institute of Technology" ~ "Rochester",
+      university == "Virginia Commonwealth University" ~ "Richmond",
+      university == "Miami University-Oxford"  ~ "Oxford",
+      university == "Texas Tech University"    ~ "Lubbock",
+      university == "University of Delaware"   ~ "Newark",
+      university == "University of Tennessee-Knoxville" ~ "Knoxville",
+      university == "San Diego State University" ~ "San Diego",
+      university == "University of Kansas Medical Center" ~ "Kansas City",
+      university == "Villanova University"     ~ "Villanova",
+      university == "California Polytechnic State University-San Luis Obispo" ~ "San Luis Obispo",
+      university == "University of Vermont"    ~ "Burlington",
+      university == "American University"      ~ "Washington",
+      university == "CUNY Bernard M Baruch College" ~ "New York",
+      university == "University of New Hampshire" ~ "Durham",
+      university == "University of Wyoming"    ~ "Laramie",
+      university == "Georgetown University"    ~ "Washington",
+      university == "Brigham Young University-Provo" ~ "Provo",
+      university == "Amherst College"          ~ "Amherst",
       TRUE ~ city
     )
   )
@@ -63,8 +85,6 @@ departments <- departments %>%
       TRUE        ~ "Tier 4"    # Rest
     )
   )
-
-table(departments$tier)
 
 # Initialize all questionnaire variables
 departments <- departments %>%
@@ -109,7 +129,8 @@ city_setting <- tribble(
   "Dallas", "TX", "A", "La Jolla", "CA", "A", "Irvine", "CA", "A",
   "Riverside", "CA", "A", "Tempe", "AZ", "A", "St. Louis", "MO", "A",
   "Denver", "CO", "A", "Charlotte", "NC", "A", "San Antonio", "TX", "A",
-  "Tampa", "FL", "A",
+  "Tampa", "FL", "A", "Providence", "RI", "A", "Richmond", "VA", "A",
+  "San Diego", "CA", "A", "Kansas City", "KS", "A",
   # Mid-sized city (250K-1M)
   "Cambridge", "MA", "B", "Pittsburgh", "PA", "B", "Ann Arbor", "MI", "B",
   "Minneapolis", "MN", "B", "Madison", "WI", "B", "Columbus", "OH", "B",
@@ -136,7 +157,12 @@ city_setting <- tribble(
   "Toledo", "OH", "C", "Kalamazoo", "MI", "C", "Fargo", "ND", "C",
   "Rochester Hills", "MI", "C", "Greeley", "CO", "C", "Norfolk", "VA", "C",
   "Madison", "SD", "C", "Lincoln", "NE", "C", "Tuscaloosa", "AL", "C",
-  "Portland", "OR", "B",
+  "Portland", "OR", "B", "Knoxville", "TN", "B", "Lubbock", "TX", "B",
+  "Winston-Salem", "NC", "B", "Burlington", "VT", "B",
+  # Small city/college town (50K-250K) — additional
+  "Boulder", "CO", "C", "Provo", "UT", "C", "Oxford", "OH", "C",
+  "Newark", "DE", "C", "Villanova", "PA", "C", "San Luis Obispo", "CA", "C",
+  "Durham", "NH", "C", "Laramie", "WY", "C",
   # Rural/small town (<50K)
   "Notre Dame", "IN", "D", "Auburn", "AL", "D", "Pullman", "WA", "D",
   "Houghton", "MI", "D", "Mount Pleasant", "MI", "D"
@@ -154,7 +180,9 @@ state_region <- tribble(
   "KS", "Midwest", "NE", "Midwest", "SD", "Midwest", "ND", "Midwest",
   "TX", "Southwest", "OK", "Southwest", "AR", "Southwest", "NM", "Southwest", "AZ", "Southwest",
   "CA", "West Coast", "WA", "West Coast", "OR", "West Coast", "NV", "West Coast",
-  "CO", "West Coast", "UT", "West Coast", "MT", "West Coast"
+  "CO", "West Coast", "UT", "West Coast", "MT", "West Coast",
+  "RI", "Northeast", "DE", "Northeast", "NH", "Northeast",
+  "TN", "Southeast", "WY", "West Coast"
 )
 
 # Q3: Airport Proximity
@@ -173,6 +201,8 @@ airport_proximity <- tribble(
   "Orlando", "FL", "A", "Tampa", "FL", "A", "Cleveland", "OH", "A",
   "Cincinnati", "OH", "A", "Baltimore", "MD", "A", "Reno", "NV", "A",
   "Newark", "NJ", "A", "Boston", "MA", "A", "Portland", "OR", "A",
+  "San Diego", "CA", "A", "Kansas City", "KS", "A",
+  "Providence", "RI", "A", "Richmond", "VA", "A",
   # Moderately close (1-2 hours) - B
   "Durham", "NC", "B", "Raleigh", "NC", "B", "Ann Arbor", "MI", "B",
   "Madison", "WI", "B", "New Haven", "CT", "B", "Chapel Hill", "NC", "B",
@@ -184,6 +214,8 @@ airport_proximity <- tribble(
   "Fargo", "ND", "B", "Rochester Hills", "MI", "B", "Binghamton", "NY", "B",
   "Bethlehem", "PA", "B", "DeKalb", "IL", "B", "Toledo", "OH", "B",
   "Lincoln", "NE", "B", "Tuscaloosa", "AL", "B",
+  "Knoxville", "TN", "B", "Winston-Salem", "NC", "B",
+  "Burlington", "VT", "B", "Newark", "DE", "B", "Villanova", "PA", "B",
   # Further away (2-3 hours) - C
   "Ithaca", "NY", "C", "College Station", "TX", "C", "Ames", "IA", "C",
   "University Park", "PA", "C", "West Lafayette", "IN", "C", "Champaign", "IL", "C",
@@ -195,6 +227,9 @@ airport_proximity <- tribble(
   "Bozeman", "MT", "C", "Stillwater", "OK", "C", "Fayetteville", "AR", "C",
   "Kalamazoo", "MI", "C", "Greeley", "CO", "C", "Madison", "SD", "C",
   "Mount Pleasant", "MI", "C",
+  "Boulder", "CO", "C", "Provo", "UT", "C", "Oxford", "OH", "C",
+  "San Luis Obispo", "CA", "C", "Durham", "NH", "C",
+  "Lubbock", "TX", "C", "Laramie", "WY", "C",
   # Remote (>3 hours) - D
   "Notre Dame", "IN", "D", "Auburn", "AL", "D", "Pullman", "WA", "D",
   "Houghton", "MI", "D"
@@ -268,7 +303,23 @@ living_cost_mapper <- function(departments) {
     "Fargo", "ND", "Cass County",
     "Madison", "SD", "Lake County",
     "Auburn", "AL", "Lee County", "Tuscaloosa", "AL", "Tuscaloosa County",
-    "Lincoln", "NE", "Lancaster County"
+    "Lincoln", "NE", "Lancaster County",
+    "Providence", "RI", "Providence County",
+    "Boulder", "CO", "Boulder County",
+    "Winston-Salem", "NC", "Forsyth County",
+    "Richmond", "VA", "Richmond city",
+    "Oxford", "OH", "Butler County",
+    "Lubbock", "TX", "Lubbock County",
+    "Newark", "DE", "New Castle County",
+    "Knoxville", "TN", "Knox County",
+    "San Diego", "CA", "San Diego County",
+    "Kansas City", "KS", "Wyandotte County",
+    "Villanova", "PA", "Delaware County",
+    "San Luis Obispo", "CA", "San Luis Obispo County",
+    "Burlington", "VT", "Chittenden County",
+    "Provo", "UT", "Utah County",
+    "Durham", "NH", "Strafford County",
+    "Laramie", "WY", "Albany County"
   )
   
   cost_of_living_from_data <- city_county_mapping %>%
@@ -297,12 +348,8 @@ if(any(str_detect(names(departments), "\\.x$|\\.y$"))) {
     rename_with(~str_remove(., "\\.y$"), ends_with(".y"))
 }
 
-# Check for any remaining duplicates
-if(any(duplicated(names(departments)))) {
-  cat("Warning: Duplicate columns still exist:\n")
-  print(names(departments)[duplicated(names(departments))])
-  
-  # Remove duplicates by keeping only first occurrence
+# Remove any remaining duplicate columns, keeping the first occurrence
+if (any(duplicated(names(departments)))) {
   departments <- departments[, !duplicated(names(departments))]
 }
 # Salary data (Q6)
@@ -439,7 +486,14 @@ manual_matches <- tribble(
   "University of North Carolina--Charlotte", "University of North Carolina at Charlotte",
   "University of Texas--San Antonio", "The University of Texas at San Antonio",
   "University of North Carolina--Greensboro", "University of North Carolina at Greensboro",
-  "University of Nevada--Reno", "University of Nevada-Reno"
+  "University of Nevada--Reno", "University of Nevada-Reno",
+  "Brigham Young University-Provo", "Brigham Young University-Provo",
+  "CUNY Bernard M Baruch College", "CUNY Bernard M Baruch College",
+  "California Polytechnic State University-San Luis Obispo", "California Polytechnic State University-San Luis Obispo",
+  "University of Tennessee-Knoxville", "The University of Tennessee-Knoxville",
+  "Miami University-Oxford", "Miami University-Oxford",
+  "Rochester Institute of Technology", "Rochester Institute of Technology",
+  "Virginia Commonwealth University", "Virginia Commonwealth University"
 )
 
 # Enhanced matching with manual mappings
@@ -551,7 +605,10 @@ universities_with_med_schools <- c(
   "Montana State University", "University of Alabama", "Marquette University",
   "Oklahoma State University", "University of Arkansas", "University of South Florida",
   "Central Michigan University", "Old Dominion University", "University of Nevada--Reno",
-  "University of Toledo", "Western Michigan University", "Oakland University", "University of Northern Colorado"
+  "University of Toledo", "Western Michigan University", "Oakland University", "University of Northern Colorado",
+  "Georgetown University", "University of Kansas Medical Center",
+  "Virginia Commonwealth University", "University of Vermont",
+  "University of Tennessee-Knoxville", "Brown University"
 )
 
 departments_enriched <- departments_enriched %>%
@@ -667,7 +724,7 @@ estimate_summer_support <- function(tier, university_size, n_undergrads, public_
   )
 }
 
-#  Q9: Teaching Load 
+#  Q9: Teaching Load
 estimate_teaching_load <- function(tier, n_undergrads, university_size, public_private) {
   # Base teaching load by tier
   base_load <- case_when(
@@ -676,21 +733,21 @@ estimate_teaching_load <- function(tier, n_undergrads, university_size, public_p
     tier == "Tier 3" ~ 2.8,
     tier == "Tier 4" ~ 3.3
   )
-  
-  # Very large universities often have higher teaching needs
-  if(!is.na(n_undergrads) && n_undergrads > 35000) {
-    base_load <- base_load + 0.6
-  } else if(!is.na(n_undergrads) && n_undergrads > 25000) {
+
+  # Large R1 universities have TA support that offsets size —
+  # teaching load is set by department, not driven by enrollment.
+  # Only small schools without TA pipelines face higher loads.
+  if(!is.na(n_undergrads) && n_undergrads < 5000) {
+    base_load <- base_load + 0.4  # Small schools, fewer TAs
+  } else if(!is.na(university_size) && university_size == "Small") {
     base_load <- base_load + 0.4
-  } else if(!is.na(university_size) && university_size == "Very Large") {
-    base_load <- base_load + 0.5
   }
-  
+
   # Private universities typically have lower teaching loads
   if(!is.na(public_private) && public_private == "Private") {
     base_load <- base_load - 0.4
   }
-  
+
   # Convert to categories
   case_when(
     base_load <= 1.5 ~ "A",  # 0-1 course/year
@@ -787,28 +844,36 @@ infer_research_culture <- function(university, tier, q15_medical_school_proximit
   culture <- research_culture_lookup %>%
     filter(university == !!university) %>%
     pull(q12_research_culture)
-  
+
   if(length(culture) > 0) return(culture)
-  
-  # Infer based on characteristics
-  if(!is.na(q15_medical_school_proximity) && q15_medical_school_proximity == 1) {
-    if(tier %in% c("Tier 1", "Tier 2", "Tier 3")) {
-      return("C")  # Biostatistics focus
-    }
-  }
-  
-  # Check if department name suggests focus
-  if(str_detect(university, "Tech|Polytechnic")) {
+
+  # Check if department name suggests applied/data science focus
+  if(str_detect(university, "Tech|Polytechnic|Institute of Technology")) {
     return("B")  # Applied/data science
   }
-  
-  # Top tier without med school tends toward theory or balanced
-  if(tier == "Tier 1") {
-    return(sample(c("A", "D"), 1, prob = c(0.3, 0.7)))
+
+  # Infer based on med school proximity and tier
+  if(!is.na(q15_medical_school_proximity) && q15_medical_school_proximity == 1) {
+    if(tier == "Tier 1") {
+      return(sample(c("A", "C", "D"), 1, prob = c(0.2, 0.4, 0.4)))
+    } else if(tier == "Tier 2") {
+      return(sample(c("C", "D"), 1, prob = c(0.5, 0.5)))
+    } else {
+      return(sample(c("B", "C", "D"), 1, prob = c(0.2, 0.4, 0.4)))
+    }
   }
-  
-  # Default: balanced approach
-  return("D")
+
+  # No med school — distribute across theory, applied, balanced
+  if(tier == "Tier 1") {
+    return(sample(c("A", "B", "D"), 1, prob = c(0.3, 0.15, 0.55)))
+  } else if(tier == "Tier 2") {
+    return(sample(c("A", "B", "D"), 1, prob = c(0.15, 0.25, 0.6)))
+  } else if(tier == "Tier 3") {
+    return(sample(c("A", "B", "D"), 1, prob = c(0.1, 0.3, 0.6)))
+  }
+
+  # Tier 4: more applied/balanced, less theory
+  return(sample(c("B", "D"), 1, prob = c(0.35, 0.65)))
 }
 
 #  Q13: Publication Venues 
@@ -887,34 +952,19 @@ set.seed(2026)
 departments_final <- departments_enriched %>%
   rowwise() %>%
   mutate(
-    # Q5: Dual career programs
-    q5_dual_career = estimate_dual_career(tier, q2_region, university_size, 
+    q5_dual_career = estimate_dual_career(tier, q2_region, university_size,
                                           public_private, n_undergrads),
-    
-    # Q7: Startup funding
-    q7_typical_startup = estimate_startup(tier, q1_geographic_setting, 
+    q7_typical_startup = estimate_startup(tier, q1_geographic_setting,
                                           public_private, cost_avg, rate_admissions),
-    
-    # Q8: Summer support
-    q8_guaranteed_summer = estimate_summer_support(tier, university_size, 
+    q8_guaranteed_summer = estimate_summer_support(tier, university_size,
                                                    n_undergrads, public_private),
-    
-    # Q9: Teaching load
-    q9_typical_teaching_load = estimate_teaching_load(tier, n_undergrads, 
+    q9_typical_teaching_load = estimate_teaching_load(tier, n_undergrads,
                                                       university_size, public_private),
-    
-    # Q10: Course types
     q10_course_types = estimate_course_types(tier, university_size, n_undergrads),
-    
-    # Q11: Mentoring program
-    q11_mentoring_program = estimate_mentoring(tier, university_size, 
+    q11_mentoring_program = estimate_mentoring(tier, university_size,
                                                public_private, n_undergrads),
-    
-    # Q12: Research culture
     q12_research_culture = infer_research_culture(university, tier, q15_medical_school_proximity),
-    
-    # Q14: PhD student ratio
-    q14_phd_student_ratio = estimate_phd_ratio(tier, university_size, 
+    q14_phd_student_ratio = estimate_phd_ratio(tier, university_size,
                                                n_undergrads, q15_medical_school_proximity)
   ) %>%
   ungroup()
@@ -946,11 +996,7 @@ create_hidden_gems <- function(departments_df, gem_rate = 0.25, seed = 2026) {
   eligible_idx <- which(departments_df$tier %in% c("Tier 3", "Tier 4"))
   n_gems <- ceiling(length(eligible_idx) * gem_rate)
   gem_idx <- sample(eligible_idx, n_gems)
-  
-  cat("\n=== CREATING HIDDEN GEM DEPARTMENTS ===\n")
-  cat("Total Tier 3/4 departments:", length(eligible_idx), "\n")
-  cat("Hidden gems to create:", n_gems, "\n\n")
-  
+
   # Track what gems we create
   gem_log <- tibble(
     university = character(),
@@ -1070,16 +1116,9 @@ create_hidden_gems <- function(departments_df, gem_rate = 0.25, seed = 2026) {
     }
   }
   
-  # Print summary
-  cat("Hidden gems created:\n")
-  print(gem_log %>% arrange(tier, university))
-  
-  cat("\nGem type distribution:\n")
-  print(table(gem_log$gem_type))
-  
   # Store gem info as attribute
   attr(departments_df, "hidden_gems") <- gem_log
-  
+
   return(departments_df)
 }
 
@@ -1102,6 +1141,7 @@ departments_final <- departments_final %>%
                 q15_medical_school_proximity,
                 everything())
 
-#  Save final dataset
+
+
+# Save final dataset
 write_csv(departments_final, "../../data/departments_dataset.csv")
-cat(sprintf("\nSaved ../departments_dataset.csv (%d departments)\n", nrow(departments_final)))

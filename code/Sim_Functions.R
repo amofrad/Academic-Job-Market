@@ -458,12 +458,7 @@ prepare_departments <- function(sampled_depts, questions, seed = NULL) {
   
   weight_list <- lapply(seq_len(n_depts), function(j) weight_matrix[j, ])
   result$weight_vector <- weight_list
-  
   colnames(weight_matrix) <- q_names
-  cat("\n=== DEPARTMENT WEIGHT SUMMARY ===\n")
-  cat("Mean weights by question:\n"); print(round(colMeans(weight_matrix), 3))
-  cat("\nWeight range (min-max) by question:\n")
-  for (i in 1:ncol(weight_matrix)) cat(sprintf("  %s: [%.3f, %.3f]\n", q_names[i], min(weight_matrix[,i]), max(weight_matrix[,i])))
   result
 }
 
@@ -476,15 +471,6 @@ generate_yearly_hiring_schedule <- function(n_departments, n_years, departments,
   probs[is.na(probs)] <- 0.5
   hiring_schedule <- matrix(rbinom(n_departments * n_years, size = 1, prob = rep(probs, n_years)),
                             nrow = n_departments, ncol = n_years)
-  cat("\n=== YEARLY HIRING SCHEDULE SUMMARY ===\n")
-  cat("Total department-years:", n_departments * n_years, "\n")
-  cat("Total hiring events:", sum(hiring_schedule), "\n")
-  cat("Overall hiring rate:", round(mean(hiring_schedule), 3), "\n\n")
-  for (tier in c("Tier 1","Tier 2","Tier 3","Tier 4")) {
-    tier_idx <- which(tiers == tier)
-    if (length(tier_idx) > 0) cat(tier, ": ", sum(hiring_schedule[tier_idx,]), " hires over ",
-                                  length(tier_idx)*n_years, " dept-years (rate = ", round(mean(hiring_schedule[tier_idx,]),3), ")\n", sep="")
-  }
   hiring_schedule
 }
 
@@ -1562,10 +1548,6 @@ run_burn_in_phase <- function(departments, questions, n_candidates = 500, burn_i
                               return_yearly_objects = FALSE,
                               retrain_interval = 3L, min_offered_to_train = 10L) {
   set.seed(seed); torch::torch_manual_seed(seed); n_departments <- nrow(departments)
-  cat("\n", strrep("=", 70), "\nBURN-IN PHASE: Learning Priors (Incremental)\n", strrep("=", 70), "\n")
-  cat(sprintf("Running %d years of baseline simulation...\n", burn_in_years))
-  cat(sprintf("  Incremental retraining every %d years (min %d offered obs)\n",
-              retrain_interval, min_offered_to_train))
   if (is.null(yearly_hiring_schedule))
     yearly_hiring_schedule <- generate_yearly_hiring_schedule(n_departments, burn_in_years, departments, seed + 500)
   if (is.null(yearly_candidate_cohorts)) {
@@ -1620,7 +1602,7 @@ run_burn_in_phase <- function(departments, questions, n_candidates = 500, burn_i
     }
   }
   # Final training pass on all accumulated data
-  cat("\n", strrep("=", 70), "\nFinal training on all burn-in data...\n", strrep("=", 70), "\n")
+  # Final training pass on all accumulated data
   for (j in 1:n_departments) {
     n_offered <- if (nrow(mdl[[j]]$historical_data) > 0 && "offered" %in% names(mdl[[j]]$historical_data))
       sum(mdl[[j]]$historical_data$offered == 1L, na.rm = TRUE) else 0L
@@ -1630,10 +1612,6 @@ run_burn_in_phase <- function(departments, questions, n_candidates = 500, burn_i
                                n_epochs = 100, include_fit = TRUE,
                                include_questions = FALSE, seed = j * 1000),
         error = function(e) mdl[[j]])
-      cat(sprintf("  Dept %d: Trained on %d observations (%d offered)\n",
-                  j, nrow(mdl[[j]]$historical_data), n_offered))
-    } else {
-      cat(sprintf("  Dept %d: Insufficient offered data (%d offered)\n", j, n_offered))
     }
   }
 
@@ -2372,373 +2350,6 @@ reconstruct_from_weights <- function(weight_list, historical_list, questions, se
   }
   models
 }
-
-run_multi_replicate_simulation <- function(
-    sampled_depts,
-    questions,
-    n_candidates       = 300,
-    burn_in_years      = 20,
-    sim_years          = 10,
-    participation_rates = c(0, 1.00),
-    base_seed          = 42,
-    n_replicates       = 10,
-    alpha              = 0.05,
-    n_bootstrap          = 20,
-    max_offer_rounds   = 3,
-    cand_tier_cutpoints = c(0.10, 0.25, 0.50),
-    tuple_size         = NULL,
-    print_sim_diagnostics = FALSE,
-    collect_rank_panel = FALSE,
-    keep_diagnostics = FALSE,
-    save_rep_results_dir = NULL,
-    keep_raw_replicates = TRUE,
-    replicate_shared_burn_in = FALSE,
-    gc_every_replicate = TRUE,
-    n_workers = NULL,
-    show_replicate_progress = TRUE
-) {
-  
-  # =========================================================================
-  # Fix shared infrastructure (computed once, reused every replicate)
-  # =========================================================================
-  set.seed(base_seed); torch::torch_manual_seed(base_seed)
-  
-  departments <- prepare_departments(sampled_depts, questions, seed = base_seed)
-  n_departments <- nrow(departments)
-  
-  # Fixed hiring schedules
-  yearly_hiring_schedule_burn_in <- generate_yearly_hiring_schedule(
-    n_departments, burn_in_years, departments, base_seed + 500)
-  yearly_hiring_schedule_sim <- generate_yearly_hiring_schedule(
-    n_departments, sim_years, departments, base_seed + 600)
-  
-  # Fallback only; strategic participation sets are generated per year/cohort.
-  participation_sets <- NULL
-  
-  # =========================================================================
-  # Shared burn-in (run once for all replicates)
-  # =========================================================================
-  cat("\n", strrep("=", 80), "\n")
-  cat("SHARED BURN-IN: Running once for all replicates\n")
-  cat(strrep("=", 80), "\n")
-  
-  burn_in_seed <- base_seed
-  yearly_candidate_cohorts_burn_in <- vector("list", burn_in_years)
-  for (year in 1:burn_in_years)
-    yearly_candidate_cohorts_burn_in[[year]] <- generate_candidates(
-      n_candidates, questions, seed = burn_in_seed + year)
-  
-  burn_in <- run_burn_in_phase(
-    departments = departments, questions = questions,
-    n_candidates = n_candidates, burn_in_years = burn_in_years,
-    yearly_candidate_cohorts = yearly_candidate_cohorts_burn_in,
-    yearly_hiring_schedule = yearly_hiring_schedule_burn_in,
-    seed = burn_in_seed, alpha = alpha, n_bootstrap = n_bootstrap,
-    tuple_size = tuple_size, cand_tier_cutpoints = cand_tier_cutpoints,
-    max_offer_rounds = max_offer_rounds,
-    return_yearly_objects = FALSE)
-  
-  learned_prior_models <- burn_in$trained_models
-  burn_in_historical <- burn_in$burn_in_historical
-
-  # Extract model weights for efficient reconstruction in parallel workers
-  learned_prior_weights <- extract_model_weights(learned_prior_models)
-
-  cat("\n", strrep("=", 80), "\n")
-  cat("BURN-IN COMPLETE. Starting replicated sim-phase runs.\n")
-  cat(strrep("=", 80), "\n")
-  
-  if (!is.null(save_rep_results_dir) && !dir.exists(save_rep_results_dir)) {
-    dir.create(save_rep_results_dir, recursive = TRUE, showWarnings = FALSE)
-  }
-  
-  append_replicate_table <- function(bucket, field, tbl, rep_id) {
-    if (!is.null(tbl) && nrow(tbl) > 0) {
-      bucket[[field]][[length(bucket[[field]]) + 1L]] <- tbl %>%
-        dplyr::mutate(replicate = rep_id)
-    }
-    bucket
-  }
-  
-  rate_keys <- as.character(participation_rates)
-  sim_acc <- setNames(
-    lapply(rate_keys, function(x) list(
-      results = list(),
-      rank_panel = list(),
-      cand_roster = list(),
-      diagnostics = list()
-    )),
-    rate_keys
-  )
-  raw_replicates <- if (keep_raw_replicates) vector("list", n_replicates) else NULL
-  
-  # =========================================================================
-  # Run replicate tasks (serial or parallel)
-  # =========================================================================
-  if (is.null(n_workers)) {
-    n_workers <- min(n_replicates, max(1L, parallel::detectCores(logical = FALSE) - 1L))
-  } else {
-    n_workers <- as.integer(n_workers)
-    if (is.na(n_workers)) n_workers <- 1L
-    n_workers <- max(1L, min(n_workers, n_replicates))
-  }
-  
-  use_parallel <- (n_workers > 1L && n_replicates > 1L)
-  if (use_parallel && (!requireNamespace("future", quietly = TRUE) ||
-                       !requireNamespace("future.apply", quietly = TRUE))) {
-    warning("Packages 'future' and 'future.apply' are required for parallel replicates. Falling back to serial.")
-    use_parallel <- FALSE
-    n_workers <- 1L
-  }
-  
-  run_single_replicate <- function(rep, learned_prior_models_override = NULL) {
-    rep_seed <- base_seed + rep * 10000
-    rep_verbose <- !use_parallel
-    if (rep_verbose) {
-      cat("\n\n")
-      cat(strrep("*", 80), "\n")
-      cat(sprintf("***  REPLICATE %d / %d  (seed = %d)  ***\n", rep, n_replicates, rep_seed))
-      cat(strrep("*", 80), "\n\n")
-    }
-
-    set.seed(rep_seed); torch::torch_manual_seed(rep_seed)
-    try(torch::torch_set_num_threads(1L), silent = TRUE)
-    try(torch::torch_set_num_interop_threads(1L), silent = TRUE)
-
-    # Fresh candidate cohorts for sim phase only
-    yearly_candidate_cohorts_sim <- vector("list", sim_years)
-    for (year in 1:sim_years)
-      yearly_candidate_cohorts_sim[[year]] <- generate_candidates(
-        n_candidates, questions, seed = rep_seed + burn_in_years + year)
-
-    # Strategic participation: score each cohort by pool alignment + quality
-    yearly_participation_sets_sim <- vector("list", sim_years)
-    yearly_fj_matrices <- vector("list", sim_years)
-    positive_rates <- participation_rates[participation_rates > 0 & participation_rates < 1]
-    for (year in 1:sim_years) {
-      cohort <- add_participation_signals(
-        candidates = yearly_candidate_cohorts_sim[[year]],
-        departments = departments,
-        questions = questions,
-        dept_weights = yearly_hiring_schedule_sim[, year]
-      )
-      yearly_candidate_cohorts_sim[[year]] <- cohort
-      yearly_participation_sets_sim[[year]] <- generate_nested_participation_assignments(
-        candidates = cohort,
-        participation_rates = positive_rates
-      )
-      # Pre-compute f_j for all candidate-department pairs (reused across rates)
-      n_cands_year <- nrow(cohort)
-      fj_mat <- matrix(NA_real_, nrow = n_cands_year, ncol = n_departments)
-      for (jj in 1:n_departments) {
-        fj_mat[, jj] <- compute_f_j(cohort, departments[jj, , drop = FALSE], questions)
-      }
-      yearly_fj_matrices[[year]] <- fj_mat
-    }
-
-    # Reconstruct models from saved weights
-    learned_prior_models_rep <- learned_prior_models_override
-    if (is.null(learned_prior_models_rep)) {
-      learned_prior_models_rep <- reconstruct_from_weights(
-        weight_list = learned_prior_weights,
-        historical_list = burn_in_historical,
-        questions = questions,
-        seed = burn_in_seed
-      )
-    }
-
-    # SIMULATION RUNS (one per participation rate)
-    sim_results_rep <- list()
-    for (rate in participation_rates) {
-      rate_chr <- as.character(rate)
-      if (rep_verbose) {
-        cat(sprintf("\n### REPLICATE %d | participation_rate = %.0f%% ###\n",
-                    rep, rate * 100))
-      }
-
-      sr <- run_job_market_sim_with_learned_prior(
-        departments = departments, questions = questions,
-        n_candidates = n_candidates,
-        burn_in_years = burn_in_years, sim_years = sim_years,
-        participation_rate = rate,
-        yearly_candidate_cohorts_sim = yearly_candidate_cohorts_sim,
-        participation_sets = participation_sets,
-        yearly_participation_sets_sim = yearly_participation_sets_sim,
-        yearly_hiring_schedule_sim = yearly_hiring_schedule_sim,
-        learned_prior_models = learned_prior_models_rep,
-        seed = rep_seed, alpha = alpha, n_bootstrap = n_bootstrap,
-        tuple_size = tuple_size, cand_tier_cutpoints = cand_tier_cutpoints,
-        max_offer_rounds = max_offer_rounds,
-        print_diagnostics = print_sim_diagnostics,
-        return_dept_models = FALSE,
-        return_yearly_results = FALSE,
-        collect_ranking_panel = collect_rank_panel,
-        keep_diagnostics = keep_diagnostics,
-        verbose = rep_verbose,
-        precomputed_fj_list = yearly_fj_matrices)
-
-      sim_results_rep[[rate_chr]] <- sr
-    }
-
-    if (!is.null(save_rep_results_dir)) {
-      rep_file <- file.path(save_rep_results_dir, sprintf("replicate_%03d.rds", rep))
-      saveRDS(
-        list(replicate = rep, seed = rep_seed, sim_results = sim_results_rep),
-        rep_file,
-        compress = "gzip"
-      )
-    }
-
-    rm(yearly_candidate_cohorts_sim, yearly_participation_sets_sim, learned_prior_models_rep, yearly_fj_matrices)
-    if (isTRUE(gc_every_replicate)) invisible(gc(verbose = FALSE))
-    list(replicate = rep, seed = rep_seed, sim_results = sim_results_rep)
-  }
-  
-  if (use_parallel) {
-    cat(sprintf("Parallel replicate mode: %d worker(s) for %d replicate(s)\n", n_workers, n_replicates))
-    old_plan <- future::plan()
-    on.exit(future::plan(old_plan), add = TRUE)
-    # Must use multisession (not multicore) because torch is not fork-safe:
-    # forked processes share parent torch memory, causing segfaults
-    future::plan(future::multisession, workers = n_workers)
-    if (isTRUE(show_replicate_progress) && requireNamespace("progressr", quietly = TRUE)) {
-      progressr::handlers(global = TRUE)
-      progressr::handlers("txtprogressbar")
-      rep_outputs <- progressr::with_progress({
-        p <- progressr::progressor(steps = n_replicates)
-        future.apply::future_lapply(
-          seq_len(n_replicates),
-          function(rep) {
-            out <- run_single_replicate(rep, learned_prior_models_override = NULL)
-            p(sprintf("Replicate %d/%d", rep, n_replicates))
-            out
-          },
-          future.seed = TRUE,
-          future.scheduling = 1,
-          future.globals = TRUE,
-          future.packages = c("torch", "dplyr", "tidyr", "purrr", "tibble")
-        )
-      })
-    } else {
-      if (isTRUE(show_replicate_progress)) {
-        cat("progressr not installed; running without progress bar in parallel mode.\n")
-      }
-      rep_outputs <- future.apply::future_lapply(
-        seq_len(n_replicates),
-        function(rep) run_single_replicate(rep, learned_prior_models_override = NULL),
-        future.seed = TRUE,
-        future.scheduling = 1,
-        future.globals = TRUE,
-        future.packages = c("torch", "dplyr", "tidyr", "purrr", "tibble")
-      )
-    }
-  } else {
-    cat(sprintf("Serial replicate mode: %d replicate(s)\n", n_replicates))
-    rep_outputs <- vector("list", n_replicates)
-    pb <- NULL
-    if (isTRUE(show_replicate_progress)) {
-      pb <- utils::txtProgressBar(min = 0, max = n_replicates, style = 3)
-      on.exit(try(close(pb), silent = TRUE), add = TRUE)
-    }
-    for (rep in seq_len(n_replicates)) {
-      rep_outputs[[rep]] <- run_single_replicate(
-        rep,
-        learned_prior_models_override = learned_prior_models
-      )
-      if (!is.null(pb)) utils::setTxtProgressBar(pb, rep)
-    }
-    if (!is.null(pb)) cat("\n")
-  }
-  
-  for (rep_out in rep_outputs) {
-    rep <- rep_out$replicate
-    sim_results_rep <- rep_out$sim_results
-    for (rate_chr in names(sim_results_rep)) {
-      sr <- sim_results_rep[[rate_chr]]
-      bucket <- sim_acc[[rate_chr]]
-      bucket <- append_replicate_table(bucket, "results", sr$results, rep)
-      bucket <- append_replicate_table(bucket, "rank_panel", sr$rank_panel, rep)
-      bucket <- append_replicate_table(bucket, "cand_roster", sr$cand_roster, rep)
-      bucket <- append_replicate_table(bucket, "diagnostics", sr$diagnostics, rep)
-      sim_acc[[rate_chr]] <- bucket
-    }
-    if (keep_raw_replicates) {
-      raw_replicates[[rep]] <- list(
-        replicate = rep,
-        seed = rep_out$seed,
-        sim_results = sim_results_rep
-      )
-    }
-  }
-  
-  # =========================================================================
-  # Assemble combined results with replicate ID
-  # =========================================================================
-  
-  combined <- list(
-    departments = departments,
-    questions   = questions,
-    participation_sets = participation_sets,
-    config = list(
-      n_candidates = n_candidates, burn_in_years = burn_in_years,
-      sim_years = sim_years, participation_rates = participation_rates,
-      base_seed = base_seed, n_replicates = n_replicates,
-      alpha = alpha, n_bootstrap = n_bootstrap,
-      print_sim_diagnostics = print_sim_diagnostics,
-      collect_rank_panel = collect_rank_panel,
-      keep_diagnostics = keep_diagnostics,
-      save_rep_results_dir = save_rep_results_dir,
-      keep_raw_replicates = keep_raw_replicates,
-      replicate_shared_burn_in = replicate_shared_burn_in,
-      n_workers = n_workers,
-      parallel_replicates = use_parallel,
-      show_replicate_progress = isTRUE(show_replicate_progress)
-    )
-  )
-  
-  # Combine sim_results across replicates for each participation rate
-  combined$sim_results <- setNames(vector("list", length(rate_keys)), rate_keys)
-  for (rate_chr in rate_keys) {
-    bucket <- sim_acc[[rate_chr]]
-    combined$sim_results[[rate_chr]] <- list(
-      results     = bind_rows(bucket$results),
-      rank_panel  = bind_rows(bucket$rank_panel),
-      cand_roster = bind_rows(bucket$cand_roster),
-      diagnostics = bind_rows(bucket$diagnostics)
-    )
-  }
-  
-  # Combine burn-in results
-  burn_in_results <- burn_in$burn_in_results
-  burn_in_roster <- burn_in$cand_roster
-  if (isTRUE(replicate_shared_burn_in)) {
-    burn_in_results <- bind_rows(lapply(seq_len(n_replicates), function(rep) {
-      burn_in$burn_in_results %>% dplyr::mutate(replicate = rep)
-    }))
-    burn_in_roster <- bind_rows(lapply(seq_len(n_replicates), function(rep) {
-      burn_in$cand_roster %>% dplyr::mutate(replicate = rep)
-    }))
-  } else {
-    if (!is.null(burn_in_results) && nrow(burn_in_results) > 0)
-      burn_in_results <- burn_in_results %>% dplyr::mutate(replicate = 1L)
-    if (!is.null(burn_in_roster) && nrow(burn_in_roster) > 0)
-      burn_in_roster <- burn_in_roster %>% dplyr::mutate(replicate = 1L)
-  }
-  combined$burn_in <- list(
-    burn_in_results = burn_in_results,
-    cand_roster     = burn_in_roster
-  )
-  
-  if (keep_raw_replicates) {
-    combined$raw_replicates <- raw_replicates
-  }
-  if (!is.null(save_rep_results_dir)) {
-    combined$replicate_checkpoint_dir <- normalizePath(save_rep_results_dir, mustWork = FALSE)
-  }
-  
-  combined
-}
-
 
 
 # =============================================================================
@@ -3526,14 +3137,7 @@ fig_participation_welfare <- function(all_sim_results,
       baseline_matching_rate = mean(matching_rate, na.rm = TRUE),
       baseline_mean_welfare_if_matched = mean(mean_welfare_if_matched, na.rm = TRUE)
     )
-  
-  cat("\n=== BASELINE STATISTICS (averaged over replicates) ===\n")
-  if (!include_scramble) cat("  (scramble hires EXCLUDED)\n")
-  cat(sprintf("Mean welfare: %.4f | Matching rate: %.2f%% | Mean welfare if matched: %.4f\n",
-              baseline_stats$baseline_mean_welfare,
-              baseline_stats$baseline_matching_rate * 100,
-              baseline_stats$baseline_mean_welfare_if_matched))
-  
+
   # Interior rates: per (replicate, rate, participates)
   comparison_by_rep <- purrr::map_dfr(interior_rates, function(rate_chr) {
     rate <- as.numeric(rate_chr)
@@ -3588,17 +3192,6 @@ fig_participation_welfare <- function(all_sim_results,
       .groups = "drop"
     )
   
-  # Diagnostics
-  cat("\n=== PARTICIPATING vs NON-PARTICIPATING (averaged over replicates) ===\n")
-  for (rate in unique(comparison_data$participation_rate)) {
-    pd <- comparison_data %>% dplyr::filter(participation_rate == rate, participates == TRUE)
-    nd <- comparison_data %>% dplyr::filter(participation_rate == rate, participates == FALSE)
-    if (nrow(pd) > 0 && nrow(nd) > 0) {
-      cat(sprintf("Rate=%.0f%%: Part=%.4f, NonPart=%.4f, Diff=%.4f\n",
-                  rate * 100, pd$mean_welfare, nd$mean_welfare,
-                  pd$mean_welfare - nd$mean_welfare))
-    }
-  }
   ribbon_alpha <- 0.15
   
   fig_theme <- theme_minimal(base_size = 14) +
