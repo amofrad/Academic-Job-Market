@@ -57,7 +57,6 @@ n_departments <- nrow(departments)
 burn_in_seed  <- base_seed
 
 # Reconstruct learned prior models from burn-in historical data
-# (torch models cannot be serialized via saveRDS; retrain from data)
 learned_prior_models <- reconstruct_learned_prior_models(
   burn_in_historical = burn_in_historical,
   questions          = questions,
@@ -203,7 +202,6 @@ batch_results <- list(
 
 out_file <- sprintf("output/sim_batch_%d.rds", task_id)
 saveRDS(batch_results, out_file, compress = "gzip")
-cat(sprintf("Saved %s (%.1f MB)\n", out_file, file.size(out_file) / 1e6))
 
 # Save session info to requirements.txt
 if (task_id == 1L)

@@ -988,7 +988,6 @@ departments_final <- departments_final %>%
 # Some Tier 3/4 departments have 1-2 attributes that rival Tier 1/2 departments
 # This reflects real-world variation (e.g., a teaching school in a great city,
 # or a lower-ranked program with unusually high salary due to cost of living)
-
 create_hidden_gems <- function(departments_df, gem_rate = 0.25, seed = 2026) {
   set.seed(seed)
   

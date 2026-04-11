@@ -55,8 +55,6 @@ if (!file.exists(venv_python)) {
 }
 
 # Verify Python dependencies are installed (install if missing).
-# NOTE: do NOT use normalizePath() — it resolves symlinks and would bypass
-# the venv by pointing to the system Python.
 abs_python <- file.path(getwd(), venv_python)
 deps_check <- system2(abs_python, c("-c", "'import requests, tablib'"),
                       stdout = FALSE, stderr = FALSE)

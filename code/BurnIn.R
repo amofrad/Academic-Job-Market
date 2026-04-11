@@ -46,7 +46,7 @@ yearly_hiring_schedule_burn_in <- generate_yearly_hiring_schedule(
 yearly_hiring_schedule_sim <- generate_yearly_hiring_schedule(
   n_departments, sim_years, departments, base_seed + 600)
 
-# Generate candidate cohorts and run burn-in
+
 start_time <- Sys.time()
 
 yearly_candidate_cohorts_burn_in <- vector("list", burn_in_years)
@@ -72,9 +72,6 @@ elapsed <- round(difftime(Sys.time(), start_time, units = "mins"), 1)
 cat(sprintf("\nBurn-in completed in %s minutes\n", elapsed))
 
 # Save artifacts
-# NOTE: torch nn_module objects are not serializable via saveRDS. We save
-# burn_in_historical instead; sim jobs reconstruct models via
-# reconstruct_learned_prior_models().
 burn_in_artifacts <- list(
   departments                    = departments,
   burn_in_historical             = burn_in$burn_in_historical,
@@ -96,5 +93,3 @@ burn_in_artifacts <- list(
 )
 
 saveRDS(burn_in_artifacts, "output/burn_in_artifacts.rds", compress = "gzip")
-cat(sprintf("Saved output/burn_in_artifacts.rds (%.1f MB)\n",
-            file.size("output/burn_in_artifacts.rds") / 1e6))

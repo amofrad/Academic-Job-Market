@@ -3,7 +3,7 @@
 # Result_processer.R — Stage 3: Combine batch results and generate figures
 #
 # Merges all sim_batch_*.rds files into a single all_sim_results structure
-# and produces publication-quality PDF figures.
+# and produces figures for the main text and supplement.
 #
 # Usage (from project root):
 #   Rscript code/Result_processer.R
@@ -67,7 +67,6 @@ for (b in 1:n_batches) {
   }
 }
 
-# Assemble final results structure
 all_sim_results <- list(
   departments = departments,
   questions   = questions,
@@ -104,11 +103,6 @@ saveRDS(all_sim_results, "output/all_sim_results.rds", compress = "gzip")
 cat(sprintf("Saved output/all_sim_results.rds (%.1f MB)\n",
             file.size("output/all_sim_results.rds") / 1e6))
 
-# Remove batch files now that they have been merged
-for (b in 1:n_batches) {
-  f <- sprintf("output/sim_batch_%d.rds", b)
-  if (file.exists(f)) file.remove(f)
-}
 
 # Generate figures
 

@@ -7,7 +7,7 @@
 #   - Questionnaire-based fit score calculation
 #   - Neural network acceptance probability models
 #   - Interview selection via sure screening
-#   - Offer resolution (two-round offers with scramble)
+#   - Offer resolution
 #   - Burn-in and learned prior infrastructure
 #   - Multi-replicate simulation orchestration
 # =============================================================================
@@ -104,12 +104,7 @@ safe_categorical_to_index <- function(values, levels, var_name = "unknown") {
 }
 
 # =============================================================================
-# compute_f_j — Fit score computation
-#
-# Computes f_j for all candidates vs one department.
-# Uses the department's weight_vector (generated in prepare_departments)
-# to weight each questionnaire dimension, implementing department-specific
-# normalized weights {w_tilde_jk}.
+# compute_f_j — Fit score computation for all candidates vs each department
 # =============================================================================
 compute_f_j <- function(candidates_df, dept_row, questions, gamma = 1.5) {
   n <- nrow(candidates_df)
@@ -238,8 +233,7 @@ s_k <- as.numeric(grepl(dept_tok, cand_str, fixed = TRUE))
   
   S_ij <- num_share * num_avg + cat_share * cat_avg
 
-  # Per-department normalization: rescale S_ij to [0, 1] within this department
-  # so every department sees candidates spanning the full alignment range.
+  # Per-department normalization: rescale S_ij to [0, 1] within department j
   S_min <- min(S_ij, na.rm = TRUE)
   S_max <- max(S_ij, na.rm = TRUE)
   if (S_max - S_min > eps) {
@@ -851,7 +845,7 @@ predict_acceptance_probability <- function(dept_model, applicant_data, n_bootstr
 }
 
 # =============================================================================
-# make_repeated_rank_draws — Legacy fallback for ranking uncertainty
+# make_repeated_rank_draws — Fallback for ranking uncertainty
 #
 # Called when NN bootstrap pi_draws are unavailable. The primary path
 # propagates pi_draws directly via compute_pairwise_lower_ranks.
@@ -1071,8 +1065,6 @@ add_participation_signals <- function(candidates, departments, questions,
     (rank(candidates$v_i_bar, ties.method = "average") - 1) / (n_candidates - 1)
   else rep(0.5, n_candidates)
   
-  # Strategic opt-out: high-quality candidates with below-median pool alignment
-  # can have some incentive to avoid revealing weak fit.
   align_mid <- stats::median(pool_alignment_norm, na.rm = TRUE)
   misalignment <- pmax(0, align_mid - pool_alignment_norm)
   opt_out_value <- misalignment * v_pctl
@@ -1531,9 +1523,7 @@ resolve_offers_sequential <- function(interviewed_data, departments, questions,
 
   interviewed_data
 }
-# =============================================================================
-# BURN-IN PHASE
-# =============================================================================
+
 # =============================================================================
 # run_burn_in_phase — Burn-in phase to learn department priors
 #
@@ -1740,7 +1730,6 @@ predict_acceptance_probability_with_learned_prior <- function(dept_model, applic
     error = function(e) NULL)
   y_all <- torch::torch_tensor(hist_data$accepted, dtype = torch::torch_float())$unsqueeze(2)
   
-  # Save trained model state for warm-start bootstrap
   trained_state <- if (dept_model$is_trained) lapply(dept_model$model$parameters, function(p) p$clone()$detach()) else NULL
   
   # Allocate temp model once outside the loop
@@ -1789,11 +1778,10 @@ predict_acceptance_probability_with_learned_prior <- function(dept_model, applic
     })
     pi_b <- pmin(pmax(pi_b, 1e-5), 1 - 1e-5)
     
-    # Blend with prior
+
     pi_draws_matrix[b, ] <- mw * pi_b + (1 - mw) * pi_prior
   }
   
-  # Aggregate bootstrap draws
   pi_mean <- colMeans(pi_draws_matrix, na.rm = TRUE)
   pi_var  <- colMeans(sweep(pi_draws_matrix, 2, pi_mean)^2, na.rm = TRUE) * nrow(pi_draws_matrix) / (nrow(pi_draws_matrix) - 1)
   
@@ -2038,8 +2026,7 @@ simulate_market_year_with_learned_prior <- function(candidates, departments, que
 # run_job_market_sim_with_learned_prior — Simulation phase with learned priors
 #
 # Sim-phase models are seeded with burn-in historical data so they inherit
-# baseline observations. New observations (including fit features for the
-# questionnaire scenario) are added incrementally each year.
+# baseline observations. New observations are added incrementally each year.
 # =============================================================================
 run_job_market_sim_with_learned_prior <- function(departments, questions, n_candidates = 500,
                                                   burn_in_years = 10, sim_years = 10, participation_rate,
@@ -2070,7 +2057,7 @@ run_job_market_sim_with_learned_prior <- function(departments, questions, n_cand
   }
   cand_roster_all <- list(); rank_all <- list(); diag_all <- list()
   
-  # Initialize sim-phase models (burn-in knowledge enters via learned_prior_models)
+  # Initialize sim-phase models (burn-in enters via learned_prior_models)
   mdl <- purrr::map(1:n_departments, function(j) {
     initialize_department_model(questions,
                                 include_fit = TRUE,
@@ -2307,9 +2294,7 @@ reconstruct_learned_prior_models <- function(burn_in_historical, questions, seed
 }
 
 # =============================================================================
-# extract_model_weights / reconstruct_from_weights
-#
-# Extract torch model weights as plain R objects for serialization, and
+# Extract torch model weights as plain R objects for serialization and
 # reconstruct models from saved weights
 # =============================================================================
 extract_model_weights <- function(models) {
@@ -2355,9 +2340,6 @@ reconstruct_from_weights <- function(weight_list, historical_list, questions, se
 # =============================================================================
 #                                 FIGURES
 # =============================================================================
-# =============================================================================
-# Publication theme and color palettes
-# =============================================================================
 theme_template <- function(base_size = 11, base_family = "") {
   theme_minimal(base_size = base_size, base_family = base_family) +
     theme(
@@ -2401,7 +2383,7 @@ participation_colors <- setNames(
 # Internal helpers
 # =============================================================================
 
-# Regenerate yearly_hiring_schedule_sim from config (deterministic)
+# Regenerate yearly_hiring_schedule_sim from config
 .get_hiring_schedule <- function(all_sim_results) {
   cfg <- all_sim_results$config
   departments <- all_sim_results$departments
@@ -3325,7 +3307,6 @@ count_blocking_pairs <- function(all_sim_results,
     cat(sprintf("\r  Blocking pairs: replicate %d / %d", rep, max(rep_ids)))
     rep_seed <- base_seed + rep * 10000L
 
-    # Regenerate candidate cohorts 
     yearly_cohorts <- vector("list", sim_years)
     for (yr in 1:sim_years)
       yearly_cohorts[[yr]] <- generate_candidates(
@@ -3373,7 +3354,6 @@ count_blocking_pairs <- function(all_sim_results,
       }
 
       for (rate in rates) {
-        # Extract matching mu for specific (replicate, year, rate)
         matches <- all_sim_results$sim_results[[as.character(rate)]]$results %>%
           dplyr::filter(replicate == rep, year == yr, accepted == 1L)
         n_matches <- nrow(matches)
@@ -3400,7 +3380,7 @@ count_blocking_pairs <- function(all_sim_results,
           if (!is.na(cand_match[i]))
             cand_threshold[i] <- V_mat[i, cand_match[i]]
 
-        #  Count blocking pairs per position, under shortlist rule 
+        #  Count blocking pairs per position (under shortlist rule)
         dept_bp_count <- integer(n_hiring)
 
         for (d in seq_len(n_hiring)) {
